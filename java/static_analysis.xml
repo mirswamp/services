@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    This file is subject to the terms and conditions defined in
+    'LICENSE.txt', which is part of this source code distribution.
+
+    Copyright 2012-2016 Software Assurance Marketplace
+-->
+
+<project name="static_analysis" default="pmd.module">
+  <dirname property="module.java.basedir" file="${ant.file.static_analysis}"/>
+
+  <property name="jar.dir" value="${module.java.basedir}/out/production/jar"/>
+  <property name="analysis.dir" value="${module.java.basedir}/analysis"/>
+  <property name="src.dir" value="${module.java.basedir}/src"/>
+  <property name="findbugs.home"   value="../test/java/findbugs/findbugs-3.0.1/" />
+
+  <!-- set up the paths to the static analysis tools -->
+
+  <path id="findbugs.path">
+    <pathelement location="${findbugs.home}/lib/findbugs-ant.jar"/>
+  </path>
+
+  <!-- <echo>${findbugs.home}</echo> -->
+  <path id="PMD.path">
+    <fileset dir="../test/java/pmd/pmd-bin-5.3.2/lib">
+      <include name="*.jar"/>
+    </fileset>
+  </path>
+
+      <!-- set up the task definitions -->
+
+    <taskdef name="findbugs" classname="edu.umd.cs.findbugs.anttask.FindBugsTask" classpathref="findbugs.path"/>
+    <taskdef name="pmd" classname="net.sourceforge.pmd.ant.PMDTask" classpathref="PMD.path"/>
+
+  
+  <target name="clean.module.analysis" description="cleanup analysis files">
+    <delete dir="${analysis.dir}"/>
+  </target>
+
+    <target name="findbugs.module" depends="jar.module">
+        <findbugs home="${findbugs.home}" output="text">
+            <sourcepath path="${module.java.basedir}/src"/>
+            <class location="${jar.dir}" />
+        </findbugs>
+    </target>
+
+    <target name="findbugs.module.xml" depends="jar.module">
+        <mkdir dir="${analysis.dir}"/>
+        <findbugs home="${findbugs.home}" output="xml" outputfile="${analysis.dir}/findbugs.xml">
+            <sourcepath path="${module.java.basedir}/src"/>
+            <class location="${jar.dir}" />
+        </findbugs>
+    </target>
+
+    <target name="pmd.module" depends="jar.module">
+        <pmd rulesetfiles="java-basic,java-unusedcode,java-imports">
+            <formatter type="text" toconsole="true" />
+            <fileset dir="${module.java.basedir}/src">
+                <include name="**/*.java" />
+            </fileset>
+        </pmd>
+    </target>
+
+    <target name="pmd.module.xml" depends="jar.module">
+        <mkdir dir="${analysis.dir}"/>
+        <pmd rulesetfiles="java-basic,java-unusedcode,java-imports">
+            <formatter type="xml" tofile="${analysis.dir}/pmd.xml" />
+            <fileset dir="${module.java.basedir}/src">
+                <include name="**/*.java" />
+            </fileset>
+        </pmd>
+    </target>
+
+</project>

@@ -1,0 +1,150 @@
+#!/usr/bin/env perl 
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+#** @file swamp_auth.pl
+#
+# @brief
+# @author Dave Boulineau (db), dboulineau@continuousassurance.org
+# @date 02/26/2014 20:11:30
+#*
+
+use 5.014;
+use utf8;
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
+
+use Getopt::Long qw/GetOptions/;
+use Pod::Usage qw/pod2usage/;
+use English '-no_match_vars';
+use Carp qw(carp croak);
+use JSON qw(decode_json);
+
+my $help    = 0;
+my $verbose = 0;
+my $man     = 0;
+my $username;
+my $password;
+my $usernetrc = 0;
+our $VERSION = '0.00';
+
+my $server = q{https://api-dt.cosalab.org/auth};
+
+GetOptions(
+    'user=s'     => \$username,
+    'password=s' => \$password,
+    'n|netrc'    => \$usernetrc,
+    'server=s'   => \$server,
+    'help|?'     => \$help,
+    'man'        => \$man,
+    'verbose'    => \$verbose,
+
+) or pod2usage(2);
+
+if ($help) { pod2usage(1); }
+if ($man) { pod2usage( '-verbose' => 2 ); }
+if ($usernetrc) {
+    ( $username, $password ) = getNetrc(q{api-dt.cosalab.org});
+}
+my $cmd = q{curl -s -X POST };
+$cmd .= qq{ -F 'username=$username' -F 'password=$password' };
+$cmd .= qq{ $server };
+my $res = qx{$cmd};
+if ($verbose) {
+    print "command result: $res\n";
+}
+my $json = decode_json($res);
+if ($verbose) {
+    print "JSON result: [$json->{'success'}] : $json->{'message'}\n";
+}
+my $ok = lc( $json->{'success'} ) eq 'true';
+if ($ok) {
+    print "$json->{'swamp_token'}\n";
+}
+else {
+    print "$json->{'message'}\n";
+}
+exit !$ok;
+
+sub getNetrc {
+    my $host = shift;
+    my $user;
+    my $pass;
+    if ( open( my $fh, '<', "$ENV{'HOME'}/.netrc" ) ) {
+        while (<$fh>) {
+            if (/$host/) {
+                chomp;
+                my (@line) = split(" ", $_ );
+                if ( lc($line[1]) eq lc($host) ) {
+                    $user = $line[3];
+                    $pass = $line[5];
+                    last;
+                }
+            }
+        }
+        close($fh);
+    }
+    else {
+        die "Cannot open ~/.netrc $OS_ERROR";
+    }
+    return ( $user, $pass );
+}
+__END__
+=pod
+
+=encoding utf8
+
+=head1 NAME
+
+swamp_auth - Upload a new version of an existing package to the SWAMP.
+
+=head1 SYNOPSIS
+
+swamp_auth [--user username --password password] [--netrc] [--server apiserver]
+
+=head1 DESCRIPTION
+
+swamp_auth is a command line client of the SWAMP API server. It is used to request a token for use with swamp_pkg
+
+=head1 OPTIONS
+
+=over 8
+
+=item --man
+
+Show manual page for this script
+
+=item --user I<username>
+
+The name of of the SWAMP user for which a token is requested.
+
+=item --password I<password>
+
+The password of of the SWAMP user for which a token is requested.
+
+=item -n, -netrc
+
+Use .netrc file to access credentials
+
+=item --server I<apiserver>
+
+Name of the api server to use
+
+=back
+
+=head1 EXAMPLES
+
+swamp_auth --user swampuser --password passwd
+swamp_auth --netrc
+
+
+=head1 SEE ALSO
+
+L<swamp_pkg|swamp_pkg>
+
+=cut

@@ -1,0 +1,5 @@
+# ant output folders
+out/
+analysis/
+# IntelliJ workspace file
+.idea/workspace.xml

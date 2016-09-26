@@ -1,0 +1,15 @@
+Subject: COSC 504 - SWAMP Registration
+Msg Body:
+
+Dear <student_name>,
+
+Professor <prof_name> has invited you to register for the SWAMP as part of COSC 504.
+
+First, sign up with your email address (<student_email>) at:
+https://www.mir-swamp.org
+
+Second, once you have registered, click this link to join the course project:
+<url>
+
+Thank you,
+The Software Assurance Marketplace (SWAMP)

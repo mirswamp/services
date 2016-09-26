@@ -1,0 +1,5 @@
+--ignore-dir=blib
+--ignore-dir=_build
+--ignore-dir=run
+--ignore-dir=t
+--ignore-dir=testcode

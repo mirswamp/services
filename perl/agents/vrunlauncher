@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+export PATH=/usr/bin:/usr/local/bin:/bin
+export PATH=/opt/perl5/perls/perl-5.18.1/bin:$PATH
+sudo /opt/perl5/perls/perl-5.18.1/bin/perl -I/opt/swamp/perl5 /opt/swamp/bin/vrunTask.pl "$@"

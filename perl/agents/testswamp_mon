@@ -1,0 +1,54 @@
+#!/usr/bin/env bats
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+@test "Running a bogus command" {
+    echo bogus.proc=lskjflsdkjf > $config
+    run $cmd -C $config -T
+    [ "$status" -eq 0 ]
+    run grep -c 'restarting bogus' $log
+    [ "$output" -eq "5" ]
+    run grep -c 'has died too many times' $log
+    [ "$output" -eq "1" ]
+}
+@test "Fully specified command" {
+    echo diesEvery5.proc=sleep 5 > $config
+    echo diesEvery5.maxretries=2 >> $config
+    echo diesEvery5.maxfreq=6 >> $config
+    start=`date +%s`
+    run $cmd -C $config -T
+    [ "$status" -eq 0 ]
+    end=`date +%s`
+    took=$(echo $end $start -p|dc)
+    [ "$took" -lt "15" ]
+    run grep -c 'restarting diesEvery5' $log
+    [ "$output" -eq "2" ]
+    run grep -c 'has died too many times' $log
+    [ "$output" -eq "1" ]
+}
+@test "Partially specified command" {
+    echo diesEvery2.proc=sleep 2 > $config
+    start=`date +%s`
+    run $cmd -C $config -T
+    [ "$status" -eq 0 ]
+    end=`date +%s`
+    took=$(echo $end $start -p|dc)
+    [ "$took" -lt "15" ]
+    run grep -c 'restarting diesEvery2' $log
+    [ "$output" -eq "5" ]
+    run grep -c 'has died too many times' $log
+    [ "$output" -eq "1" ]
+}
+setup() {
+    cp ../../../main/deployment/swamp/config/swamp.conf .
+    cmd='perl -I ../../../main/perl/agents/lib ../../../main/perl/agents/swamp_monitor'
+    log='../../../main/perl/log/swamp_monitor.log'
+    config=swampmon.conf
+    /bin/rm -f $log
+}
+teardown() {
+    /bin/rm -f $config
+}

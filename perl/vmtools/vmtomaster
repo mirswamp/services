@@ -1,0 +1,218 @@
+#!/usr/bin/env perl 
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+#** @file vmtomaster.pl
+#
+# @brief This script will convert a defined VM image to a master image
+# 1) Find the backing file for the VM of interest (qemu-img info $vmname)
+# 2) Copy the backing file to the new master name "$newmaster"
+# 3) Rebase the VM onto the new master image (qemu-img rebase -u -b $newmaster $vmdeltafile)
+# 4) Commit the VM into the backing file (qemu-img commit $vmname)
+# 5) Optionally convert the standalone file to a VMDK
+# @author Dave Boulineau (db), dboulineau@continuousassurance.org
+# @date 09/09/2014 10:41:36
+#*
+
+use 5.010;
+use utf8;
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
+
+use Getopt::Long qw/GetOptions/;
+use Pod::Usage qw/pod2usage/;
+use English '-no_match_vars';
+use Carp qw(carp croak);
+use Sys::Virt;
+use XML::Simple;
+use File::Copy qw(cp);
+
+use VMTools qw(checkEffectiveUser init vmExists vmState getvmdeltafilename getvmbackingfilename masterimagefolder masterizeName rebasevm vmconvert);
+
+our $VERSION = '1.00';
+
+my %options = (
+    'man'       => 0,
+    'help'      => 0,
+    'vmname'    => undef,
+    'verbose'   => 0,
+    'newmaster' => undef,
+    'vmware'    => undef
+);
+
+my @optionNames = qw(
+  verbose
+  vmname=s
+  newmaster=s
+  vmware=s
+  help|?
+  man
+);
+
+checkOptions( \%options );
+my $vmname = $options{'vmname'};
+
+init( $vmname, "$PROGRAM_NAME", 1 );
+
+if ( !checkEffectiveUser() ) {
+    print {*STDERR} "You should run this script as root. Ex: sudo $PROGRAM_NAME\n";
+    exit 1;
+}
+
+
+if ( !vmExists( $vmname ) ) {
+    print {*STDERR} "Cannot find a VM named $vmname";
+    exit 1;
+}
+
+my $state = vmState($vmname);
+if ( $state eq 'running' ) {
+    print {*STDERR} "Cannot modify running $vmname, please shut it down and try again.\n";
+    exit 1;
+}
+#
+# Find the backing file for the VM
+
+my $file = getvmbackingfilename($vmname);
+my $versionIdx = 1;
+my $dateCode=`date +%Y%m%d`;
+chomp $dateCode;
+
+my $unique=0;
+my $mastername;
+while (!$unique && $versionIdx < 100) {
+    $mastername = masterimagefolder().q{/}.masterizeName($options{'newmaster'}, $dateCode.sprintf("%02d", $versionIdx));
+    chomp $mastername;
+    if (! -r $mastername) {
+        $unique=1;
+    }
+    $versionIdx++;
+}
+if (!$unique) {
+    croak "Unable to generate unique name for for $options{'newmaster'}";
+}
+if ($options{'verbose'}) {
+    print "backing file is: [$file] \n";
+    print "master name is: [$mastername]\n";
+    print "Copying backing file to newmaster\n";
+}
+if (!cp($file, $mastername) ) {
+    croak "Cannot copy backing file ($file) to new master ($mastername): $OS_ERROR";
+}
+if ($options{'verbose'}) {
+    print "Rebasing deltafile\n";
+}
+if (!rebasevm(getvmdeltafilename($vmname), $mastername)) {
+    croak "Unable to rebase $vmname onto $mastername";
+}
+if ($options{'verbose'}) {
+    print "Done\n";
+}
+#if ($options{'vmware'}) {
+#    vmconvert($mastername, $options{'vmware'});
+#}
+
+exit 0;
+
+sub getBackingFile {
+	my $name = shift;
+	my $addr = shift;
+	my $con = Sys::Virt->new('address' => $addr, 'readonly' => 1);
+	my $dom = $con->get_domain_by_name($name);
+	my $xml=$dom->get_xml_description();
+	my $xs = XML::Simple->new( 'KeepRoot' => 1, 'ForceArray' => 1, 'NoSort' => 1 );
+	my $ref = $xs->XMLin($xml);
+	my $dev = $ref->{'domain'}[0]->{'devices'}[0]->{'channel'}[0]->{'source'}[0]->{'path'};
+	return $dev;
+}
+
+
+sub checkOptions {
+    my $opts = shift;
+    GetOptions( $opts, @optionNames )
+      or pod2usage(2);
+    if ( $opts->{'help'} )       { pod2usage(1); }
+    if ( $opts->{'man'} )        { pod2usage( '-verbose' => 2 ); }
+    if ( !$opts->{'vmname'} )    { pod2usage('vmname option is required'); }
+    if ( !$opts->{'newmaster'} ) { pod2usage('newmaster option is required'); }
+    return;
+}
+
+__END__
+=pod
+
+=encoding utf8
+
+=head1 NAME
+
+vmtomaster - Convert a VM that was defined with start_vm, into a single qcow2
+image suitable for being a master VM image
+
+=head1 SYNOPSIS
+
+vmtomaster --vmname vmname --newmaster mastername  [--verbose]
+
+=head1 DESCRIPTION
+
+The vmtomaster script converts a defined virtual machine into a single qcow2
+image that can then become the base image for new virtual machines, e.g. a
+master image. This is done by rebasing the backing file used by B<vmname> onto
+the new master B<mastername>. Once this script is done, B<vmname> will use
+B<mastername> as its backing file.
+
+=head1 OPTIONS
+
+=over 8 
+
+=item --verbose 
+
+Display what is happening while the script runs.
+
+=item --vmname B<vmname>
+
+The name of a defined, shut down, virtual machine that is to be converted into
+a master image.
+
+=item --newmaster B<mastername>
+
+The name of the new master image as it should appear when C<start_vm>
+enumerates it. Name should be of the form 'platform-V-BB' where 'platform'
+contains one of the currently supported platform strings 'rhel', 'fedora',
+'ubuntu', 'debian', or 'scientific', 'V' is a version string and 'BB' is the
+architecture type, e.g. '32' or '64'. The final master image name will be
+constructed in such a way as to never overwrite an existing name (autonumbered).
+
+=item --man
+
+Show manual page for this script.
+
+=back
+
+=head1 EXAMPLES
+
+# Create a VM from the current ubuntu master
+
+sudo start_vm --name myshinytest inputfolder ubuntu-12.04-64
+...
+# make your changes to the VM, shut it down
+
+# Convert your VM into the latest master image for ubuntu-12.04-64
+# All future invocations of start_vm using ubuntu-12.04-64 will use your new 
+# master.
+
+sudo vmtomaster --vmname myshinytest --new ubuntu-12.04-64
+
+# -OR- create a new type of ubuntu master
+
+sudo vmtomaster --vmname myshinytest --new ubuntuTEST-12.04-64
+
+=head1 SEE ALSO
+
+=cut
+
+

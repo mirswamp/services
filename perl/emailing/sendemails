@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+base=$1
+shift
+
+if [ -s "email_invitations_${base}.csv" -a -s "email_template_${base}.txt" ]
+then
+    export PATH=/usr/bin:/usr/local/bin:/bin
+    export PERLBREW_ROOT=/opt/perl5
+    export PERLBREW_HOME=/tmp/.perl5
+    source $PERLBREW_ROOT/etc/bashrc
+    perlbrew use perl-5.18.1
+    perl sendmail.pl --template email_template_${base}.txt --list email_invitations_${base}.csv "$@"
+else
+    echo Cannot see email_invitations_${base}.csv and email_template_${base}.txt
+fi

@@ -1,0 +1,10 @@
+testcode/
+#.agentevents
+#.agentstate
+#.viewerinfo
+#*.log
+MYMETA.*
+#.hypervisors
+blib/
+_build/
+Build

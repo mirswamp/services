@@ -1,0 +1,26 @@
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2016 Software Assurance Marketplace
+
+# This script repeatedly creates a filesystem with a random number of files
+# containing random data, this filesystem is then attached to a live VM and the
+# random files are checked for correctness. This test exercises the ability to
+# connect a drive to a live VM as well as communicating to a VM through a
+# pseudo-tty instead of using guestfish to scrape files.
+# This script assumes that a VM has been created named 'vmtest' and is running 'slave.pl'. 
+# This script should be run by/as root since it needs to communicate with VMs
+a=0
+while [ $a != 10 ]
+do
+    echo Test run $a
+    /bin/rm -rf disktest/*
+    # Create random data in the folder disktest
+    perl makerando.pl
+    sha1sum disktest/* > disktest/sums
+    # Convert the folder 'disktest' into a qcow2 image.
+    virt-make-fs --partition msdos --size=+10M --format=qcow2 disktest smalldisk.qcow2
+    # Invoke our master , running 'script' and point it at VM named 'vmtest'
+    perl master.pl -s script -d vmtest
+    a=`expr $a + 1`
+done

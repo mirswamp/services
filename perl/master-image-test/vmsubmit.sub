@@ -1,0 +1,16 @@
+# file name:  my_program.condor
+# HTCondor submit description file for my_program
+universe = vanilla
+executable = startvm.sh
+input=input.tgz
+output=logs/out.start
+error=logs/out.error
+log=out.log
+when_to_transfer_output = ON_EXIT
++WantIOProxy = true
+should_transfer_files = YES
+requirements = (Machine == "swa-exec-dt-01.mirsam.org" || Machine == "swa-exec-dt-02.mirsam.org"  )
+#requirements = (Machine == "swa-exec-dt-01.mirsam.org"  )
+transfer_input_files = input.tgz
+transfer_output_files=out.tgz
+queue
