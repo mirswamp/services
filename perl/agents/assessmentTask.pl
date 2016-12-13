@@ -59,14 +59,13 @@ use SWAMP::Client::ResultCollectorClient qw(configureClient);
 use SWAMP::Client::ExecuteRecordCollectorClient
   qw(configureClient getSingleExecutionRecord updateRunStatus updateExecutionResults);
 use SWAMP::AssessmentTools qw(builderUser builderPassword copyInputs
-  createRundotsh invokeResultCollector saveRunresults
+  invokeResultCollector saveRunresults
   createAssessConfigs
   createMIRAssess
   isJavaTool
   isJavaBytecodePackage
   packageType
   parseStatusOut
-  parseRun
   warnMessage
   debugMessage
   infoMessage
@@ -320,28 +319,6 @@ if (defined($userinputfolder)) {
 }
 else {
     $ok = createInputDisk( \%bog, $inputfolder) ;
-    if ($ok) {
-        # If assessing byte code and this is not a java package, don't even start.
-        if ( !isJavaTool(\%bog) && isJavaBytecodePackage(\%bog)) {
-            # If we're going to fail to run, we still need a vmID
-            $vmid = createVmID();
-            addVmID( $vmid, $bog{'execrunid'}, $vmname );
-            $ok = 0;
-            # Run is 'done'
-            removeVmID( \$vmid );
-            updateExecResultsAndEventlog(
-                $bog{'execrunid'},
-                {
-                    'status'                       => 'Unable to assess.',
-                    'run_date'                     => scalar localtime,
-                    'completion_date'              => scalar localtime,
-                    'cpu_utilization'              => 'd__0',
-                    'lines_of_code'                => 'i__0',
-                    'execute_node_architecture_id' => `uname -a`
-                }
-            );
-        }
-    }
 }
 
 
@@ -356,7 +333,6 @@ if ( !$isBaTLab ) {
     push @results, $bogfile;
     push @results, logfilename();
     push @results, 'input/run.sh';
-    push @results, 'input/_run.sh';
     push @results, 'input/package.conf';
     push @results, 'input/run.conf';
     push @results, 'input/os-dependencies.conf';
@@ -471,12 +447,10 @@ sub createInputDisk {
     my $folder = shift;
     my $ret    = 0;
     if ( copyInputs( $bogref, $folder ) ) {
-        if ( createRundotsh( $bogref, $folder ) ) {
-            if ( createAssessConfigs( $bogref, $folder, $builderUser, $builderPassword ) ) {
-                $ret = 1;
-            }
-        }
-    }
+		if ( createAssessConfigs( $bogref, $folder, $builderUser, $builderPassword ) ) {
+			$ret = 1;
+		}
+	}
     return $ret;
 }
 
@@ -550,7 +524,6 @@ sub processOutput {
 		}
 		if ($preserveOutput == $PRESERVE_OUTPUT_ALWAYS || ($preserveOutput == $PRESERVE_OUTPUT_SUCCESS && $processResult) || ($preserveOutput == $PRESERVE_OUTPUT_FAILURE && ! $processResult)) {
 			cp('input/run.sh',  $outfolder);
-			cp('input/_run.sh',  $outfolder);
 			cp('input/package.conf',  $outfolder);
 			cp('input/tool.conf',  $outfolder);
 			cp('input/services.conf',  $outfolder);
@@ -901,7 +874,9 @@ sub runAssessment {
                 }
                 # BaTLab jobs do not get to here, see: last above.
                 $doRetry = 0;
-                processOutput( $outfolder, $bogref, \$doRetry, ( $nTries < main->MAX_RESTARTS ) );
+                # processOutput( $outfolder, $bogref, \$doRetry, ( $nTries < main->MAX_RESTARTS ) );
+                processOutput($outfolder, $bogref, \$doRetry, 0);
+				$doRetry = 0;
                 if ( $doRetry == 0 ) {
                     $done = 1;
                 }
@@ -1007,17 +982,14 @@ sub sendExecutionResults {
 
         # TODO windows7 will require a different means of accessing /mnt/out/run.out
         ( $output, $status ) =
-          systemcall("guestfish --ro --mount /dev/sdc:/mnt/out --mount /dev/sdb:/mnt/in -d $vmname -i cat /mnt/out/swamp_run.out 2>&1");
+          systemcall("guestfish --ro --mount /dev/sdc:/mnt/out -d $vmname -i cat /mnt/out/status.out 2>&1");
         if ( !$status ) {
             $nRestarts = 0;    # Clean slate.
             setDeadman(1);  # Reset the timer, we have communications.
-            # The scalar $output will have all of the stuff in it from the VM run.out
-            # This consists of lines_of_code.
-            parseRun( \%bog, $output, $results, packageType( \%bog ) );
         }
         else {
-            infoMessage( $bog{'execrunid'},
-                "Cannot get swamp_run.out from $vmname: $status ($state) output: $output" );
+            infoMessage($bog{'execrunid'}, 
+				"Cannot get status.out from $vmname: $status ($state) output: $output");
         }
     }
 
@@ -1048,27 +1020,12 @@ sub localGetDomainStatus {
 
 }
 
-#** @function checkDeadman( )
-# @brief Check the deadman timer on the VM and if it has expired,
-# try to restart N times. If after N failures, give up.
-#
-# @return
-# @see
-#*
 sub checkDeadman {
-    my $now = time;
+    my $now = time();
     my $ret = 0;
-    if ( numberStarts() < main->MAX_RESTARTS ) {
-
-        # If we get no response, kick the VM over.
-        if ( abs( $now - getDeadman() ) > main->MAX_WAITSTUCK ) {
-            $ret = restartVM(1);
-            $log->info("Restarting VM");
-        }
-        else {
-            $ret = 1;
-        }
-    }
+	if ( abs( $now - getDeadman() ) <= main->MAX_WAITSTUCK ) {
+		$ret = 1;
+	}
     return $ret;
 }
 

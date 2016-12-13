@@ -32,7 +32,6 @@ BEGIN {
       copyInputs
       createAssessConfigs
       createMIRAssess
-      createRundotsh
       debugMessage
       deployTarball
       errorMessage
@@ -56,7 +55,6 @@ BEGIN {
       isJavaBytecodePackage
       mergeDependencies
       packageType
-      parseRun
       parseStatusOut
       saveRunresults
       warnMessage
@@ -350,13 +348,6 @@ sub copyFramework {
     else {
         mergeDependencies("$dest/os-dependencies.conf");
     }
-
-    # Preserve the provided run.sh, we'll invoke it from our run.sh
-    if (-r "$dest/run.sh") {
-        if (! move( "$dest/run.sh", "$dest/_run.sh")) {
-            errorMessage($bogref->{'execrunid'}, "Cannot move run.sh to _run.sh");
-        }
-    }
     return 1;
 }
 
@@ -542,122 +533,6 @@ sub idPackage {
     return \%lang;
 }
 
-#** @function createRundotsh( \%bogref, $dest)
-# @brief Based on informaiton in the bogref, create the
-# run.sh script that will be launched on the VM.
-#
-# @param bogref reference to a hash that is the BOG (Bill of Goods).
-# @param dest folder in which to create run.sh and assess.sh
-# @return  1 on success, 0 on failure.
-#*
-sub createRundotsh {
-    my $bogref = shift;
-    my $dest   = shift;    # 'input'
-    my $vmuser = builderUser();
-    my $ret    = 0;
-    if ( open( my $fd, '>', abs_path("${dest}/run.sh") ) ) {
-        print $fd "#!/bin/bash\n";
-        print $fd "set -x\n";
-        print $fd "RUNOUT=\$VMOUTPUTDIR/swamp_run.out\n";
-        # Tell framework to not exit automatically
-        print $fd "export NOSHUTDOWN=1\n";
-        # Install our cronjob to watch for processes from build user 
-        print $fd "chmod +x /mnt/in/swamp_watchdog\n";
-        print $fd "echo \"*/1 * * * * root /mnt/in/swamp_watchdog --user $vmuser\" >> /etc/crontab\n";
-        # Restart cron after mucking with crontab, Debian has been seen to not reread crontab
-        print $fd "if [ -r /etc/init.d/crond ]\n";
-        print $fd "then\n";
-        print $fd "service crond restart >> \$RUNOUT 2>&1\n";
-        print $fd "else\n";
-        print $fd "if [ -r /etc/init.d/cron ]\n";
-        print $fd "then\n";
-        print $fd "service cron restart >> \$RUNOUT 2>&1\n";
-        print $fd "else\n";
-        print $fd "systemctl restart crond.service >> \$RUNOUT 2>&1\n";
-        print $fd "fi\n";
-        print $fd "fi\n";
-
-        print $fd "echo \"begin run.sh\" >> \$RUNOUT\n";
-        print $fd "echo \"========================== date\" >> \$RUNOUT\n";
-        print $fd "date >> \$RUNOUT 2>&1\n";
-        print $fd "echo \"========================== id\" >> \$RUNOUT\n";
-        print $fd "id >> \$RUNOUT 2>&1\n";
-        print $fd "echo \"========================== env\" >> \$RUNOUT\n";
-        print $fd "env >> \$RUNOUT 2>&1\n";
-        print $fd "echo \"========================== pwd\" >> \$RUNOUT\n";
-        print $fd "pwd >> \$RUNOUT 2>&1\n";
-        print $fd "echo \"========================== find\" >> \$RUNOUT\n";
-        print $fd "find . >> \$RUNOUT 2>&1\n";
-        print $fd "echo \"==========================\" >> \$RUNOUT\n";
-        print $fd "echo \"==STARTIF\" >> \$RUNOUT\n";
-        print $fd "/sbin/ifconfig >> \$RUNOUT\n";
-        print $fd "echo \"==ENDIF\" >> \$RUNOUT\n";
-        print $fd "\n";
-        print $fd "\n";
-        print $fd "echo \"before VM user create \" >> \$RUNOUT\n";
-        print $fd "[ -n \"\$VMCREATEVMUSER\" ] && \$VMCREATEVMUSER  >> \$RUNOUT 2>&1\n";
-        print $fd "[ -n \"\$VMUSERCREATE\" ] && \$VMUSERCREATE -u vmrun >> \$RUNOUT 2>&1\n";
-        print $fd "\n";
-
-        # This superfluous Copying_ statement is a marker in the log file for the start of the run.
-        print $fd "echo ::Copying files,`date +%s` >> \$RUNOUT\n";
-
-        # Compute LOC on the package
-        print $fd "echo ::LOC_package,`date +%s` >> \$RUNOUT\n";
-        my $package = basename( $bogref->{'packagepath'} );
-		# ruby gem archives require gem unpack or tar xf command to extract
-		# since gem command is not available, use tar
-		# not all ruby packages are in ruby gem archives
-		# java jar, war, and ear files require unzip to extract
-		my $extract_option = q{};
-		if ($package =~ m/\.gem$/sxm) {
-			$extract_option = " --extract-with='tar xf >FILE<'";
-		}
-		elsif ($package =~ m/\.jar$|\.ear$|\.war$/sxm) {
-			$extract_option = " --extract-with='unzip -qd . >FILE<'";
-		}
-        print $fd "perl \$VMINPUTDIR/cloc-1.60.pl --csv --quiet" . $extract_option . " $package >> \$RUNOUT 2>&1\n";
-        print $fd "echo ::done LOC_package,\$?,`date +%s` >> \$RUNOUT\n";
-
-        # This superfluous assessing_ statement is a marker in the log file for the start of the assessment.
-        print $fd "echo ::Assessing_package,`date +%s` >> \$RUNOUT\n";
-
-        # Framework will exit and wait if /mnt/out/run.out is present.
-        # If it is not present, it will run the assessment
-        if ( !defined( $bogref->{'isinteractive'} ) ) {
-            print $fd "mv /mnt/out/run.out /mnt/out/run.out.0\n";
-        }
-
-        print $fd "if [ -r \$VMINPUTDIR/_run.sh ]\n";
-        print $fd "then\n";
-        print $fd "chmod +x \$VMINPUTDIR/_run.sh\n";
-        print $fd "\$VMINPUTDIR/_run.sh\n";
-        print $fd "else\n";
-        print $fd "chmod +x \$VMINPUTDIR/assess.sh\n";
-        print $fd "su -c \"\$VMINPUTDIR/assess.sh\" - vmrun >> \$RUNOUT 2>&1\n";
-        print $fd "fi\n";
-        print $fd "echo ::done Assessing_package ,\$?, `date +%s` >> \$RUNOUT\n";
-        # Run the watchdog once when assessment finishes to shut down asap
-        print $fd "/mnt/in/swamp_watchdog --user $vmuser\n";
-        print $fd "\n";
-        #if ( !defined( $bogref->{'isinteractive'} ) ) {
-        #    print $fd "\$VMSHUTDOWN >> \$RUNOUT 2>&1\n";
-        #}
-
-        if ( !close($fd) ) {
-            warnMessage( $bogref->{'execrunid'}, "Cannot close run.sh $OS_ERROR" );
-        }
-        $ret = 1;
-    }
-    else {
-        errorMessage( $bogref->{'execrunid'}, "Cannot create run.sh $OS_ERROR" );
-    }
-    if ( $ret == 0 ) {
-        return $ret;
-    }
-    return $ret;
-}
-
 #** @function createMIRAssess( \%bogref, $dest)
 # @brief Based on informaiton in the bogref, create the
 # assess.sh script that will be called by run.sh. This is
@@ -807,27 +682,18 @@ sub createAssessConfigs {
     my $password = shift;
     my $ret      = 0;
 
-    # (package-short, package-version)=split(-, package-archive)
-    my $goal = q{build+assess+parse};
-
-    if ( $bogref->{'packagetype'} =~ /bytecode/isxm ) {
-
-        # This is only a valid configuration for java tools.
-        if ( isJavaTool($bogref) ) {
-            # $goal = q{assess+parse};
-        }
-        else {
-            warnMessage( $bogref->{'execrunid'}, 'Cannot assess bytecode with c tool.' );
-            return $ret;
-        }
-    }
     if (!saveProperties( "$dest/run-params.conf", {
         'SWAMP_USERNAME' => $user,
         'SWAMP_USERID' => '9999',
         'SWAMP_PASSWORD'=> $password })) {
         warnMessage( $bogref->{'execrunid'}, 'Cannot save run-params.conf' );
     }
-    if ( !saveProperties( "$dest/run.conf", { 'goal' => $goal } ) ) {
+    my $goal = q{build+assess+parse};
+	my $runprops = {'goal' => $goal};
+    my $config = getSwampConfig();
+    my $internet_inaccessible = $config->get('SWAMP-in-a-Box.internet-inaccessible') || 'false';
+	$runprops->{'internet-inaccessible'} = $internet_inaccessible;
+    if (! saveProperties( "$dest/run.conf", $runprops)) {
         warnMessage( $bogref->{'execrunid'}, 'Cannot save run.conf' );
         return $ret;
     }
@@ -955,8 +821,12 @@ sub createPackageConf {
     $packagename =~ s/.tar.bz2$//sxm;
     $packagename =~ s/.zip$//sxm;
     my @packageStuff = split( /-/sxm, $packagename );
-
-    $packageConfig{'package-version'} = pop @packageStuff;
+	if (scalar(@packageStuff) <= 1) {
+    	$packageConfig{'package-version'} = 'unknown';
+	}
+	else {
+    	$packageConfig{'package-version'} = pop @packageStuff;
+	}
     $packageConfig{'package-short-name'} = join( q{-}, @packageStuff );
     return saveProperties( "$dest/package.conf", \%packageConfig );
 }
@@ -1077,7 +947,6 @@ sub invokeResultCollector {
     if ( !cp( $logfile, $sharedfolder ) ) {
         errorMessage( $bogref->{'execrunid'},
             "Cannot copy log file $logfile to $sharedfolder: $OS_ERROR" );
-        return 0;
     }
     my $sourceArchive = $bogref->{'packagepath'};
     # CodeDX can only understand zip files.
@@ -1088,8 +957,6 @@ sub invokeResultCollector {
     if ( !cp( $sourceArchive, $sharedfolder ) ) {
         warnMessage( $bogref->{'execrunid'},
             "Cannot copy source archive file $sourceArchive to $sharedfolder: $OS_ERROR" );
-
-        #return 0;
     }
     my $resultsfile = File::Spec->catfile( $sharedfolder, $soughtFile );
     $logfile       = File::Spec->catfile( $sharedfolder, basename($logfile) );
@@ -1154,7 +1021,7 @@ sub invokeResultCollector {
     }
 
     if ( !defined( $bogref->{'testmode'} ) ) {
-        infoMessage( $bogref->{'execrunid'}, "calling saveResult with weaknesses: $results{'weaknesses'}" );
+        Log::Log4perl->get_logger(q{})->info($bogref->{'execrunid'}, 'calling saveResult with: ', sub { use Data::Dumper; Dumper(\%results); });
         my $res = saveResult( \%results );
 
         if ( defined( $res->{'error'} ) ) {
@@ -1245,79 +1112,6 @@ sub setRef {
     }
     else {
         Log::Log4perl->get_logger(q{})->warn( 'setRef called with a non-scalar ref: ' . ref($ref) );
-    }
-    return;
-}
-
-#** @function parseRun( $output )
-# @brief This function examines output from the VM run log and extracts state information. It has intimate knowledge of
-# the MIR assessment process and tokens found in the log, any changes to the assessment script require reexamining of this
-# function.
-#
-# @param output The assessment log, (i.e. STDOUT of the running assessment script.)
-# @return a hash of results suitable for sending to sendExecutionResults.
-#*
-sub parseRun {
-    my $bogref     = shift;
-    my $output     = shift;
-    my $results    = shift;
-    my $packageType = shift;
-
-    my @lines    = split( /\n/sxm, $output );
-    my $inLOC    = 0;
-    my $inIFCONFIG = 0;
-    my $totalLOC = 0;
-    my $logger   = Log::Log4perl->get_logger(q{});
-    state $seenIFCONFIG=0;
-    foreach (@lines) {
-        if (/=STARTIF/sxm) {
-            $inIFCONFIG=1;
-            next;
-        }
-        if (/=ENDIF/sxm) {
-            $inIFCONFIG=0;
-            $seenIFCONFIG = 1;
-            next;
-        }
-        if (!$seenIFCONFIG && $inIFCONFIG) {
-            $logger->info("VM ifconfig: $_");
-        }
-        if (/files,language,blank,comment,code/sxm) {    # LOC is next
-            $inLOC = 1;
-            next;
-        }
-        # Parse the output from cloc tool.
-        if ($inLOC) {
-            if (/^::done/sxm) {
-                $inLOC = 0;
-                $results->{'lines_of_code'} = "i__$totalLOC";    # Code converted to string
-                next;
-            }
-            if ($packageType eq $JAVA_TYPE) {
-                if (/,Java,/sxm) {
-                    my @LOC = split( /,/sxm, $_ );
-                    $totalLOC += $LOC[-1];
-                }
-            }
-            elsif ($packageType eq $CPP_TYPE) {
-                if ( /,C,/sxm || /,C\+\+,/sxm || /C.C\+\+\sHeader/sxm ) {
-                    my @LOC = split( /,/sxm, $_ );
-                    $totalLOC += $LOC[-1];
-                }
-            }
-            elsif ($packageType eq $PYTHON_TYPE) {
-                if (/,Python,/sxm) {
-                    my @LOC = split( /,/sxm, $_ );
-                    $totalLOC += $LOC[-1];
-                }
-			}
-            elsif ($packageType eq $RUBY_TYPE) {
-                if (/,Ruby,/sxm) {
-                    my @LOC = split( /,/sxm, $_ );
-                    $totalLOC += $LOC[-1];
-                }
-            }
-        }
     }
     return;
 }

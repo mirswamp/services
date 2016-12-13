@@ -279,7 +279,7 @@ sub doViewerVM {
             updateviewerinstance({'vieweruuid' => $viewer_uuid,
                 'vieweraddress' => $viewerStatus->{'address'},
                 'viewerproxyurl' => $viewerStatus->{'urluuid'},
-                'viewerstatus' => q{Uploading results to $viewer_name} });
+                'viewerstatus' => qq{Uploading results to $viewer_name} });
 
 	    if ($viewer_name eq 'CodeDX') {
 	    	$log->info("Calling $viewer_name uploadanalysisrun systemcall");
@@ -307,7 +307,7 @@ sub doViewerVM {
         $log->info("LaunchViewer for $viewer_name: $viewerStatus->{urluuid} $retCode");
         if ( $retCode == OK ) {
             updateviewerinstance({'vieweruuid' => $viewer_uuid,
-                'viewerstatus' => q{$viewer_name launched successfully} ,
+                'viewerstatus' => qq{$viewer_name launched successfully} ,
                 'viewerstatuscode' => q{0},
                 'vieweraddress' => $viewerStatus->{'address'},
                 'viewerproxyurl' => $viewerStatus->{'urluuid'} });
@@ -317,7 +317,7 @@ sub doViewerVM {
         else {
             print "ERROR Uploading results to $viewer_name\n";
             $log->error("Unable to upload results to $viewer_name: $retCode");
-            updateviewerinstance({'vieweruuid' => $viewer_uuid, 'viewerstatuscode' => q{1}, 'viewerstatus' => q{Unable to upload results to $viewer_name},
+            updateviewerinstance({'vieweruuid' => $viewer_uuid, 'viewerstatuscode' => q{1}, 'viewerstatus' => qq{Unable to upload results to $viewer_name},
                 'vieweraddress' => $viewerStatus->{'address'},
                 'viewerproxyurl' => $viewerStatus->{'urluuid'} });
 	    Log::Log4perl->get_logger('viewer')->trace("$viewer_uuid $project_name $viewer_name Error uploading results $retCode for file(s): ", @file_path);
