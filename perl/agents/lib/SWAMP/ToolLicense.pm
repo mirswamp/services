@@ -142,6 +142,16 @@ sub getvmipaddr { my ($vmname, $vmdomain, $nameserver, $vmleases) = @_ ;
 		$where = 'nslookup';
 	}
 
+	# nslookup will never succeed on a SWAMP-on-a-Box
+	# act as if it timed out, which matches the behavior of previous releases
+	if ($where eq 'nslookup') {
+		my $config = getSwampConfig();
+		if ($config->get('SWAMP-in-a-Box') eq 'yes') {
+			$vmip = 'vm ip timeout';
+			return $vmip;
+		}
+	}
+
 	my $max_attempts = 15;
 	my $sleep_time = 7;
 	# sleep for at most sleep_time * (max_attempts - 1) on failure

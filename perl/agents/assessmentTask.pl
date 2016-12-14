@@ -1041,26 +1041,6 @@ sub doWaitLoop {
     my $lastPoll = 0;
     my $ret      = 0;
     while ( !$quitLoop ) {
-        if ( !checkDeadman() ) {
-            $quitLoop = 1;
-            $log->info("Exiting loop because of deadMan");
-
-            updateExecResultsAndEventlog(
-                $execrunid,
-                {
-                    'status'                       => 'Failed to start VM.',
-                    'run_date'                     => scalar localtime,
-                    'completion_date'              => scalar localtime,
-                    'cpu_utilization'              => 'd__0',
-                    'lines_of_code'                => 'i__0',
-                    'execute_node_architecture_id' => `uname -a`
-                }
-            );
-
-            $ret = 0;
-            last;
-        }
-
         my $rootref      = localGetDomainStatus($vmname);
         my $currentState = $rootref->{'domainstate'};
 
@@ -1082,6 +1062,25 @@ sub doWaitLoop {
             $log->info("Exiting loop because VM shutdown");
             $quitLoop = 1;
             $ret      = 1;
+            last;
+        }
+        if ( !checkDeadman() ) {
+            $quitLoop = 1;
+            $log->info("Exiting loop because of deadMan");
+
+            updateExecResultsAndEventlog(
+                $execrunid,
+                {
+                    'status'                       => 'Failed to start VM.',
+                    'run_date'                     => scalar localtime,
+                    'completion_date'              => scalar localtime,
+                    'cpu_utilization'              => 'd__0',
+                    'lines_of_code'                => 'i__0',
+                    'execute_node_architecture_id' => `uname -a`
+                }
+            );
+
+            $ret = 0;
             last;
         }
         sleep 5;
