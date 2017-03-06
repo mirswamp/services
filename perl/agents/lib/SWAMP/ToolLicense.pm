@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2016 Software Assurance Marketplace
+# Copyright 2012-2017 Software Assurance Marketplace
 
 package SWAMP::ToolLicense;
 
@@ -9,34 +9,37 @@ use 5.014;
 use utf8;
 use strict;
 use warnings;
-use parent qw(Exporter);
 use JSON qw(to_json from_json);
 use Log::Log4perl;
 use POSIX qw(strftime);
+use SWAMP::vmu_Support qw(
+	systemcall
+	getSwampConfig
+);
+use SWAMP::vmu_AssessmentSupport qw(
+	isParasoftTool
+	isGrammaTechTool
+	isRedLizardTool
+);
+use SWAMP::Libvirt qw(getVMIPAddress);
 
-use SWAMP::SWAMPUtils qw(systemcall getSwampConfig);
-use SWAMP::AssessmentTools qw(isParasoftTool isGrammaTechTool isRedLizardTool);
-
-BEGIN {
-    our $VERSION = '0.01';
-}
+use parent qw(Exporter);
 our (@EXPORT_OK);
-
 BEGIN {
     require Exporter;
     @EXPORT_OK = qw(
-		getVMIPAddr
 		openLicense
 		closeLicense
     );
 }
+
+my $log = Log::Log4perl->get_logger(q{});
 
 sub fetch_switches { my ($floodlight_url) = @_ ;
 	# Fetch the switch information
 	my $address = "$floodlight_url/wm/core/controller/switches/json";
 	my ($output, $status) = systemcall(qq{curl -q -s -X GET $address});
 	if ($status) {
-    	my $log = Log::Log4perl->get_logger(q{});
     	$log->error("Unable to acquire list of floodlight switches from $address: $status [$output]");
 		return $status;
 	}
@@ -49,7 +52,6 @@ sub fetch_flows { my ($floodlight_url) = @_ ;
     my $address = "$floodlight_url/wm/staticflowpusher/list/all/json";
     my ($output, $status) = systemcall(qq{curl -q -s -X GET $address});
 	if ($status) {
-    	my $log = Log::Log4perl->get_logger(q{});
     	$log->error("Unable to acquire list of floodlight flows from $address: $status [$output]");
 		return $status;
 	}
@@ -61,7 +63,6 @@ sub flow_off_by_rulename { my ($floodlight_url, $rulename) = @_ ;
 	my $address = "$floodlight_url/wm/staticflowpusher/json";
 	my ($output, $status) = systemcall(qq{curl -q -s -X DELETE -d '{"name":"$rulename"}' $address});
 	if ($status) {
-		my $log = Log::Log4perl->get_logger(q{});
 		$log->error("Unable to remove rule: $rulename from $address: $status [$output]");
 		return $status;
 	}
@@ -85,122 +86,32 @@ sub all_off { my ($floodlight_url, $floodlight_flowprefix) = @_ ;
     return $nRemoved;
 }
 
-sub getvmmacaddr { my ($vmname) = @_ ;
-	my ($vmmac, $status) = systemcall(qq{virsh dumpxml $vmname | grep 'mac address'});
+sub getvmmacaddr { my ($vmdomainname) = @_ ;
+	my ($vmmac, $status) = systemcall(qq{virsh dumpxml $vmdomainname | grep 'mac address'});
 	if ($status) {
-		my $log = Log::Log4perl->get_logger(q{});
-		$log->error("Unable to get MAC address of $vmname: $status [$vmmac]");
+		$log->error("Unable to get MAC address of $vmdomainname $status [$vmmac]");
 		return q{};
 	}
 	if ($vmmac =~ m/((?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})/isxm) {
 		$vmmac = $1;
 	}
-	my $log = Log::Log4perl->get_logger(q{});
-	$log->info("MAC address of $vmname [$vmmac]");
+	$log->info("MAC address of $vmdomainname [$vmmac]");
 	return $vmmac;
 }
 
-# returns 1 for success
-# returns 0 for not yet
-# returns -1 for error
-sub parsevmipaddr { my ($where, $vmname, $vmdomain, $nameserver) = @_ ;
-	my $vmip;
-	if ($where ne 'nslookup') {
-		my @lines = `cat $where`;
-		chomp @lines;
-		@lines = grep {/$vmname/sxm} @lines;
-		$vmip = $lines[0];
-		if ($vmip) {
-			$vmip = (split q{ }, $vmip)[2];
-		}
-		if ($vmip) {
-			return (1, $vmip);
-		}
-		return (0, q{});
-	}
-	else {
-		my $host = $vmname . q{.} . $vmdomain;
-		my ($output, $status) = systemcall(qq{nslookup -nosearch $host $nameserver});
-		if (! $status) {
-			if ($output =~ m/Address:\ ((?:\d{1,3}\.){3}\d{1,3})/sxm) {
-				$vmip = $1;
-				return (1, $vmip);
-			}
-			return (-1, $output);
-		}
-		else {
-			return (0, $output);
-		}
-	}
-}
-
-sub getvmipaddr { my ($vmname, $vmdomain, $nameserver, $vmleases) = @_ ;
-	my $log = Log::Log4perl->get_logger(q{});
-	my $vmip;
-	my $where = $vmleases;
-	if (! $where || ! -r $where) {
-		$where = 'nslookup';
-	}
-
-	# nslookup will never succeed on a SWAMP-on-a-Box
-	# act as if it timed out, which matches the behavior of previous releases
-	if ($where eq 'nslookup') {
-		my $config = getSwampConfig();
-		if ($config->get('SWAMP-in-a-Box') eq 'yes') {
-			$vmip = 'vm ip timeout';
-			return $vmip;
-		}
-	}
-
-	my $max_attempts = 15;
-	my $sleep_time = 7;
-	# sleep for at most sleep_time * (max_attempts - 1) on failure
-	my $start_time = time();
-	for my $attempt (1 .. $max_attempts) {
-		my ($status, $output) = parsevmipaddr($where, $vmname, $vmdomain, $nameserver);
-		my $end_time = time();
-		if (1 == $status) {
-			$log->info("IP address of $vmname [$output] derived from: $where after $attempt attempts - time: ", $end_time - $start_time);
-			$vmip = $output;
-			last;
-		}
-		elsif (-1 == $status) {
-			$log->info("IP address of $vmname [$output] not derived from: $where after $attempt attempts - time: ", $end_time - $start_time);
-			$vmip = 'vm ip corrupt';
-			last;
-		}
-		elsif ($attempt >= $max_attempts) {
-			$log->error("Unable to derive IP address of $vmname [$output] from: $where after $attempt attempts - time: ", $end_time - $start_time);
-			$vmip = 'vm ip timeout';
-			last;
-		}
-		sleep($sleep_time);
-	}
-	return $vmip;
-}
-
-sub trimaddr { my ($addr) = @_ ;
-	my $retval = $addr;
-	$addr =~ s/\://gsxm;
-	$addr =~ s/\.//gsxm;
-	$addr =~ s/\///gsxm;
-	return $addr;
-}
-
-sub build_rulename { my ($floodlight_flowprefix, $time, $vmname, $idx) = @_ ;
+sub build_rulename { my ($floodlight_flowprefix, $time, $vmhostname, $idx) = @_ ;
 	my $date = sprintf(strftime('%Y%m%d%H%M%S', localtime($time)));
 	my $rulename;
-	if ($vmname =~ m/(\d+)/sxm) {
-		$vmname = $1;
+	if ($vmhostname =~ m/(\d+)/sxm) {
+		$vmhostname = $1;
 	}
-	$rulename = "$floodlight_flowprefix-$vmname-$date-$idx";
+	$rulename = "$floodlight_flowprefix-$vmhostname-$date-$idx";
 	return $rulename;
 }
 
 sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
 	my $time = time();
-	my $log = Log::Log4perl->get_logger(q{});
-    my ($floodlight_flowprefix, $src_ip, $dst_ip, $port, $vmname) = @{$floodlight_params};
+    my ($floodlight_flowprefix, $src_ip, $dst_ip, $port, $vmhostname) = @{$floodlight_params};
 	my ($fstatus, $switches) = fetch_switches($floodlight_url);
 	return [] if ($fstatus);
 	my $idx = 1;    # Flows must have unique names, use a simple counter
@@ -209,7 +120,7 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
 	# Need a flow for each switch
 	foreach my $switch (@{$switches}) {
 		# Update flow rule for forward direction
-		my $rulename = build_rulename($floodlight_flowprefix, $time, $vmname, $idx);
+		my $rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx);
     	my %flow = (
         	"switch"     => $switch->{'switchDPID'},
         	"name"       => $rulename,
@@ -238,7 +149,7 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
     	# Update the flow rule for the reverse direction, allowing any port back
     	delete $flow{'tcp_dst'};
 		$flow{'tcp_src'} = $port;
-		$rulename = build_rulename($floodlight_flowprefix, $time, $vmname, $idx);
+		$rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx);
     	$flow{'name'} = $rulename;
         $flow{'ipv4_src'} = $dst_ip . '/32';
     	$flow{'ipv4_dst'} = $src_ip;
@@ -257,61 +168,54 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
 	return \@rulenames;
 }
 
-sub getVMIPAddr { my ($config, $vmname) = @_ ;
-	my $vmdomain = $config->get('vmdomain');
-	my $nameserver = $config->get('nameserver');
-	my $vmleases = $config->get('vmleases');
-	my $vmip = getvmipaddr($vmname, $vmdomain, $nameserver, $vmleases);
-	return $vmip;
-}
-
-sub openLicense { my ($config, $bogref, $vmname, $vmip) = @_ ;
-	if (SWAMP::AssessmentTools::isParasoftTool($bogref) ||
-		SWAMP::AssessmentTools::isGrammaTechTool($bogref) ||
-		SWAMP::AssessmentTools::isRedLizardTool($bogref)) {
-		my $log = Log::Log4perl->get_logger(q{});
+sub openLicense { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
+	if (isParasoftTool($bogref) ||
+		isGrammaTechTool($bogref) ||
+		isRedLizardTool($bogref)) {
 
         my $floodlight_url = $config->get('floodlight');
 
 		my ($license_flowprefix, $license_port, $license_serverip);
-		if (SWAMP::AssessmentTools::isParasoftTool($bogref)) {
+		if (isParasoftTool($bogref)) {
         	$license_flowprefix = $config->get('parasoft_flowprefix');
         	$license_port = int( $config->get('parasoft_port') );
         	$license_serverip = $config->get('parasoft_server_ip');
+			$log->info("open floodlight rule for Parasoft $license_serverip $license_port");
 		}
-		elsif (SWAMP::AssessmentTools::isGrammaTechTool($bogref)) {
+		elsif (isGrammaTechTool($bogref)) {
         	$license_flowprefix = $config->get('grammatech_flowprefix');
         	$license_port = int( $config->get('grammatech_port') );
         	$license_serverip = $config->get('grammatech_server_ip');
+			$log->info("open floodlight rule for GrammaTech $license_serverip $license_port");
 		}
-		elsif (SWAMP::AssessmentTools::isRedLizardTool($bogref)) {
+		elsif (isRedLizardTool($bogref)) {
         	$license_flowprefix = $config->get('redlizard_flowprefix');
         	$license_port = int( $config->get('redlizard_port') );
         	$license_serverip = $config->get('redlizard_server_ip');
+			$log->info("open floodlight rule for RedLizard $license_serverip $license_port");
 		}
 
 		$log->trace("Floodlight: $floodlight_url $license_flowprefix $license_port");
-		$log->trace("Parasoft Server IP: " . ($license_serverip || 'N/A'));
+		$log->trace("License Server IP: " . ($license_serverip || 'N/A'));
 
 		my $nameserver = $config->get('nameserver');
-		my $vmdomain = $config->get('vmdomain');
-		$log->trace("VM: $nameserver $vmdomain ");
+		my $vmnetdomain = $config->get('vmnetdomain');
+		$log->trace("VM: $nameserver $vmnetdomain ");
 
 		if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
 			# second chance to get vmip on previous error
-			my $vmleases = $config->get('vmleases');
-			$log->trace("VM leases: $vmleases ");
-			$vmip = getvmipaddr($vmname, $vmdomain, $nameserver, $vmleases);
+			$vmip = getVMIPAddress($config, $vmhostname);
 			if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-				$log->error("Unable to obtain vmip for $vmname using $nameserver $vmdomain - error: $vmip");
+				$log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
 				return (undef, $vmip);
 			}
-			$log->info("VMIP for $vmname: $vmip using $nameserver $vmdomain");
+			$log->info("VMIP for $vmhostname: $vmip");
 		}
 
-		my $floodlight_params = [$license_flowprefix, $vmip, $license_serverip, $license_port, $vmname];
+		my $floodlight_params = [$license_flowprefix, $vmip, $license_serverip, $license_port, $vmhostname];
 
 		my $rulenames = floodlight_flows_on($floodlight_url, $floodlight_params);
+		$log->info("added rule count: ", scalar(@{$rulenames}));
 		foreach my $rulename (@{$rulenames}) {
 			$log->trace("added rule: $rulename");
 		}
@@ -319,33 +223,30 @@ sub openLicense { my ($config, $bogref, $vmname, $vmip) = @_ ;
 	}
 	# second chance to get vmip on previous error - or pass through previous success
 	if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-		my $log = Log::Log4perl->get_logger(q{});
 		my $nameserver = $config->get('nameserver');
-		my $vmdomain = $config->get('vmdomain');
-		$log->trace("VM: $nameserver $vmdomain ");
+		my $vmnetdomain = $config->get('vmnetdomain');
+		$log->trace("VM: $nameserver $vmnetdomain ");
 
-		my $vmleases = $config->get('vmleases');
-		$log->trace("VM leases: $vmleases ");
-		$vmip = getvmipaddr($vmname, $vmdomain, $nameserver, $vmleases);
+		$vmip = getVMIPAddress($config, $vmhostname);
 		if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-			$log->error("Unable to obtain vmip for $vmname using $nameserver $vmdomain - error: $vmip");
+			$log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
 			return (undef, $vmip);
 		}
-		$log->info("VMIP for $vmname: $vmip using $nameserver $vmdomain");
+		$log->info("VMIP for $vmhostname: $vmip");
 	}
 	return (undef, $vmip);
 }
 
 sub closeLicense { my ($config, $bogref, $license_result) = @_ ;
-	if (SWAMP::AssessmentTools::isParasoftTool($bogref) ||
-		SWAMP::AssessmentTools::isGrammaTechTool($bogref) ||
-		SWAMP::AssessmentTools::isRedLizardTool($bogref)) {
+	if (isParasoftTool($bogref) ||
+		isGrammaTechTool($bogref) ||
+		isRedLizardTool($bogref)) {
         my $floodlight_url = $config->get('floodlight');
-		my $log = Log::Log4perl->get_logger(q{});
 		foreach my $rulename (@{$license_result}) {
 			flow_off_by_rulename($floodlight_url, $rulename);
 			$log->trace("removed rule: $rulename");
 		}
+		$log->info("removed rule count: ", scalar(@{$license_result}));
 	}
 	return ;
 }

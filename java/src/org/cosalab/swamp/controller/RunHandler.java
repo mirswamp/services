@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.controller;
 
@@ -54,7 +54,7 @@ public class RunHandler extends BaseCollectorHandler implements RunController
     @Override
     public HashMap<String, String> doRun(HashMap<String, String> args)
     {
-        LOG.info("doRun called");
+        LOG.info("request to doRun");
         HashMap<String, String> results = new HashMap<String, String>();
 
         if (args == null)
@@ -347,5 +347,6 @@ public class RunHandler extends BaseCollectorHandler implements RunController
         input.put("toolid", record.getToolUuid());
         input.put("packageid", record.getPackageUuid());
         input.put("projectid", record.getProjectUuid());
+        input.put("userid", record.getUserUuid());
     }
 }

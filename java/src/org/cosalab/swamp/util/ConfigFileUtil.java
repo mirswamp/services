@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -343,45 +343,6 @@ public final class ConfigFileUtil
     {
         String methodName = prop.getProperty(method,"");
         return methodName.trim();
-    }
-
-    /**
-     * Return the azolla URL from the swamp config properties
-     *
-     * @param prop  The swamp config properties
-     * @return  The URL as a String
-     */
-    public static String getAzollaURL(Properties prop)
-    {
-        String host = prop.getProperty("azollaHost","");
-        String port = getAzollaPort(prop);
-
-        return URL_PREFIX + host.trim() + URL_PORT_SEP + port + "/api/azolla.json";
-
-    }
-
-    /**
-     * Return the azolla port number from the swamp config properties
-     *
-     * @param prop  The swamp config properties
-     * @return  The port number as a String
-     */
-    public static String getAzollaPort(Properties prop)
-    {
-        String port = prop.getProperty("azollaPort","");
-        return port.trim();
-    }
-
-    /**
-     * Return the sonatype directory name from the swamp config properties
-     *
-     * @param prop  The swamp config properties
-     * @return  The name of th esonatype directory as a String
-     */
-    public static String getSonatypeDir(Properties prop)
-    {
-        String dir = prop.getProperty("sonatypeDir", "");
-        return dir.trim();
     }
 
     /**

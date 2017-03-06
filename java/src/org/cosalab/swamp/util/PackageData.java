@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -73,6 +73,8 @@ public class PackageData implements TaggedData
     private static final String LABEL_MAVEN_VERSION = "maven_version";
     /** Android maven plugin. */
     private static final String LABEL_ANDROID_MAVEN_PLUGIN = "android_maven_plugin";
+    /** Language field for web languages */
+    private static final String LABEL_LANGUAGE = "package_language";
 
     /** The name of the package. */
     private String packageName;
@@ -128,6 +130,9 @@ public class PackageData implements TaggedData
     private String mavenVersion;
     /** The android maven plugin. */
     private String androidMavenPlugin;
+    /** The language. */
+    private String langauge;
+
 
     /** The data tag for this object. */
     private String tag;
@@ -183,6 +188,9 @@ public class PackageData implements TaggedData
         // The maven version and other android stuff
         setMavenVersion(resultSet.getString(LABEL_MAVEN_VERSION));
         setAndroidMavenPlugin(resultSet.getString(LABEL_ANDROID_MAVEN_PLUGIN));
+
+        //The package language
+        setLangauge(resultSet.getString(LABEL_LANGUAGE));
 
         final File file = new File(path);
         setTag(file.getName());
@@ -758,7 +766,7 @@ public class PackageData implements TaggedData
     }
 
     /**
-     * Set the android maven plugin.
+     * Get the android maven plugin.
      *
      * @return  A string representing the android maven plugin.
      */
@@ -776,4 +784,26 @@ public class PackageData implements TaggedData
     {
         this.androidMavenPlugin = StringUtil.validateStringArgument(androidMavenPlugin);
     }
+
+    /**
+     * Return the package language(s).
+     *
+     * @return A string representing the langauge or space delimited list of languages
+     * for this package.
+     */
+    public String getLangauge()
+    {
+        return langauge;
+    }
+
+    /**
+     * Set the package langauge(s).
+     *
+     * @param langauge  The new package language string.
+     */
+    public void setLangauge(String langauge)
+    {
+        this.langauge = StringUtil.validateStringArgument(langauge);
+    }
+
 }

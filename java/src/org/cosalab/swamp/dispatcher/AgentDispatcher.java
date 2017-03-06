@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.dispatcher;
 
@@ -13,7 +13,6 @@ import org.apache.xmlrpc.webserver.WebServer;
 import org.cosalab.swamp.collector.ExecCollectorHandler;
 import org.cosalab.swamp.collector.ResultsCollectorHandler;
 import org.cosalab.swamp.controller.RunHandler;
-import org.cosalab.swamp.controller.SonatypeRunHandler;
 import org.cosalab.swamp.util.ConfigFileUtil;
 import org.cosalab.swamp.util.StringUtil;
 
@@ -32,8 +31,6 @@ public class AgentDispatcher
     /** Set up logging for this class. */
     private static final Logger LOG = Logger.getLogger(AgentDispatcher.class.getName());
 
-    /** Azolla web service URL. */
-    private static String azollaURL;
     /** URLs for the quartermaster and the agent monitor. */
     private static String quartermasterURL, monitorURL;
 
@@ -49,8 +46,8 @@ public class AgentDispatcher
     /** Command strings. */
     private static String serverCmdBOG, serverCmdStart, serverCmdStop, serverCmdCreateID;
 
-    /** Results paths for sonatype and normal runs. */
-    private static String sonatypeRootDir, resultsFolderRoot;
+    /** Results paths for normal runs. */
+    private static String resultsFolderRoot;
 
     /** The database URL. */
     private static String dbURL;
@@ -87,16 +84,6 @@ public class AgentDispatcher
     public static String getDbPasswd()
     {
         return dbPasswd;
-    }
-
-    /**
-     * Get the azolla URL (Sonatype project).
-     *
-     * @return  The URL.
-     */
-    public static String getAzollaURL()
-    {
-        return azollaURL;
     }
 
     /**
@@ -160,16 +147,6 @@ public class AgentDispatcher
     }
 
     /**
-     * Get the sonatype root directory (Sonatype project).
-     *
-     * @return  The sonatype root directory.
-     */
-    public static String getSonatypeRootDir()
-    {
-        return sonatypeRootDir;
-    }
-
-    /**
      * Get the root of the results folder.
      *
      * @return  The results folder root directory.
@@ -195,9 +172,6 @@ public class AgentDispatcher
             System.exit(0);
         }
 
-        // get the azolla URL
-        azollaURL = ConfigFileUtil.getAzollaURL(prop);
-
         // get the XML-RPC quartermaster URL
         quartermasterURL = ConfigFileUtil.getQuartermasterURL(prop);
 
@@ -208,7 +182,6 @@ public class AgentDispatcher
         serverCmdStop = ConfigFileUtil.getMethodString(CSAAGENT_STOP, prop);
         serverCmdCreateID = ConfigFileUtil.getMethodString(CREATEEXECID, prop);
 
-        sonatypeRootDir = ConfigFileUtil.getSonatypeDir(prop);
         resultsFolderRoot = ConfigFileUtil.getResultsFolder(prop);
 
         // get the database stuff
@@ -230,15 +203,13 @@ public class AgentDispatcher
             phm.addHandler("swamp.resultCollector", ResultsCollectorHandler.class);
             phm.addHandler("swamp.execCollector", ExecCollectorHandler.class);
             phm.addHandler("swamp.runController", RunHandler.class);
-            phm.addHandler("swamp.sonatypeRunController", SonatypeRunHandler.class);
             server.setHandlerMapping(phm);
 
             webServer.start();
             LOG.info("Started successfully.");
             LOG.info("Agent Dispatcher Java version: " + StringUtil.getJavaVersion());
             LOG.info("Accepting requests on port " + dispatchPort + ". (Halt program to stop.)");
-            LOG.info("Log4j configuration parameter: " +
-                             StringUtil.checkStringArgument(System.getProperty("log4j.configuration")));
+            
         }
         catch (XmlRpcException exception)
         {

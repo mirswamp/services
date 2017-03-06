@@ -4,7 +4,7 @@
     This file is subject to the terms and conditions defined in
     'LICENSE.txt', which is part of this source code distribution.
 
-    Copyright 2012-2016 Software Assurance Marketplace
+    Copyright 2012-2017 Software Assurance Marketplace
 -->
 
 <project name="swamp08" default="all">
@@ -125,7 +125,7 @@
   </path>
   
   <path id="library.mariadb-java-client.classpath">
-    <pathelement location="${basedir}/lib/mariadb-java-client-1.3.6.jar"/>
+    <pathelement location="${basedir}/lib/mariadb-java-client-1.4.6.jar"/>
   </path>
   
   <!-- Modules -->

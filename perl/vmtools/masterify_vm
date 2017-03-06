@@ -3,35 +3,41 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2016 Software Assurance Marketplace
+# Copyright 2012-2017 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
 use warnings;
 use strict;
-
 use sigtrap 'handler', \&trap_handler, 'normal-signals';
-
 use Getopt::Long qw/GetOptions/;
 use Pod::Usage qw/pod2usage/;
 use English qw(-no_match_vars);
 use Cwd 'abs_path';
 use Carp 'croak';
 
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use VMTools qw(
-checkEffectiveUser consoleMsg errorMsg extractOutput init logMsg pkgshutdown 
-startVM
-defineVM
-listMasters
-listVMs
-initProjectLog
-createImages
-createXML
-setvmprojectdir
-vmVNCDisplay
-vmExists
-vmState);
-
+	checkEffectiveUser 
+	consoleMsg 
+	errorMsg 
+	extractOutput 
+	init 
+	logMsg 
+	pkgshutdown 
+	startVM
+	defineVM
+	listMasters
+	listVMs
+	initProjectLog
+	createImages
+	createXML
+	setvmprojectdir
+	vmVNCDisplay
+	vmExists
+	vmState
+);
 use VMConstants;
 
 our $VERSION = '1.04';

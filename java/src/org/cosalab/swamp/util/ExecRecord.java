@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -40,6 +40,8 @@ public class ExecRecord implements TaggedData
     private static final String LABEL_NODE = "execute_node_architecture_id";
     /** Project uuid column label. */
     private static final String LABEL_PROJECT_ID = "project_uuid";
+    /** User uuid column label. */
+    private static final String LABEL_USER_ID = "user_uuid";
 
     /** Exec record uuid, platform uuid, tool uuid, package uuid. */
     private final String uuidExecRecord, uuidPlatform, uuidTool, uuidPackage;
@@ -49,6 +51,8 @@ public class ExecRecord implements TaggedData
     private String cpuUtilization, linesOfCode, executeNodeArchitectureID;
     /** Project uuid. */
     private String uuidProject;
+    /** User uuid. */
+    private String uuidUser;
     /** Data tag. */
     private String tag;
 
@@ -65,6 +69,7 @@ public class ExecRecord implements TaggedData
         uuidTool = resultSet.getString(LABEL_TOOL_ID);
         uuidPackage = resultSet.getString(LABEL_PACKAGE_ID);
         setProjectUuid(resultSet.getString(LABEL_PROJECT_ID));
+        setUserUuid(resultSet.getString(LABEL_USER_ID));
         setStatus(resultSet.getString(LABEL_STATUS));
         setRunDate(resultSet.getString(LABEL_RUN_DATE));
         setCompletionDate(resultSet.getString(LABEL_COMPLETION_DATE));
@@ -155,6 +160,26 @@ public class ExecRecord implements TaggedData
     public void setProjectUuid(final String id)
     {
         uuidProject = StringUtil.validateStringArgument(id);
+    }
+
+    /**
+     * Get the Swamp user uuid.
+     *
+     * @return  The user uuid.
+     */
+    public String getUserUuid()
+    {
+        return uuidUser;
+    }
+
+    /**
+     * Set the Swamp project uuid.
+     *
+     * @param id    The user uuid.
+     */
+    public void setUserUuid(final String id)
+    {
+        uuidUser = StringUtil.validateStringArgument(id);
     }
 
     /**

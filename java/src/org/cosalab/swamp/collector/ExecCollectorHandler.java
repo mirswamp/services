@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.collector;
 
@@ -121,35 +121,19 @@ public class ExecCollectorHandler extends BaseCollectorHandler implements ExecCo
             cpuUtil = Double.toString(cpu);
         }
 
-        String vmHostname = args.get("vm_hostname");
-        if (vmHostname == null)
-        {
-            vmHostname = "";
-        }
-
-        String vmUsername = args.get("vm_username");
-        if (vmUsername == null)
-        {
-            vmUsername = "";
-        }
-
-        String vmPassword = args.get("vm_password");
-        if (vmPassword == null)
-        {
-            vmPassword = "";
-        }
-
-        String vmIP = args.get("vmip");
-        if (vmIP == null)
-        {
-            vmIP = "";
-        }
+        String vmHostname   = StringUtil.checkStringForNull(args.get("vm_hostname"));
+        String vmUsername   = StringUtil.checkStringForNull(args.get("vm_username"));
+        String vmPassword   = StringUtil.checkStringForNull(args.get("vm_password"));
+        String vmIP         = StringUtil.checkStringForNull(args.get("vmip"));
+        String vmImage      = StringUtil.checkStringForNull(args.get("vm_image"));
+        String toolFilename = StringUtil.checkStringForNull(args.get("tool_filename"));
 
         try
         {
             boolean success = assessmentDB.updateExecutionRunStatus(execrunID, status, timeStart, timeEnd,
                                                                     execNode, loc, cpuUtil,
-                                                                    vmHostname, vmUsername, vmPassword, vmIP);
+                                                                    vmHostname, vmUsername, vmPassword, vmIP,
+                                                                    vmImage, toolFilename);
             if (!success)
             {
                 results.put(ERROR_KEY, "update failed");

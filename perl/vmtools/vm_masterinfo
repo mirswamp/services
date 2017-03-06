@@ -1,42 +1,39 @@
-#!/usr/bin/env perl 
+#!/usr/bin/env perl
 
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2016 Software Assurance Marketplace
-
-#** @file vm_masterinfo
-# 
-# @brief 
-# @author Dave Boulineau (db), dboulineau@continuousassurance.org
-# @date 09/23/2014 07:53:06
-#*
+# Copyright 2012-2017 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
 use warnings;
 use strict;
-use FindBin qw($Bin);
-use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
-
 use Getopt::Long qw/GetOptions/;
 use Pod::Usage qw/pod2usage/;
 use English '-no_match_vars';
 use Carp qw(carp croak);
 
+use FindBin;
+use lib "$FindBin::Bin/lib";
 use VMTools qw(
-consoleMsg errorMsg init logMsg pkgshutdown 
-inspectmaster
-startVM
-defineVM
-listMasters
-listVMs
-initProjectLog
-createImages
-createXML
-vmVNCDisplay
-vmExists
-vmState);
+	consoleMsg 
+	errorMsg 
+	init 
+	logMsg 
+	pkgshutdown 
+	inspectmaster
+	startVM
+	defineVM
+	listMasters
+	listVMs
+	initProjectLog
+	createImages
+	createXML
+	vmVNCDisplay
+	vmExists
+	vmState
+);
 use VMConstants;
 
 my $help = 0;

@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -58,16 +58,11 @@ public class ViewerStoreDBUtil extends DBUtil
             call.setString(3, checksum);
             call.registerOutParameter(4, Types.VARCHAR);
 
-            boolean update = call.execute();
-            if (update)
-            {
-                String flag = call.getString(4);
-                results = checkDatabaseResult(flag, "viewer_store.store_viewer: ");
-             }
-            else
-            {
-                LOG.error("problem executing the stored procedure: viewer_store.store_viewer" + idLabel);
-            }
+            // no result set is being returned, so we can use the executeUpdate() method.
+            call.executeUpdate();
+
+            String flag = call.getString(4);
+            results = checkDatabaseResult(flag, "viewer_store.store_viewer: ");
         }
         catch (SQLException e)
         {

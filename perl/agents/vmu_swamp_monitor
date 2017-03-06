@@ -1,0 +1,239 @@
+#!/usr/bin/env perl
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2017 Software Assurance Marketplace
+
+use 5.014;
+use utf8;
+use warnings;
+use strict;
+use Carp qw(croak);
+use Cwd qw(abs_path getcwd);
+use English '-no_match_vars';
+use File::Basename qw(basename);
+use File::Spec qw(devnull);
+use File::Spec::Functions;
+use Getopt::Long qw(GetOptions);
+use Log::Log4perl::Level;
+use Log::Log4perl;
+use POSIX qw(:sys_wait_h WNOHANG);    # for nonblocking read
+use POSIX qw(setsid waitpid);
+
+use FindBin qw($Bin);
+use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
+
+use SWAMP::vmu_Locking qw(swamplock);
+use SWAMP::vmu_Support qw(
+  	loadProperties
+  	getLoggingConfigString
+  	getSwampConfig
+  	start_process
+  	stop_process
+);
+
+if (! swamplock($PROGRAM_NAME)) {
+	exit 0;
+}
+
+use sigtrap 'handler', \&trap_handler, 'normal-signals';
+use sigtrap 'handler', \&hup_handler,  'HUP';
+
+my $debug   = 0;
+my $config;
+my $asdaemon = 0;
+my $startupdir = getcwd();
+my $basedir = abs_path("$FindBin::Bin/..");
+
+my @PRESERVEARGV = @ARGV;
+GetOptions(
+    'debug'      => \$debug,
+    'config|C=s' => \$config,
+    'daemon'     => \$asdaemon,
+);
+
+Log::Log4perl->init(getLoggingConfigString());
+my $log = Log::Log4perl->get_logger(q{});
+$log->level($debug ? $TRACE : $INFO);
+$log->remove_appender('Screen');
+
+if ($asdaemon) {
+   chdir(q{/});
+    if (! open(STDIN, '<', File::Spec->devnull)) {
+        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
+        exit;
+    }
+    if (! open(STDOUT, '>', File::Spec->devnull)) {
+        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
+        exit;
+    }
+    my $pid = fork();
+    if (! defined($pid)) {
+        $log->error("fork failed: $OS_ERROR");
+        exit;
+    }
+    if ($pid) {
+        # parent
+        exit(0);
+    }
+    # child
+    if (setsid() == -1) {
+    	$log->error("child - setsid failed: $OS_ERROR");
+        exit;
+    }
+    if (! open(STDERR, ">&STDOUT")) {
+        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
+        exit;
+    }
+}
+chdir($startupdir);
+
+#** @var %children a map of child process ids indexed by the same alias name used with `%processes`
+my %children;
+
+#** @var %process a map of process command lines indexed by an alias name. Taken from the config file.
+my %processes;
+my %maxRetries;
+my %maxFreq;
+my %startTime;
+
+local $SIG{'CHLD'} = sub {
+    # don't change $! and $? outside handler
+    local $OS_ERROR    = $OS_ERROR;
+    local $CHILD_ERROR = $CHILD_ERROR;
+    my $pid = 1;
+    while ( $pid > 0 ) {
+        $pid = waitpid( -1, WNOHANG );
+    }
+};
+
+sub hup_handler {
+    $log->info("HUP: reread config file");
+    reapChildren();
+    initMonitor();
+    initProcesses();
+    return;
+}
+
+sub trap_handler {
+    $log->info("Shutting down");
+    reapChildren();
+    $log->info("Done reaping");
+    croak "Caught signal @_, shutting down";
+}
+
+Log::Log4perl->get_logger('runtrace')->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+$log->info("$PROGRAM_NAME: config file: $config");
+
+initMonitor();
+
+initProcesses();
+
+my $done = 0;
+while (! $done) {
+    my $slept = sleep 60;
+    my $pid;
+    foreach my $child ( keys %children ) {
+        $pid = waitpid( $child, WNOHANG );
+        if ( $pid == -1 ) {
+            restart_child( $child, $CHILD_ERROR );
+        }
+    }
+}
+exit 0;
+
+sub reapChildren {
+    foreach my $child (keys %children) {
+        my $ret = stop_process($child);
+        $log->info("stopping [$child] $processes{$children{$child}} returned $ret");
+        delete $children{$child};
+    }
+    return;
+}
+
+sub initProcesses {
+    foreach my $proc (keys %processes) {
+        $processes{$proc} =~ s/SWAMPDIR/$basedir/sxm;
+        $processes{$proc} =~ s/WATCHERPID/--watcherpid $PID/sxm;
+        my $childID = launchProcess(\%processes, \%children, $proc);
+        $log->info("Started process $childID <$processes{$proc}>");
+    }
+    return;
+}
+
+sub initMonitor {
+    my %configFile;
+    if (loadProperties( $config, \%configFile ) <= 0) {
+        $log->info("No processes to watch. Exiting.");
+        exit 0;
+    }
+    undef %processes;
+    undef %maxRetries;
+    undef %maxFreq;
+
+    # Post process the config file mapping dotted subfields into distinct maps.
+    # Default values for retries = 5, frequency=30s
+    foreach my $key (keys %configFile) {
+        if ($key =~ /\.proc$/sxm) {
+            my $proc = $key;
+            $proc =~ s/\.proc$//sxm;
+            $processes{$proc} = $configFile{$key};
+            if (! defined($maxRetries{$proc})) {
+                $maxRetries{$proc} = 5;
+            }
+            if (! defined($maxFreq{$proc})) {
+                $maxFreq{$proc} = 30;
+            }
+        }
+        elsif ($key =~ /\.maxfreq$/sxm) {
+            my $proc = $key;
+            $proc =~ s/\.maxfreq$//sxm;
+            $maxFreq{$proc} = $configFile{$key};
+        }
+        elsif ($key =~ /\.maxretries$/sxm) {
+            my $proc = $key;
+            $proc =~ s/\.maxretries$//sxm;
+            $maxRetries{$proc} = $configFile{$key};
+        }
+    }
+    return;
+}
+
+#my $idx = 0;
+sub launchProcess { my ($procmap, $childmap, $key) = @_ ;
+    my $childID = start_process($procmap->{$key});
+    $startTime{$key} = time;
+    $childmap->{$childID} = $key;
+    return $childID;
+}
+
+sub restart_child { my ($pid, $err)  = @_ ;
+    my $proc = $children{$pid};
+    $log->info("$pid has died, <error:$err> restarting $proc [$processes{$proc}]");
+    delete $children{$pid};
+
+    # If the time since the last start of this process is less than the max startup frequency,
+    # count this as a retry and decrement retry count.
+    my $okToStart = 1;
+    if (abs(time - $startTime{$proc}) < $maxFreq{$proc}) {
+        if ($maxRetries{$proc} > 1) {
+            $maxRetries{$proc}--;
+        }
+        else {
+            $log->error("$pid has died too many times.");
+            $okToStart = 0;
+        }
+    }
+    if ($okToStart) {
+        my $childID = launchProcess(\%processes, \%children, $proc);
+        $log->info("$pid restarted as $childID $proc [$processes{$proc}]");
+    }
+    return;
+}
+
+sub logfilename {
+    ( my $name = $PROGRAM_NAME ) =~ s/\.pl//sxm;
+    $name = basename($name);
+    return catfile($basedir, 'log', $name . '.log');
+}

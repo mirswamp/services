@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -169,7 +169,7 @@ public class StringUtil
      * Validate a string that is to be used in a hash map. If the string is empty or null
      * the string "null" is returned, otherwise the original string is returned.
      *
-     * @param arg   The string to be validate.
+     * @param arg   The string to be validated.
      * @return      The validated string.
      */
     public static String validateStringArgument(String arg)
@@ -178,6 +178,28 @@ public class StringUtil
         if (arg == null || arg.isEmpty())
         {
             result = "null";
+        }
+        else
+        {
+            result = arg;
+        }
+
+        return result;
+    }
+
+    /**
+     * Check the string argument for null. If the argument is null, return an
+     * empty string; otherise resturn the string argument.
+     *
+     * @param arg   The string to be validated.
+     * @return      The validated string.
+     */
+    public static String checkStringForNull(String arg)
+    {
+        String result;
+        if (arg == null)
+        {
+            result = "";
         }
         else
         {
@@ -262,5 +284,30 @@ public class StringUtil
         String javaVersion = Runtime.class.getPackage().getImplementationVersion();
 
         return validateStringArgument(javaVersion);
+    }
+
+    /**
+     * Formats the error message for the case when a tool or package is rejected because the checksums don't match.
+     *
+     * @param header            String with the initial message, should specify whether it's a package or a tool.
+     * @param path              The path to the tool or package.
+     * @param dbChecksum        The checksum from the database.
+     * @param calcChecksum      The checksum that was computed by the quartermaster.
+     * @return                  The error message.
+     */
+    public static String formatChecksumErrorMsg(String header, String path, String dbChecksum, String calcChecksum)
+    {
+        StringBuilder buffer = new StringBuilder(header);
+        buffer.append('\n');
+        buffer.append("path: ");
+        buffer.append(path);
+        buffer.append('\n');
+        buffer.append("checksum (db): ");
+        buffer.append(dbChecksum);
+        buffer.append('\n');
+        buffer.append("checksum (calc): ");
+        buffer.append(calcChecksum);
+
+        return buffer.toString();
     }
 }

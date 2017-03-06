@@ -1,7 +1,7 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.util;
 
@@ -121,12 +121,15 @@ public class AssessmentDBUtil extends DBUtil
      * @param vmUser        VM user name.
      * @param vmPass        VM password.
      * @param vmIP          VM IP address.
+     * @param vmImage       VM image file name.
+     * @param toolFilename  file name of the tool used in this run.
      * @return              true if the db operation is successful; false otherwise.
      * @throws SQLException
      */
     public boolean updateExecutionRunStatus(String versionID, String status, String timeStart, String timeEnd,
                                             String execNode, int lines, String cpuUtil,
-                                            String vmHost, String vmUser, String vmPass, String vmIP)
+                                            String vmHost, String vmUser, String vmPass, String vmIP,
+                                            String vmImage, String toolFilename)
             throws SQLException
     {
         CallableStatement call = null;
@@ -134,7 +137,7 @@ public class AssessmentDBUtil extends DBUtil
 
         try
         {
-            call = connection.prepareCall("{call assessment.update_execution_run_status(?,?,?,?,?,?,?,?,?,?,?,?)}");
+            call = connection.prepareCall("{call assessment.update_execution_run_status(?,?,?,?,?,?,?,?,?,?,?,?,?,?)}");
             call.setString(1, versionID);
             call.setString(2, status);
             call.setString(3, timeStart);
@@ -146,11 +149,13 @@ public class AssessmentDBUtil extends DBUtil
             call.setString(9, vmUser);
             call.setString(10, vmPass);
             call.setString(11, vmIP);
-            call.registerOutParameter(12, Types.VARCHAR);
+            call.setString(12, vmImage);
+            call.setString(13, toolFilename);
+            call.registerOutParameter(14, Types.VARCHAR);
 
             int flag = call.executeUpdate();
 
-            result = call.getString(12);
+            result = call.getString(14);
             LOG.info("result = " + result + " flag = " + flag + idLabel);
         }
         catch (SQLException e)

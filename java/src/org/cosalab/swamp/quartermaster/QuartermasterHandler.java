@@ -1,11 +1,12 @@
 // This file is subject to the terms and conditions defined in
 // 'LICENSE.txt', which is part of this source code distribution.
 //
-// Copyright 2012-2016 Software Assurance Marketplace
+// Copyright 2012-2017 Software Assurance Marketplace
 
 package org.cosalab.swamp.quartermaster;
 
 import org.apache.log4j.Logger;
+import org.cosalab.swamp.util.BogUtil;
 import org.cosalab.swamp.util.CheckSumUtil;
 import org.cosalab.swamp.util.InvalidDBObjectException;
 import org.cosalab.swamp.util.PackageData;
@@ -84,7 +85,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         String viewerID = args.get(VIEWER_UUID_KEY);
         if (viewerID == null)
         {
-            results.put(ERROR_KEY, "no viewer UUID found");
+            BogUtil.writeErrorMsgInBOG("no viewer UUID found", results);
             return results;
         }
 
@@ -97,7 +98,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         String viewerPath = args.get("viewerdbpath");
         if (viewerPath == null)
         {
-            results.put(ERROR_KEY, "no viewer db path found");
+            BogUtil.writeErrorMsgInBOG("no viewer db path found", results);
             return results;
         }
 
@@ -122,7 +123,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         // let's set up the data base connection
         if(!initViewerStoreConnection(runDBTest))
         {
-            results.put(ERROR_KEY, "problem initializing database connection");
+            BogUtil.writeErrorMsgInBOG("problem initializing database connection", results);
             cleanup();
             return results;
         }
@@ -169,7 +170,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         String viewerID = args.get(VIEWER_UUID_KEY);
         if (viewerID == null)
         {
-            results.put(ERROR_KEY, "no viewer UUID found");
+            BogUtil.writeErrorMsgInBOG("no viewer UUID found", results);
             return results;
         }
 
@@ -182,7 +183,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         String viewerStatus = args.get("viewerstatus");
         if (viewerStatus == null)
         {
-            results.put(ERROR_KEY, "no viewer status found");
+            BogUtil.writeErrorMsgInBOG("no viewer status found", results);
             return results;
         }
         String viewerStatusCode = args.get("viewerstatuscode");
@@ -207,7 +208,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         // let's set up the data base connection
         if(!initViewerStoreConnection(runDBTest))
         {
-            results.put(ERROR_KEY, "problem initializing database connection");
+            BogUtil.writeErrorMsgInBOG("problem initializing database connection", results);
             cleanup();
             return results;
         }
@@ -252,12 +253,12 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         HashMap<String, String> bog = new HashMap<String, String>();
 
         // write the version to the BOG
-        writeVersionInBOG(bog);
+        BogUtil.writeVersionInBOG(bog);
         inTestMode = Boolean.parseBoolean(System.getProperty("testing"));
         String execRunID = args.get("execrunid");
         if (execRunID == null)
         {
-            bog.put(ERROR_KEY, "no execution run ID found");
+            BogUtil.writeErrorMsgInBOG("no execution run ID found", bog);
             return bog;
         }
 
@@ -267,8 +268,10 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         // we have a valid exec run ID, so we can set the ID label.
         setIDLabel(StringUtil.createLogExecIDString(execRunID));
 
-        // write the project id to the bog. Validation should have been done by the Agent Dispatcher.
+        // write the project id and the user id to the bog.
+        // Validation should have been done by the Agent Dispatcher.
         bog.put("projectid", args.get("projectid"));
+        bog.put("userid", args.get("userid"));
 
         // validate input parameters
         if(!checkQuartermasterInput(args, bog))
@@ -315,7 +318,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
 
     /**
      * Check the tool, platform and package uuids for problems before using them to
-     * retrieve information formt he database.
+     * retrieve information from the database.
      *
      * @param args      Hash map with the uuids.
      * @param bog       Bill of goods hash map.
@@ -378,7 +381,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
 
             // this is the platform - write it to the bog
             currentPlatformData = platformSet.get(0);
-            writePlatformInBOG(currentPlatformData, bog);
+            BogUtil.writePlatformInBOG(currentPlatformData, bog);
         }
         catch (SQLException e)
         {
@@ -424,14 +427,14 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
                 if (!checksum.equalsIgnoreCase(pack.getCheckSum()))
                 {
                     // check sums don't match
-                    String msg = formatChecksumErrorMsg("check sum error on package", pack.getPath(),
-                                                        pack.getCheckSum(), checksum);
+                    String msg = StringUtil.formatChecksumErrorMsg("check sum error on package", pack.getPath(),
+                                                                   pack.getCheckSum(), checksum);
                     handleError(bog, msg);
                     return false;
                 }
             }
             // write out the package info to the bog
-            writePackageInBOG(pack, bog);
+            BogUtil.writePackageInBOG(pack, bog);
             currentPackageData = pack;
 
             // now check for the package dependency list, this writes the list to the bog too.
@@ -485,7 +488,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         {
             String depends = packageStore.getDependencyList(pack.getVersionID(),
                                                             currentPlatformData.getVersionID());
-            writeDependencyListInBOG(StringUtil.validateStringArgument(depends), bog);
+            BogUtil.writeDependencyListInBOG(StringUtil.validateStringArgument(depends), bog);
             success = true;
         }
         catch (SQLException e)
@@ -548,14 +551,14 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
                 if (!checksum.equalsIgnoreCase(tool.getCheckSum()))
                 {
                     // check sums don't match
-                    String msg = formatChecksumErrorMsg("check sum error on tool!", tool.getPath(),
-                                                        tool.getCheckSum(), checksum);
+                    String msg = StringUtil.formatChecksumErrorMsg("check sum error on tool!", tool.getPath(),
+                                                                   tool.getCheckSum(), checksum);
                     handleError(bog, msg);
                     return false;
                 }
             }
             // write the tool info to the bog
-            writeToolInBOG(tool, bog);
+            BogUtil.writeToolInBOG(tool, bog);
             success = true;
         }
         catch (InvalidDBObjectException e)
@@ -578,31 +581,6 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
     }
 
     /**
-     * Formats the error message for the case when a tool or package is rejected because the checksums don't match.
-     *
-     * @param header            String with the initial message, should specify whether it's a package or a tool.
-     * @param path              The path to the tool or package.
-     * @param dbChecksum        The checksum from the database.
-     * @param calcChecksum      The checksum that was computed by the quartermaster.
-     * @return                  The error message.
-     */
-    private String formatChecksumErrorMsg(String header, String path, String dbChecksum, String calcChecksum)
-    {
-        StringBuilder buffer = new StringBuilder(header);
-        buffer.append('\n');
-        buffer.append("path: ");
-        buffer.append(path);
-        buffer.append('\n');
-        buffer.append("checksum (db): ");
-        buffer.append(dbChecksum);
-        buffer.append('\n');
-        buffer.append("checksum (calc): ");
-        buffer.append(calcChecksum);
-
-        return buffer.toString();
-    }
-
-    /**
      * Handle an error by logging it, writing it to the bill of goods and then closing the
      * database connections.
      *
@@ -612,7 +590,7 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
     private void handleError(HashMap<String, String> bog, String msg)
     {
         LOG.error(msg + idLabel);
-        bog.put(ERROR_KEY, msg);
+        BogUtil.writeErrorMsgInBOG(msg, bog);
         cleanup();
     }
 
@@ -684,88 +662,6 @@ public class QuartermasterHandler extends BaseQuartermasterHandler implements Qu
         }
 
         return true;
-    }
-
-    /**
-     * Write the tool information to the bill of goods.
-     *
-     * @param tool      Tool data object.
-     * @param bog       Bill of goods hash map.
-     */
-    private void writeToolInBOG(ToolData tool, HashMap<String, String> bog)
-    {
-        bog.put("toolname", tool.getToolName());
-        bog.put("toolpath", tool.getPath());
-        bog.put("toolarguments", tool.getToolArguments());
-        bog.put("toolexecutable", tool.getToolExecutable());
-        bog.put("tooldirectory", tool.getToolDirectory());
-        bog.put("tool-version", tool.getVersionName());
-        bog.put("buildneeded", String.valueOf(tool.isBuildNeeded()));
-    }
-
-    /**
-     * Write the package data to the bill of goods.
-     *
-     * @param packageData   Package data object.
-     * @param bog           Bill of goods hash map.
-     */
-    private void writePackageInBOG(PackageData packageData, HashMap<String, String> bog)
-    {
-        bog.put("packagename", packageData.getPackageName());
-        bog.put("packagebuild_target", packageData.getBuildTarget());
-        bog.put("packagebuild_system", packageData.getBuildSystem());
-        bog.put("packagebuild_dir", packageData.getBuildDir());
-        bog.put("packagebuild_opt", packageData.getBuildOpt());
-        bog.put("packagebuild_cmd", packageData.getBuildCmd());
-        bog.put("packageconfig_opt", packageData.getConfigOpt());
-        bog.put("packageconfig_dir", packageData.getConfigDir());
-        bog.put("packageconfig_cmd", packageData.getConfigCmd());
-        bog.put("packagepath", packageData.getPath());
-        bog.put("packagesourcepath", packageData.getSourcePath());
-        bog.put("packagebuild_file", packageData.getBuildFile());
-        bog.put("packagetype", packageData.getPackageType());
-        bog.put("packageclasspath", packageData.getClassPath());
-        bog.put("packageauxclasspath", packageData.getAuxClassPath());
-        bog.put("packagebytecodesourcepath", packageData.getByteCodeSourcePath());
-        bog.put("android_sdk_target", packageData.getAndroidSDKTarget());
-        bog.put("android_redo_build", String.valueOf(packageData.getAndroidRedoBuild()));
-        bog.put("use_gradle_wrapper", String.valueOf(packageData.getUseGradleWrapper()));
-        bog.put("android_lint_target", packageData.getAndroidLintTarget());
-        bog.put("language_version", packageData.getLanguageVersion());
-        bog.put("maven_version", packageData.getMavenVersion());
-        bog.put("android_maven_plugin", packageData.getAndroidMavenPlugin());
-    }
-
-    /**
-     * Write the platform data to the bill of goods.
-     *
-     * @param platform      Platform data object.
-     * @param bog           Bill of goods hash map.
-     */
-    private void writePlatformInBOG(PlatformData platform, HashMap<String, String> bog)
-    {
-        bog.put("platform", platform.getPlatformPath());
-    }
-
-    /**
-     * Write the version to the bill of goods. this may be handy as the system evolves.
-     *
-     * @param bog   Bill of goods hash map.
-     */
-    private void writeVersionInBOG(HashMap<String, String> bog)
-    {
-        bog.put("version", QuartermasterServer.getBOGVersion());
-    }
-
-    /**
-     * Write the dependency list to the bill of goods.
-     *
-     * @param dependencyList    The list of dependencies
-     * @param bog               The bill of goods hash map.
-     */
-    private void writeDependencyListInBOG(String dependencyList, HashMap<String, String> bog)
-    {
-        bog.put("packagedependencylist", dependencyList);
     }
 
     /**
