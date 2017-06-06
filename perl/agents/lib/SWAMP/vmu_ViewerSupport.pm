@@ -417,7 +417,7 @@ sub _configureQuarterMasterClient {
 #####################
 
 sub qmstoreviewer { my ($mapref)    = @_ ;
-    my $req = RPC::XML::request->new('swamp.quartermaster.storeViewerDatabase', RPC::XML::struct->new($mapref));
+    my $req = RPC::XML::request->new('swamp.viewer.storeViewerDatabase', RPC::XML::struct->new($mapref));
 	$quartermasterUri ||= _configureQuarterMasterClient();
 	$quartermasterClient ||= RPC::XML::Client->new($quartermasterUri);
     my $result = rpccall($quartermasterClient, $req);

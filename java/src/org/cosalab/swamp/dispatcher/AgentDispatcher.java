@@ -13,6 +13,7 @@ import org.apache.xmlrpc.webserver.WebServer;
 import org.cosalab.swamp.collector.ExecCollectorHandler;
 import org.cosalab.swamp.collector.ResultsCollectorHandler;
 import org.cosalab.swamp.controller.RunHandler;
+import org.cosalab.swamp.quartermaster.GatorHandler;
 import org.cosalab.swamp.util.ConfigFileUtil;
 import org.cosalab.swamp.util.StringUtil;
 
@@ -26,7 +27,8 @@ import java.util.Properties;
  * Date: 7/17/13
  * Time: 8:19 AM
  */
-public class AgentDispatcher
+public class
+AgentDispatcher
 {
     /** Set up logging for this class. */
     private static final Logger LOG = Logger.getLogger(AgentDispatcher.class.getName());
@@ -55,6 +57,12 @@ public class AgentDispatcher
     private static String dbUser;
     /** The database password. */
     private static String dbPasswd;
+
+    /** Flag for using a subordinate quartermaster to create the BOG. */
+    private static boolean useSubQuatermaster;
+
+    /** Flag for using the agent dispatcher for additonal handlers (Gator, ViewerOps). */
+    private static boolean useDispatcher;
 
     /**
      * Get the database URL.
@@ -157,6 +165,17 @@ public class AgentDispatcher
     }
 
     /**
+     * Get the flag for using a subordinate quartermater.
+     *
+     * @return  True if a subordinate quartermaster is to be used, false if
+     *          the BOG will be returned from the Quartermaster process on the data server.
+     */
+    public static boolean isUseSubQuatermaster()
+    {
+        return useSubQuatermaster;
+    }
+
+    /**
      * Launch the AgentDispatcher and register the handlers.
      *
      * @param args  The arguments are currently ignored.
@@ -189,6 +208,16 @@ public class AgentDispatcher
         dbUser = prop.getProperty("dbQuartermasterUser", "").trim();
         dbPasswd = prop.getProperty("dbQuartermasterPass", "").trim();
 
+        // quartermaster flag
+        useSubQuatermaster = Boolean.parseBoolean(prop.getProperty("subordinateQuartermaster",
+                                                                   "false").trim());
+
+        // use Disptacher flag
+        useDispatcher = Boolean.parseBoolean(prop.getProperty("useAgentDispatcherForAllHandlers",
+                                                              "false").trim());
+
+        GatorHandler.setUseDispatcher(useDispatcher);
+
         try
         {
             // get the XML-RPC server port
@@ -203,6 +232,10 @@ public class AgentDispatcher
             phm.addHandler("swamp.resultCollector", ResultsCollectorHandler.class);
             phm.addHandler("swamp.execCollector", ExecCollectorHandler.class);
             phm.addHandler("swamp.runController", RunHandler.class);
+            if (useDispatcher)
+            {
+                phm.addHandler("swamp.gator", GatorHandler.class);
+            }
             server.setHandlerMapping(phm);
 
             webServer.start();
@@ -219,5 +252,13 @@ public class AgentDispatcher
         {
             LOG.error("AgentDispatcher: " + exception.getMessage());
         }
+    }
+
+    /**
+     * Constructor.
+     */
+    private AgentDispatcher()
+    {
+        // nothing to do.
     }
 }

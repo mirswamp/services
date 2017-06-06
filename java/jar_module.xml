@@ -89,6 +89,9 @@
         <fileset dir="${java.output.dir}">
             <filename name="org/cosalab/swamp/util/**.*" />
         </fileset>
+        <fileset dir="${java.output.dir}">
+            <filename name="org/cosalab/swamp/quartermaster/**.*" />
+        </fileset>
         <manifest>
             <attribute name="Main-Class" value="${main-class-dispatcher}"/>
             <attribute name="Class-Path" value="${libs.project} ${current.dir}" />

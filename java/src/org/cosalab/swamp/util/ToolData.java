@@ -87,7 +87,7 @@ public class ToolData implements TaggedData
         setBuildNeeded(resultSet.getBoolean(LABEL_BUILD_NEEDED));
 
         File file = new File(path);
-        tag = file.getName();
+        setTag(file.getName());
     }
 
     /**

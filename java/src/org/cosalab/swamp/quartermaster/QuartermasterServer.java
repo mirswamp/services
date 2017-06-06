@@ -133,13 +133,21 @@ public class QuartermasterServer
         XmlRpcServer server =  webServer.getXmlRpcServer();
         PropertyHandlerMapping phm = new PropertyHandlerMapping();
         phm.addHandler("swamp.quartermaster", QuartermasterHandler.class);
+        phm.addHandler("swamp.viewer", ViewerHandler.class);
         phm.addHandler("swamp.gator", GatorHandler.class);
-        phm.addHandler("swamp.admin", AdminHandler.class);
         server.setHandlerMapping(phm);
 
         webServer.start();
         LOG.info("Started successfully.");
         LOG.info("Quartermaster Java version: " + StringUtil.getJavaVersion());
         LOG.info("Accepting requests on port " + serverPort + ". (Halt program to stop.)");
+    }
+
+    /**
+     * Constructor.
+     */
+    private QuartermasterServer()
+    {
+        // nothing to do.
     }
 }

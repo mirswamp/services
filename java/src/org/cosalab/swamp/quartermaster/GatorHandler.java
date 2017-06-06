@@ -25,12 +25,14 @@ public class GatorHandler extends BaseQuartermasterHandler implements Gator
     /** The gator database connection manager. */
     private final GatorDBUtil gatorDatabase;
 
+    private static boolean useDispatcher = false;
+
     /**
      * Constructor.
      */
     public GatorHandler()
     {
-        super();
+        super(useDispatcher);
         LOG.debug("*** Gator Handler is on the job ***");
 
         gatorDatabase = new GatorDBUtil(dbURL, dbUser, dbText);
@@ -164,6 +166,16 @@ public class GatorHandler extends BaseQuartermasterHandler implements Gator
     {
         super.setIDLabel(value);
         gatorDatabase.setIDLabel(idLabel);
+    }
+
+    /**
+     * Sets the use dispatcher flag.
+     *
+     * @param value     The new flag value.
+     */
+    public static void setUseDispatcher(boolean value)
+    {
+        useDispatcher = value;
     }
 
 }

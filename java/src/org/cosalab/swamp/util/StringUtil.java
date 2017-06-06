@@ -75,14 +75,14 @@ public class StringUtil
         {
             value = Integer.parseInt(sLast);
         }
-        catch (NullPointerException npe)
-        {
-            LOG.warn("decodeIntegerFromString: " + npe.getMessage());
-            value = 0;
-        }
         catch (NumberFormatException nfe)
         {
             LOG.warn("decodeIntegerFromString: " + nfe.getMessage());
+            value = 0;
+        }
+        catch (NullPointerException npe)
+        {
+            LOG.warn("decodeIntegerFromString: " + npe.getMessage());
             value = 0;
         }
 
@@ -125,14 +125,14 @@ public class StringUtil
         {
             value = Double.parseDouble(sLast);
         }
-        catch (NullPointerException npe)
-        {
-            LOG.warn("decodeDoubleFromString: " + npe.getMessage());
-            value = 0.0;
-        }
         catch (NumberFormatException nfe)
         {
             LOG.warn("decodeDoubleFromString: " + nfe.getMessage());
+            value = 0.0;
+        }
+        catch (NullPointerException npe)
+        {
+            LOG.warn("decodeDoubleFromString: " + npe.getMessage());
             value = 0.0;
         }
 
@@ -298,16 +298,21 @@ public class StringUtil
     public static String formatChecksumErrorMsg(String header, String path, String dbChecksum, String calcChecksum)
     {
         StringBuilder buffer = new StringBuilder(header);
-        buffer.append('\n');
-        buffer.append("path: ");
+        buffer.append("\npath: ");
         buffer.append(path);
-        buffer.append('\n');
-        buffer.append("checksum (db): ");
+        buffer.append("\nchecksum (db): ");
         buffer.append(dbChecksum);
-        buffer.append('\n');
-        buffer.append("checksum (calc): ");
+        buffer.append("\nchecksum (calc): ");
         buffer.append(calcChecksum);
 
         return buffer.toString();
+    }
+
+    /**
+     * Constructor.
+     */
+    private StringUtil()
+    {
+        // nothing to do
     }
 }

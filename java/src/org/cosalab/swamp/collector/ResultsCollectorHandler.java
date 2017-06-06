@@ -92,7 +92,7 @@ public class ResultsCollectorHandler extends BaseCollectorHandler implements Res
      * @return                  integer number of weaknesses. could be -1 if the input string
      *                          is bad, could be zero if there is a parsing error.
      */
-    int handleWeaknessCount(String weaknessCount)
+    protected int handleWeaknessCount(String weaknessCount)
     {
         int result;
         if (weaknessCount == null || weaknessCount.isEmpty()

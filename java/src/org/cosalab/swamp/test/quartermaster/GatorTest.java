@@ -33,6 +33,8 @@ public class GatorTest
     /** Command strings. */
     private static String cmdListTools, cmdListPackages, cmdListPlatforms;
 
+    private static boolean useDispatcher = true;
+
     /**
      * The gator test main method. This method controls the tests that will be run.
      *
@@ -50,19 +52,36 @@ public class GatorTest
             System.exit(0);
         }
 
-        // set up as a client of the quartermaster
+        // set up as a client of the quartermaster or agent dispatcher
         // get the XML-RPC controller URL
         String quartermasterURL = ConfigFileUtil.getQuartermasterURL(prop);
+        String dispatcherURL = ConfigFileUtil.getDispatcherURL(prop);
+        LOG.info("\t quartermaster URL: " + quartermasterURL);
+        LOG.info("\t dispatcher URL: " + dispatcherURL);
+
+        // method name translations.
         cmdListTools = ConfigFileUtil.getMethodString("method.GATOR_LISTTOOLS", prop);
         cmdListPackages = ConfigFileUtil.getMethodString("method.GATOR_LISTPACKAGES", prop);
         cmdListPlatforms = ConfigFileUtil.getMethodString("method.GATOR_LISTPLATFORMS", prop);
-//        cmdListPlatforms = "swamp.gator.listPlatforms";
+
+        String serverURL;
+        if (useDispatcher)
+        {
+            serverURL = dispatcherURL;
+            LOG.info("*** use Dispatcher ***");
+        }
+        else
+        {
+            serverURL = quartermasterURL;
+            LOG.info("*** use Quartermaster ***");
+        }
+
         XmlRpcClient client = null;
 
         try
         {
             XmlRpcClientConfigImpl config = new XmlRpcClientConfigImpl();
-            config.setServerURL(new URL(quartermasterURL));
+            config.setServerURL(new URL(serverURL));
             client = new XmlRpcClient();
             client.setConfig(config);
         }

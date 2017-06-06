@@ -12,6 +12,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Created with IntelliJ IDEA.
@@ -170,6 +172,119 @@ public class AssessmentDBUtil extends DBUtil
 
         return checkDatabaseResult(result, "assessment.update_execution_run_status: ");
     }
+
+    /**
+     * Sends an updated field of an assessment run to the database.
+     *
+     * @param execRunID     The exec run ID.
+     * @param field         The field to be modified.
+     * @param value         The new value of the field
+     * @return              true if the db operation is successful; false otherwise.
+     * @throws SQLException
+     */
+    public boolean updateExecutionRunStatusTestSingleField(String execRunID, String field, String value)
+            throws SQLException
+    {
+        CallableStatement call = null;
+        String result = "";
+        int flag;
+
+        LOG.info("--> field = " + field + " value = " + value);
+
+        try
+        {
+            LOG.info("connection valid? " + connection.isValid(1));
+            call = connection.prepareCall("{call assessment.update_execution_run_status_test(?,?,?,?)}");
+            if (call == null)
+            {
+                LOG.error("**** null callable statement ****");
+            }
+            call.setString(1, execRunID);
+            call.setString(2, field);
+            call.setString(3, value);
+            call.registerOutParameter(4, Types.VARCHAR);
+
+            flag = call.executeUpdate();
+
+            result = call.getString(4);
+            LOG.info("result = " + result + " flag = " + flag + idLabel);
+        }
+        catch (SQLException e)
+        {
+            LOG.error("SQLException in updateExecutionRunStatusTestSingleField(): " + e.getMessage() + idLabel);
+            throw e;
+        }
+        finally
+        {
+            LOG.info("updateExecutionRunStatusTestSingleField: closing statement");
+            closeStatement(call);
+        }
+
+        return checkDatabaseResult(result, "assessment.update_execution_run_status_test: ");
+    }
+
+    /**
+     * Sends an updated field of an assessment run to the database.
+     *
+     * @param execRunID     The exec run ID.
+     * @param list          The validated list of field, value pairs to be inserted in the record.
+     * @return              true if all of the db operations are successful; false otherwise.
+     * @throws SQLException
+     */
+    public boolean updateExecutionRunStatusMultiField(String execRunID, HashMap<String, String> list)
+            throws SQLException
+    {
+        CallableStatement call;
+        String result;
+        int flag;
+        boolean success = true;
+
+//        LOG.info(" database connection valid? " + connection.isValid(1));
+        call = connection.prepareCall("{call assessment.update_execution_run_status_test(?,?,?,?)}");
+        if (call == null)
+        {
+            LOG.error("**** null callable statement ****");
+            return false;
+        }
+
+        for (Map.Entry<String, String> entry : list.entrySet())
+        {
+            String field = entry.getKey();
+            String value = entry.getValue();
+
+            try
+            {
+                call.setString(1, execRunID);
+                call.setString(2, field);
+                call.setString(3, value);
+                call.registerOutParameter(4, Types.VARCHAR);
+
+                flag = call.executeUpdate();
+                result = call.getString(4);
+                
+                // success or failure of this run
+                boolean temp = checkDatabaseResult(result,"assessment.update_execution_run_status_test (field = " + field + "): ");
+                if (!temp)
+                {
+                    success = false;
+                }
+
+                LOG.info("(field = " + field + " value = " + value + ") result = " + result + " flag = " + flag + idLabel);
+            }
+            catch (SQLException e)
+            {
+                LOG.error("SQLException in updateExecutionRunStatusMultiField(): " + e.getMessage() + idLabel);
+                LOG.error("\t\t **** update failed for field: " + field + ", value: " + value + " ****");
+                success = false;
+            }
+        }
+
+        LOG.info("updateExecutionRunStatusMultiField: closing the statement");
+        closeStatement(call);
+
+        return success;
+    }
+
 
     /**
      * Send the assessment run results to the database.

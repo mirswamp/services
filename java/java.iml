@@ -1,12 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
-<!--
-    This file is subject to the terms and conditions defined in
-    'LICENSE.txt', which is part of this source code distribution.
-
-    Copyright 2012-2017 Software Assurance Marketplace
--->
-
 <module type="JAVA_MODULE" version="4">
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
@@ -27,7 +19,7 @@
       </library>
     </orderEntry>
     <orderEntry type="library" name="log4j-1.2.17p" level="project" />
-    <orderEntry type="library" name="guava-19.0" level="project" />
     <orderEntry type="library" name="mariadb-java-client-1.4.6" level="project" />
+    <orderEntry type="library" name="guava-21.0" level="project" />
   </component>
 </module>

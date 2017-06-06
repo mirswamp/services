@@ -30,9 +30,9 @@ public class AssessmentRunDatabaseTest
     private static final Logger LOG = Logger.getLogger(AssessmentRunDatabaseTest.class.getName());
 
     /** Test failed message. */
-    private static final String TEST_FAIL = "test failed";
+    private static final String TEST_FAIL = "*** test failed ***";
     /** Successful test message. */
-    private static final String TEST_PASS = "test succeeded";
+    private static final String TEST_PASS = "*** test succeeded ***";
     /** Error key for hash maps. */
     private static final String ERROR_KEY = "error";
     /** Run uuid key for hash maps. */
@@ -76,9 +76,9 @@ public class AssessmentRunDatabaseTest
             System.exit(0);
         }
 
-        String testid = "029834ee-2b56-11e3-9a3e-001a4a81450b";
-
-        if (testAssessmentRunDB(dispatchClient, testid))
+        String testid = "a01f8714-f391-11e6-bf70-001a4a81450b";
+/*
+        if (testDispatcherBog(dispatchClient, testid))
         {
             LOG.info(TEST_PASS);
         }
@@ -87,7 +87,29 @@ public class AssessmentRunDatabaseTest
             LOG.error(TEST_FAIL);
         }
 
+*/
+
+        testid = "TEST_EXEC_UUID";
+/*
         if (testExecCollectorDB(dispatchClient, testid))
+        {
+            LOG.info(TEST_PASS);
+        }
+        else
+        {
+            LOG.error(TEST_FAIL);
+        }
+*/
+        if (testExecCollectorSingleRecord(dispatchClient, testid))
+        {
+            LOG.info(TEST_PASS);
+        }
+        else
+        {
+            LOG.error(TEST_FAIL);
+        }
+
+        if (testExecCollectorFieldUpdate(dispatchClient, testid))
         {
             LOG.info(TEST_PASS);
         }
@@ -105,6 +127,7 @@ public class AssessmentRunDatabaseTest
             LOG.error(TEST_FAIL);
         }
 
+/*
         if (testResultCollectorDB(dispatchClient, testid))
         {
             LOG.info(TEST_PASS);
@@ -113,6 +136,7 @@ public class AssessmentRunDatabaseTest
         {
             LOG.error(TEST_FAIL);
         }
+        */
     }
 
     private static boolean testAssessmentRunDB(XmlRpcClient client, String runID)
@@ -142,6 +166,42 @@ public class AssessmentRunDatabaseTest
                 success = false;
             }
 
+        }
+        catch (XmlRpcException e)
+        {
+            LOG.error("could not send request to run controller: " + e.getMessage());
+        }
+
+        return success;
+    }
+
+
+    private static boolean testDispatcherBog(XmlRpcClient client, String runID)
+    {
+        boolean success = false;
+
+        HashMap<String, String> resultHash, requestMap;
+        ArrayList params;
+
+        try
+        {
+            requestMap = new HashMap<String, String>();
+            requestMap.put(RUN_ID_KEY, runID);
+            params = new ArrayList();
+            params.add(requestMap);
+            resultHash = (HashMap<String, String>)client.execute("swamp.runController.doBogTest", params);
+            logHashMap(resultHash, "dispather BOG test results");
+
+            if (runID.equalsIgnoreCase(resultHash.get(RUN_ID_KEY)))
+            {
+                success = true;
+            }
+
+            if (resultHash.containsKey(ERROR_KEY))
+            {
+                LOG.info(ERROR_FOUND_IN_RESULT_STRING + resultHash.get(ERROR_KEY));
+                success = false;
+            }
         }
         catch (XmlRpcException e)
         {
@@ -236,6 +296,69 @@ public class AssessmentRunDatabaseTest
         return success;
     }
 
+    private static boolean testExecCollectorFieldUpdate(XmlRpcClient client, String runID)
+    {
+        boolean success = false;
+
+        String status = "blort69";
+        String timeStart = "Thu Sep 19 12:42:07 2013";
+        String timeEnd = "Thu Sep 19 13:19:30 2013";
+        String execNode = "NODULE_KM";
+        int loc = 1485;
+        String cpuUtil = "d__98.6";
+        String timestamp = "__1379612605";
+        String vm_password = "mobyFoo";
+        String vm_hostname = "MIT-MC";
+        String vm_username = "Lar-the-Bear";
+        String tool_filename = "Screwdriver.exe";
+        String vm_image = "cheap-mirrorX";
+        String vm_ip_address = "127.0.0.2";
+
+        HashMap<String, String> resultHash, requestMap;
+        ArrayList params;
+
+        try
+        {
+            requestMap = new HashMap<String, String>();
+            requestMap.put(RUN_ID_KEY, runID);
+            requestMap.put("statusX", status);
+            requestMap.put("run_date", timeStart);
+            requestMap.put("completion_date", timeEnd);
+            requestMap.put("execute_node_architecture_id", execNode);
+            requestMap.put("lines_of_code", "__" + loc);
+            requestMap.put("cpu_utilization", cpuUtil);
+            requestMap.put("timestamp", timestamp);           // is this in the new query? is it still used?
+            requestMap.put("vm_password", vm_password);
+            requestMap.put("vm_hostname", vm_hostname);
+            requestMap.put("vm_username", vm_username);
+            requestMap.put("tool_filename", tool_filename);
+            requestMap.put("vmip", vm_ip_address);
+            requestMap.put("vm_image", vm_image);
+            params = new ArrayList();
+            params.add(requestMap);
+            resultHash = (HashMap<String, String>)client.execute("swamp.execCollector.updateExecutionResults", params);
+            logHashMap(resultHash, "exec collector updateExecutionResultsTest results");
+
+            if (runID.equalsIgnoreCase(resultHash.get(RUN_ID_KEY)))
+            {
+                success = true;
+            }
+
+            if (resultHash.containsKey(ERROR_KEY))
+            {
+                LOG.info(ERROR_FOUND_IN_RESULT_STRING + resultHash.get(ERROR_KEY));
+                success = false;
+            }
+
+        }
+        catch (XmlRpcException e)
+        {
+            LOG.error("could not send request to run controller: " + e.getMessage());
+        }
+
+        return success;
+    }
+
 
     private static boolean testResultCollectorDB(XmlRpcClient client, String runID)
     {
@@ -244,7 +367,7 @@ public class AssessmentRunDatabaseTest
         String resultPath = "/var/lib/mysql/test_result.result";
         String resultChecksum = "12345";
         String sourcePath = "/var/lib/mysql/test_source.archive";
-        String sourceChecksum = "23456";
+        String sourceChecksum = "23459";
         String logPath = "/var/lib/mysql/test_log.log";
         String logChecksum = "34567";
 

@@ -111,7 +111,7 @@
   <!-- Project Libraries -->
   
   <path id="library.guava.classpath">
-    <pathelement location="${basedir}/lib/guava-19.0.jar"/>
+    <pathelement location="${basedir}/lib/guava-21.0.jar"/>
   </path>
   
   <path id="library.apache-xmlrpc.classpath">

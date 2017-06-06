@@ -41,10 +41,9 @@ public class ExecCollectorHandler extends BaseCollectorHandler implements ExecCo
      * @param args      Hash map with the execution results to be sent to the database.
      * @return          Hash map with the results of the request.
      */
-    @Override
-    public HashMap<String, String> updateExecutionResults(HashMap<String, String> args)
+    public HashMap<String, String> updateExecutionResultsOldVersion(HashMap<String, String> args)
     {
-        LOG.info("request to updateExecutionResults");
+        LOG.info("request to updateExecutionResultsOldVersion");
         HashMap<String, String> results = new HashMap<String, String>();
 
         if (args == null)
@@ -63,6 +62,10 @@ public class ExecCollectorHandler extends BaseCollectorHandler implements ExecCo
         {
             results.put(ERROR_KEY, "bad assessment run ID");
             return results;
+        }
+        else
+        {
+            results.put("execrunid", execrunID);
         }
 
         // we have a valid exec run ID, so we can set the ID label.
@@ -190,7 +193,7 @@ public class ExecCollectorHandler extends BaseCollectorHandler implements ExecCo
             {
                 LOG.warn("assessment DB has retrieved more than one record" + idLabel);
             }
-            else if (recordSet.size() < 1)
+            else if (recordSet.isEmpty())
             {
                 String msg = "assessment DB could not find the requested record";
                 handleError(results, msg, LOG);
@@ -223,6 +226,157 @@ public class ExecCollectorHandler extends BaseCollectorHandler implements ExecCo
 
         // all done, let's return
         return results;
+    }
+
+    /**
+     * Handle the request to update the execution results.
+     *
+     * @param args      Hash map with the execution results to be sent to the database.
+     * @return          Hash map with the results of the request.
+     */
+    @Override
+    public HashMap<String, String> updateExecutionResults(HashMap<String, String> args)
+    {
+        LOG.info("request to updateExecutionResultsTest");
+        HashMap<String, String> results = new HashMap<String, String>();
+
+        if (args == null)
+        {
+            results.put(ERROR_KEY, "null argument");
+            return results;
+        }
+
+        for (Map.Entry<String, String> entry : args.entrySet())
+        {
+            LOG.info("\tKey = " + entry.getKey() + ", Value = " + entry.getValue());
+        }
+
+        String execrunID = args.get("execrunid");
+        if (execrunID == null || execrunID.isEmpty())
+        {
+            results.put(ERROR_KEY, "bad assessment run ID");
+            return results;
+        }
+        else
+        {
+            results.put("execrunid", execrunID);
+        }
+
+        // we have a valid exec run ID, so we can set the ID label.
+        setIDLabel(StringUtil.createLogExecIDString(execrunID));
+
+        // first, let's set up the data base connections
+        if(!initConnections(runDBTest))
+        {
+            results.put(ERROR_KEY, "problem initializing database connections");
+            cleanup();
+            return results;
+        }
+
+        // validate, reformat and/or decode the update arguments. this will
+        // also remove the exec run ID from the hash map because it can't be updated
+        HashMap<String, String> validatedArgs = createUpdateArgs(args);
+
+        try
+        {
+            // pass the validated arguments to the database engine. 
+            boolean success = assessmentDB.updateExecutionRunStatusMultiField(execrunID, validatedArgs);
+            if (!success)
+            {
+                results.put(ERROR_KEY, "update failed for at least one field. Check logs for futher info.");
+            }
+        }
+        catch (SQLException e)
+        {
+            String msg = "error updating exec run status: " + e.getMessage();
+            handleError(results, msg, LOG);
+        }
+
+        // ok, let's clean up and return
+        cleanup();
+        return results;
+    }
+
+    protected HashMap<String,String> createUpdateArgs(HashMap<String, String> args)
+    {
+        HashMap<String, String> validated = new HashMap<String, String>();
+
+        for (Map.Entry<String, String> entry : args.entrySet())
+        {
+//            LOG.debug("\tKey = " + entry.getKey() + ", Value = " + entry.getValue());
+            String field = entry.getKey();
+            String value = "null";
+            switch (entry.getKey())
+            {
+                case "execrunid" :
+                    // do not include the exec run ID in the validated arguments hash map
+                    continue;
+
+                case "run_date" :
+                case "completion_date" :
+                    // time and date conversions
+                    String tmpDate = args.get(field);
+                    try
+                    {
+                        value = StringUtil.convertDateString(tmpDate);
+                    }
+                    catch (ParseException e)
+                    {
+                        LOG.warn("problem converting date: " + tmpDate + idLabel);
+                    }
+                    break;
+
+                case "lines_of_code" :
+                    int loc = StringUtil.decodeIntegerFromString(entry.getValue());
+                    value = Integer.toString(loc);
+                    LOG.info("lines_of_code = " + value);
+                    break;
+
+                case "cpu_utilization" :
+                    String cpuUtil = entry.getValue();
+                    if (cpuUtil == null || cpuUtil.isEmpty())
+                    {
+                        value = "0";
+                    }
+                    else if (cpuUtil.charAt(0) == 'i' || cpuUtil.charAt(0) == '_')
+                    {
+                        int cpu = StringUtil.decodeIntegerFromString(cpuUtil);
+                        value = Integer.toString(cpu);
+                    }
+                    else if(cpuUtil.charAt(0) == 'd')
+                    {
+                        double cpu = StringUtil.decodeDoubleFromString(cpuUtil);
+                        value = Double.toString(cpu);
+                    }
+                    break;
+
+                case "vmip" :
+                    // need to translate the key in this case
+                    field = "vm_ip_address";
+                    // check for null value and replace with empty string
+                    value = StringUtil.checkStringForNull(entry.getValue());
+                    break;
+
+                case "vm_hostname" :
+                case "vm_username" :
+                case "vm_password" :
+                case "vm_image" :
+                case "tool_filename" :
+                    // check for null value and replace with empty string
+                    value = StringUtil.checkStringForNull(entry.getValue());
+                    break;
+
+                default :
+                    // everything else: check for null or empty string and set to "null"
+                    value = StringUtil.validateStringArgument(entry.getValue());
+            }
+
+//            LOG.debug("\tfield: " + field + ", value: " + value);
+            validated.put(field, value);
+
+        }
+
+        return validated;
     }
 
 }

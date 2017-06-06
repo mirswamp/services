@@ -17,12 +17,16 @@ use File::Copy qw(cp);
 use File::Path qw(make_path);
 use File::Spec qw(devnull);
 use File::Spec::Functions;
+use File::stat;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl::Level;
 use Log::Log4perl;
 use POSIX qw(setsid);
 use XML::LibXML;
 use XML::LibXSLT;
+use XML::DOM;
+#use HTML::Entities;
+use Time::localtime;
 
 use FindBin;
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
@@ -78,9 +82,17 @@ my $viewer_db_checksum;
 my $viewer_uuid;
 my @file_path;
 my $source_archive;
-my $tool_name;       # SWAMP Toolname
-my $package_name;    # SWAMP package affiliation == CodeDX project, ThreadFix application
 my $project_name;    # SWAMP project affiliation
+
+
+my $package_name;    # SWAMP package affiliation == CodeDX project, ThreadFix application
+my $package_version; # SWAMP package version
+my $tool_name;       # SWAMP Toolname
+my $tool_version;	 # SWAMP Tool Version
+my $platform_name;	 # SWAMP assessment platform name
+my $platform_version;# SWAMP assessment platform version
+my $start_date;		 # SWAMP project start date
+my $end_date;
 
 my $package_type = $GENERIC_PKG;    # Assume its some sort of source code.
 
@@ -94,18 +106,27 @@ GetOptions(
     'viewer_path=s'         => \$viewer_path,
     'viewer_checksum=s'     => \$viewer_checksum,
     'viewer_db_path=s'      => \$viewer_db_path,
-    'viewer_db_checksum=s'  => \$viewer_db_checksum,
+	'viewer_db_checksum=s'  => \$viewer_db_checksum,
     'viewer_uuid=s'         => \$viewer_uuid,
     'indir=s'               => \$inputdir,
     'file_path=s'           => \@file_path,
     'source_archive_path=s' => \$source_archive,
-    'tool_name=s'           => \$tool_name,
+    #'tool_name=s'           => \$tool_name,
     'outdir=s'              => \$outputdir,
     'package=s'             => \$package_name,
     'package_type=s'        => \$package_type,
     'project=s'             => \$project_name,
     'daemon!'               => \$asdaemon,
     'debug'                 => \$debug,
+	#Header info in NativeViewer
+	'package_name=s'		=> \$package_name,
+	'package_version=s'		=> \$package_version,
+	'tool_name=s'			=> \$tool_name,
+	'tool_version=s'		=> \$tool_version,
+	'platform_name=s'		=> \$platform_name,
+	'platform_version=s'	=> \$platform_version,
+	'start_date=s'			=> \$start_date,
+	'end_date=s'			=> \$end_date,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
@@ -161,7 +182,6 @@ else {
     $log->error("viewer '$viewer_name' not supported.");
     $exitCode = 1;
 }
-$log->info("");
 exit $exitCode;
 
 sub doViewerVM {
@@ -257,10 +277,49 @@ sub doViewerVM {
     return $retCode;
 }
 
+#print the vmu_launchviewr.pl command line arguments
+sub printPara {
+    $log->info("Start logging the variables...");
+    $log->info("$viewer_name");
+    $log->info("$invocation_cmd");
+    $log->info("$sign_in_cmd");
+    $log->info("$add_user_cmd");
+    $log->info("$add_result_cmd");
+    $log->info("$viewer_path");
+    $log->info("$viewer_checksum");
+    $log->info("$viewer_db_path");
+    $log->info("$viewer_db_checksum");
+    $log->info("$viewer_uuid");
+    $log->info("$inputdir");
+	$log->info("$outputdir");
+   	$log->info("File_path:");
+	foreach(@file_path){
+		$log->info("$_");
+	}
+    $log->info("$source_archive");
+    $log->info("$tool_name");
+    $log->info("$package_name");
+    $log->info("$project_name");
+    $log->info("$asdaemon");
+	$log->info("$debug");
+	$log->info("$package_name");
+	$log->info("$package_version");
+	$log->info("$tool_name");
+	$log->info("$tool_version");
+	$log->info("$platform_name");
+	$log->info("$platform_version");
+	$log->info("$start_date");
+	$log->info("$end_date");
+	$log->info("Ending...");
+    return;
+}
+
+
 # Native viewer needs to look at the report XML file found in $inputdir
 sub doNative {
 	my $config = getSwampConfig();
-    my $retCode = 0;
+    #my $r = printPara();
+	my $retCode = 0;
     foreach my $file (@file_path) {
         my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
         my $filetype = `file $file`;
@@ -275,7 +334,9 @@ sub doNative {
                 my $report = generatereport(catfile($outputdir, $htmlfile . $ext), $topdir);
 				my $savereport = catfile($outputdir, 'assessmentreport.html');
 				$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
-                savereport($report, $savereport, $config->get('reporturl'));
+                # save the header information and pass them into the saverepost()
+                my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date);
+				savereport($report, $savereport, $config->get('reporturl'),\@header);
                 system("/bin/chmod 644 $savereport");
                 print "assessmentreport.html\n";
             }
@@ -288,7 +349,7 @@ sub doNative {
         }
         my $isCommon = 1; # SCARF files 
         if ( system("head $file|grep -q '<AnalyzerReport'") != 0 ) {
-            $isCommon = 0;
+			$isCommon = 0;
         }
         my $xsltfile = getXSLTFile( $tool_name, $isCommon );
         $log->info("Transforming $tool_name $file with $xsltfile");
@@ -298,15 +359,47 @@ sub doNative {
 
         # Wrap this in an eval to catch any exceptions parsing output from the assessment.
         my $success = eval { $source = XML::LibXML->load_xml( 'location' => $file ); };
-        if ( defined($success) ) {
-            my $style_doc  = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 );
-            my $stylesheet = $xslt->parse_stylesheet($style_doc);
-            my $results    = $stylesheet->transform($source);
-            my $filename   = q{nativereport.html};
-            $log->info('Creating:', catfile($outputdir, $filename));
-            make_path($outputdir);
-            $stylesheet->output_file( $results, catfile($outputdir, $filename));
-            print "$filename\n";
+		
+		if ( defined($success) ) {
+            my $style_doc;  
+			# wrap the load style_doc in an eval to catch any exceptions
+			my $xslt_success = eval { $style_doc = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 ); };
+			if( defined($xslt_success)){
+				#save the elements to insert
+
+				#my $file_creation_time = ctime((stat($file))->mtime); 
+				addReportTime($source);
+
+				my $stylesheet = $xslt->parse_stylesheet($style_doc);
+				my $results    = $stylesheet->transform($source);
+				
+				# insert the header information into the HTML
+				my $fullResult = insertHTML($results);
+				
+				my $filename   = q{nativereport.html};
+	
+				$log->info('Creating:', catfile($outputdir, $filename));
+            	make_path($outputdir);
+            	
+				my $fullPath = catfile($outputdir, $filename);
+				my $fh;
+				# open the HTML file path
+				if ( !open $fh, '>', $fullPath ) {
+					return 0;
+				}
+				print $fh $fullResult;
+				close $fh;
+				
+				# Do not move this print statement
+				print "${filename}\n";
+				# Do not move this print statement
+				
+				$log->info("Writing HTML done...");	
+			}else{
+				$log->error("Loading $xsltfile threw an exception.");
+            	print "ERROR Cannot load $xsltfile as XML document\n";
+            	$retCode = 2;
+			}
         }
         else {
             $log->error("Loading $file threw an exception.");
@@ -315,6 +408,34 @@ sub doNative {
         }
     }
     return $retCode;
+}
+
+
+sub insertHTML {
+	my $original = shift;
+	#my $CompletionTime = shift;	
+
+	# split the HTML in the position where the NativeViewer Header will get included	
+	my $delimiter  = "<h1>Place_to_insert_NativeViewer_Headerinfo</h1>";
+	my @strs = split(/$delimiter/,$original );
+
+	my $FirstLineInfo = '<div class="row"><div class="col-sm-3"><h2>Package Name</h2><span>'. ($package_name).'</span></div><div class="col-sm-3"><h2>Tool Name</h2><span>'.($tool_name).'</span></div> <div class="col-sm-3"><h2>Platform Name</h2><span>'.($platform_name).'</span></div><div class="col-sm-3"><h2>Assessment Start Time</h2><span>'.($start_date).'</span></div></div>';
+
+	my $SecondLineInfo = '<div class="row"><div class="col-sm-3"><h2>Package Version</h2><span>'. ($package_version).'</span></div><div class="col-sm-3"><h2>Tool Version</h2><span>'.($tool_version).'</span></div> <div class="col-sm-3"><h2>Platform Version</h2><span>'.($platform_version).'</span></div><div class="col-sm-3"><h2>Assessment Complete Time</h2><span>'.($end_date).'</span></div></div>';
+	
+	return join "", $strs[0],$FirstLineInfo,$SecondLineInfo,$strs[1];
+}
+
+
+
+# add the report-generation-time element into the parsed_results.xml 
+sub addReportTime {
+	my $source = shift;
+	my $root = $source->getDocumentElement();
+	my $reportTime = $source->createElement("Report_Time");
+	my $localT = ctime();
+	$reportTime->appendText($localT);
+	$root->appendChild($reportTime);
 }
 
 sub getXSLTFile {
@@ -338,9 +459,11 @@ sub getXSLTFile {
         'gcc' => 'gcc',
 		'Dawn' => 'dawn',
 		'RevealDroid' => 'reveal',
+		'android' => 'androidlint',
+
 	);
     foreach my $key (keys %lookup) {
-        if ($tool =~ /$key/isxm) {
+		if ($tool =~ /$key/isxm) {
             $xsltfile = "$lookup{$key}${suffix}.xslt";
             last;
         }
@@ -348,6 +471,7 @@ sub getXSLTFile {
 	if (! $xsltfile) {
 		$xsltfile = 'generic_common.xslt';
 	}
+	$log->info('The style file used is ',$xsltfile);
     return File::Spec->catfile(getSwampDir(), 'etc', $xsltfile);
 }
 

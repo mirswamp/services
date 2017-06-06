@@ -10,6 +10,7 @@ import org.apache.xmlrpc.XmlRpcException;
 import org.apache.xmlrpc.client.XmlRpcClient;
 import org.cosalab.swamp.collector.BaseCollectorHandler;
 import org.cosalab.swamp.dispatcher.AgentDispatcher;
+import org.cosalab.swamp.quartermaster.QuartermasterHandler;
 import org.cosalab.swamp.util.ExecRecord;
 import org.cosalab.swamp.util.StringUtil;
 
@@ -55,7 +56,7 @@ public class RunHandler extends BaseCollectorHandler implements RunController
     public HashMap<String, String> doRun(HashMap<String, String> args)
     {
         LOG.info("request to doRun");
-        HashMap<String, String> results = new HashMap<String, String>();
+        HashMap<String, String> results = new HashMap<>();
 
         if (args == null)
         {
@@ -87,7 +88,7 @@ public class RunHandler extends BaseCollectorHandler implements RunController
             return results;
         }
 
-        HashMap<String, String> arguments = new HashMap<String, String>();
+        HashMap<String, String> arguments = new HashMap<>();
 
         // the arguments hash map contains the input for the quartermaster
         arguments.put(EXEC_RUN_KEY, execrunID);
@@ -104,17 +105,34 @@ public class RunHandler extends BaseCollectorHandler implements RunController
 
         try
         {
-            // behave as a client for the Quartermaster.
-            QuartermasterClient quarterClient = QuartermasterClient.getInstance();
-            XmlRpcClient clientQ = quarterClient.getClient();
-            if (clientQ == null)
+            HashMap<String, String> bog;
+            if (AgentDispatcher.isUseSubQuatermaster())
             {
-                String msg = "problem initializing the quartermaster client";
-                handleError(results, msg, LOG);
-                return results;
+                // create a quartermaster object and get the BOG locally
+                String dbURL = AgentDispatcher.getDbURL();
+                String dbUser = AgentDispatcher.getDbUser();
+                String dbText = AgentDispatcher.getDbPasswd();
+                LOG.info("creating a Quartermaster object");
+                QuartermasterHandler qMaster = new QuartermasterHandler(dbURL, dbUser, dbText);
+                LOG.info("getting the BOG");
+                bog = qMaster.getBillOfGoods(arguments);
+            }
+            else
+            {
+                // otherwise behave as a client for the Quartermaster process.
+                QuartermasterClient quarterClient = QuartermasterClient.getInstance();
+                XmlRpcClient clientQ = quarterClient.getClient();
+                if (clientQ == null)
+                {
+                    String msg = "problem initializing the quartermaster client";
+                    handleError(results, msg, LOG);
+                    return results;
+                }
+
+                bog = getBOG(arguments, clientQ);
             }
 
-            HashMap<String, String> bog = getBOG(arguments, clientQ);
+            // check the BOG for possible problems.
             if (bog == null)
             {
                 String msg = "quartermaster returned a null bog";
@@ -178,7 +196,7 @@ public class RunHandler extends BaseCollectorHandler implements RunController
             {
                 LOG.warn("assessment DB has retrieved more than one record" + idLabel);
             }
-            else if (recordSet.size() < 1)
+            else if (recordSet.isEmpty())
             {
                 String msg = "assessment DB has not retrieved the requested record";
                 handleError(results, msg, LOG);
@@ -281,7 +299,8 @@ public class RunHandler extends BaseCollectorHandler implements RunController
     public HashMap<String, String> doDatabaseTest(HashMap<String, String> args)
     {
         LOG.info("request to doDatabaseTest");
-        HashMap<String, String> bog = new HashMap<String, String>();
+
+        HashMap<String, String> bog = new HashMap<>();
 
         String execRunID = args.get(EXEC_RUN_KEY);
         if (execRunID == null)
@@ -289,6 +308,8 @@ public class RunHandler extends BaseCollectorHandler implements RunController
             bog.put(ERROR_KEY, "no execution run ID found");
             return bog;
         }
+
+        LOG.info("test exec run ID: " + execRunID);
 
         // first, let's set up the data base connections
         if(!initConnections(runDBTest))
@@ -309,7 +330,7 @@ public class RunHandler extends BaseCollectorHandler implements RunController
             {
                 LOG.warn("assessment DB has retrieved more than one record");
             }
-            else if (recordSet.size() < 1)
+            else if (recordSet.isEmpty())
             {
                 String msg = "assessment DB has not retrieved the requested record";
                 handleError(bog, msg, LOG);
@@ -334,11 +355,80 @@ public class RunHandler extends BaseCollectorHandler implements RunController
         return bog;
     }
 
+
+    /**
+     * Simple test method for an alternative method to retrieving the BOG.
+     *
+     * @param args      Hash map with arguments for the test.
+     * @return          Results hash map: the BOG.
+     */
+    public HashMap<String, String> doBogTest(HashMap<String, String> args)
+    {
+        LOG.info("request to doDatabaseTest");
+        LOG.info("AgentDispatcher flag = " + AgentDispatcher.isUseSubQuatermaster());
+
+        HashMap<String, String> results = new HashMap<>();
+
+        if (args == null)
+        {
+            results.put(ERROR_KEY, "null argument");
+            return results;
+        }
+
+        String execrunID = args.get(EXEC_RUN_KEY);
+        if (execrunID == null || execrunID.isEmpty())
+        {
+            results.put(ERROR_KEY, "bad assessment run ID");
+            return results;
+        }
+
+        // set the ID label.
+        setIDLabel(StringUtil.createLogExecIDString(execrunID));
+
+        // store the run ID in the results map for debugging purposes
+        results.put(EXEC_RUN_KEY, execrunID);
+
+        // we need to talk to the database to find the id's for the tool, package and platform
+        // for this assessment run.
+
+        // first, let's set up the data base connections
+        if(!initConnections(runDBTest))
+        {
+            results.put(ERROR_KEY, "problem initializing database connections");
+            cleanup();
+            return results;
+        }
+
+        HashMap<String, String> arguments = new HashMap<>();
+
+        // the arguments hash map contains the input for the quartermaster
+        arguments.put(EXEC_RUN_KEY, execrunID);
+
+        // let's grab the run information
+        if (!getQuartermasterArgs(results, execrunID, arguments))
+        {
+            cleanup();
+            return results;
+        }
+
+        // at this point we no longer need the assessment DB connection
+        cleanup();
+
+        // now we must create the quartermastr object and get the BOG.
+        String dbURL = AgentDispatcher.getDbURL();
+        String dbUser = AgentDispatcher.getDbUser();
+        String dbText = AgentDispatcher.getDbPasswd();
+        LOG.info("creating Quartermaster object");
+        QuartermasterHandler qMaster = new QuartermasterHandler(dbURL, dbUser, dbText);
+        LOG.info("get the BOG");
+        return qMaster.getBillOfGoods(arguments);
+    }
+
     /**
      * Prepare the input for a quartermaster get bill of goods query.
      *
      * @param record    The execution record data.
-     * @param input     The has hmap that will be sent to the quartermaster.
+     * @param input     The hash map that will be sent to the quartermaster.
      */
     private void prepareInputForQuartermaster(ExecRecord record, HashMap<String, String> input)
     {

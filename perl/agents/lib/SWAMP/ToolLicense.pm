@@ -17,6 +17,8 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 );
 use SWAMP::vmu_AssessmentSupport qw(
+	isSwampInABox
+	isLicensedTool
 	isParasoftTool
 	isGrammaTechTool
 	isRedLizardTool
@@ -169,86 +171,82 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
 }
 
 sub openLicense { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
-	if (isParasoftTool($bogref) ||
-		isGrammaTechTool($bogref) ||
-		isRedLizardTool($bogref)) {
+    if (!isSwampInABox($config) && isLicensedTool($bogref)) {
 
         my $floodlight_url = $config->get('floodlight');
 
-		my ($license_flowprefix, $license_port, $license_serverip);
-		if (isParasoftTool($bogref)) {
-        	$license_flowprefix = $config->get('parasoft_flowprefix');
-        	$license_port = int( $config->get('parasoft_port') );
-        	$license_serverip = $config->get('parasoft_server_ip');
-			$log->info("open floodlight rule for Parasoft $license_serverip $license_port");
-		}
-		elsif (isGrammaTechTool($bogref)) {
-        	$license_flowprefix = $config->get('grammatech_flowprefix');
-        	$license_port = int( $config->get('grammatech_port') );
-        	$license_serverip = $config->get('grammatech_server_ip');
-			$log->info("open floodlight rule for GrammaTech $license_serverip $license_port");
-		}
-		elsif (isRedLizardTool($bogref)) {
-        	$license_flowprefix = $config->get('redlizard_flowprefix');
-        	$license_port = int( $config->get('redlizard_port') );
-        	$license_serverip = $config->get('redlizard_server_ip');
-			$log->info("open floodlight rule for RedLizard $license_serverip $license_port");
-		}
+        my ($license_flowprefix, $license_port, $license_serverip);
+        if (isParasoftTool($bogref)) {
+            $license_flowprefix = $config->get('parasoft_flowprefix');
+            $license_port = int( $config->get('parasoft_port') );
+            $license_serverip = $config->get('parasoft_server_ip');
+            $log->info("open floodlight rule for Parasoft $license_serverip $license_port");
+        }
+        elsif (isGrammaTechTool($bogref)) {
+            $license_flowprefix = $config->get('grammatech_flowprefix');
+            $license_port = int( $config->get('grammatech_port') );
+            $license_serverip = $config->get('grammatech_server_ip');
+            $log->info("open floodlight rule for GrammaTech $license_serverip $license_port");
+        }
+        elsif (isRedLizardTool($bogref)) {
+            $license_flowprefix = $config->get('redlizard_flowprefix');
+            $license_port = int( $config->get('redlizard_port') );
+            $license_serverip = $config->get('redlizard_server_ip');
+            $log->info("open floodlight rule for RedLizard $license_serverip $license_port");
+        }
 
-		$log->trace("Floodlight: $floodlight_url $license_flowprefix $license_port");
-		$log->trace("License Server IP: " . ($license_serverip || 'N/A'));
+        $log->trace("Floodlight: $floodlight_url $license_flowprefix $license_port");
+        $log->trace("License Server IP: " . ($license_serverip || 'N/A'));
 
-		my $nameserver = $config->get('nameserver');
-		my $vmnetdomain = $config->get('vmnetdomain');
-		$log->trace("VM: $nameserver $vmnetdomain ");
+        my $nameserver = $config->get('nameserver');
+        my $vmnetdomain = $config->get('vmnetdomain');
+        $log->trace("VM: $nameserver $vmnetdomain ");
 
-		if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-			# second chance to get vmip on previous error
-			$vmip = getVMIPAddress($config, $vmhostname);
-			if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-				$log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
-				return (undef, $vmip);
-			}
-			$log->info("VMIP for $vmhostname: $vmip");
-		}
+        if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
+            # second chance to get vmip on previous error
+            $vmip = getVMIPAddress($config, $vmhostname);
+            if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
+                $log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
+                return (undef, $vmip);
+            }
+            $log->info("VMIP for $vmhostname: $vmip");
+        }
 
-		my $floodlight_params = [$license_flowprefix, $vmip, $license_serverip, $license_port, $vmhostname];
+        my $floodlight_params = [$license_flowprefix, $vmip, $license_serverip, $license_port, $vmhostname];
 
-		my $rulenames = floodlight_flows_on($floodlight_url, $floodlight_params);
-		$log->info("added rule count: ", scalar(@{$rulenames}));
-		foreach my $rulename (@{$rulenames}) {
-			$log->trace("added rule: $rulename");
-		}
-		return ($rulenames, $vmip);
-	}
-	# second chance to get vmip on previous error - or pass through previous success
-	if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-		my $nameserver = $config->get('nameserver');
-		my $vmnetdomain = $config->get('vmnetdomain');
-		$log->trace("VM: $nameserver $vmnetdomain ");
+        my $rulenames = floodlight_flows_on($floodlight_url, $floodlight_params);
+        $log->info("added rule count: ", scalar(@{$rulenames}));
+        foreach my $rulename (@{$rulenames}) {
+            $log->trace("added rule: $rulename");
+        }
+        return ($rulenames, $vmip);
+    }
+    # second chance to get vmip on previous error - or pass through previous success
+    if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
+        my $nameserver = $config->get('nameserver');
+        my $vmnetdomain = $config->get('vmnetdomain');
+        $log->trace("VM: $nameserver $vmnetdomain ");
 
-		$vmip = getVMIPAddress($config, $vmhostname);
-		if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-			$log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
-			return (undef, $vmip);
-		}
-		$log->info("VMIP for $vmhostname: $vmip");
-	}
-	return (undef, $vmip);
+        $vmip = getVMIPAddress($config, $vmhostname);
+        if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
+            $log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
+            return (undef, $vmip);
+        }
+        $log->info("VMIP for $vmhostname: $vmip");
+    }
+    return (undef, $vmip);
 }
 
 sub closeLicense { my ($config, $bogref, $license_result) = @_ ;
-	if (isParasoftTool($bogref) ||
-		isGrammaTechTool($bogref) ||
-		isRedLizardTool($bogref)) {
+    if (!isSwampInABox($config) && isLicensedTool($bogref)) {
         my $floodlight_url = $config->get('floodlight');
-		foreach my $rulename (@{$license_result}) {
-			flow_off_by_rulename($floodlight_url, $rulename);
-			$log->trace("removed rule: $rulename");
-		}
-		$log->info("removed rule count: ", scalar(@{$license_result}));
-	}
-	return ;
+        foreach my $rulename (@{$license_result}) {
+            flow_off_by_rulename($floodlight_url, $rulename);
+            $log->trace("removed rule: $rulename");
+        }
+        $log->info("removed rule count: ", scalar(@{$license_result}));
+    }
+    return ;
 }
 
 1;

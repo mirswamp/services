@@ -64,6 +64,8 @@ BEGIN {
       updateExecutionResults
       copyAssessmentInputs
       createAssessmentConfigs
+      isSwampInABox
+      isLicensedTool
       isRubyTool
       isFlake8Tool
       isBanditTool
@@ -543,6 +545,21 @@ sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
         }
     }
     return 1;
+}
+
+sub isSwampInABox { my ($config) = @_ ;
+    if ($config->exists('SWAMP-in-a-Box')) {
+        if ($config->get('SWAMP-in-a-Box') =~ /yes/sxmi) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+sub isLicensedTool { my ($bogref) = @_ ;
+    return (isParasoftTool($bogref) ||
+            isGrammaTechTool($bogref) ||
+            isRedLizardTool($bogref));
 }
 
 sub isRubyTool { my ($bogref) = @_ ;

@@ -102,11 +102,12 @@ sub ReadStatusOut { my ($lines) = @_ ;
 	while ($lineNum < scalar(@$lines)) {
 		my $line = $lines->[$lineNum];
 		# optional fields
-		my ($shortMsg, $msg, $dur, $durUnit);
+		
+        my ($shortMsg, $msg, $dur, $durUnit);
 		if ($line =~ m/^[A-Z]+\:/) {
 			($status, my $rest) = split '\:', $line, 2;
 			($name, $rest) = split ' ', $rest, 2;
-			if ($rest && ($rest =~ m/^\(.*\)/)) {
+            if ($rest && ($rest =~ m/^\(.*\)/)) {
 				($shortMsg, $rest) = split '\)', $rest, 2;
 				$shortMsg =~ s/^\(//;
 			}
@@ -155,9 +156,11 @@ sub ReadStatusOut { my ($lines) = @_ ;
 
 sub generatereport { my ($tarball, $topdir) = @_ ;
     my ($statusOut, $status) = loadStatusOut($tarball, $topdir);
+    
     my %report;
 	$report{'statusOut'} = $statusOut;
     $report{'tarball'} = basename $tarball;
+    $report{'accessmentTime'} = loadTimeOut($tarball, $topdir);
     if ($status) {
 		# Add case statement here to include other report files based on specific error conditions
 		#
@@ -190,18 +193,27 @@ sub generatereport { my ($tarball, $topdir) = @_ ;
 }
 
 sub savereport {
-    my ( $report, $filename, $url ) = @_;
-    my $fh;
+    my ( $report, $filename, $url, $header) = @_;
+    my @headerlist = @{$header};
+	my $fh;
     my $uuid = dirname ($filename);
     $uuid =~ s/^.*\///sxm;
     if ( !open $fh, '>', $filename ) {
         return 0;
     }
+	
     print $fh qq{<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">\n};
 
     print $fh "<HTML><HEAD><TITLE>Failed Assessment Report</TITLE></HEAD>\n";
     print $fh "<BODY>\n";
-    print $fh "<H2>Failed Assessment Report</H2>";
+    print $fh '<H1><div class="icon"><i class="fa fa-bug"></i></div>Failed Assessment Report</H1>';
+	print $fh '<ol class="breadcrumb"><li><a href="#home"><i class="fa fa-home"></i>Home</a></li><li><i class="fa fa-info"></i>About</li></ol>';
+
+	print $fh '<div class="row"><div class="col-sm-3"><h2>Package Name</h2><span>'. ($headerlist[0]).'</span></div><div class="col-sm-3"><h2>Tool Name</h2><span>'.($headerlist[1]).'</span></div> <div class="col-sm-3"><h2>Platform Name</h2><span>'.($headerlist[2]).'</span></div><div class="col-sm-3"><h2>Assessment Start Time</h2><span>'.($headerlist[3]).'</span></div></div>';
+
+	print $fh '<div class="row"><div class="col-sm-3"><h2>Package Version</h2><span>'. ($headerlist[4]).'</span></div><div class="col-sm-3"><h2>Tool Version</h2><span>'.($headerlist[5]).'</span></div> <div class="col-sm-3"><h2>Platform Version</h2><span>'.($headerlist[6]).'</span></div><div class="col-sm-3"><h2>Assessment Complete Time</h2><span>'.($headerlist[7]).'</span></div></div>';
+	
+	print $fh "<hr>";	
 
     if ( $report->{'no-build'} ) {
         print $fh "<li><a href=#nobuild>Error messages from no-build step</a></li>\n";
@@ -222,35 +234,37 @@ sub savereport {
     print $fh "<p>";
 
 	if ($report->{'statusOut'}) {
-        print $fh "<h3><a id=\"statusOut\">Contents of assessment status.out</a></h3>\n";
+        print $fh "<hr><H2><a id=\"statusOut\">Contents of assessment status.out</a></H2>\n";
         print $fh "<pre>$report->{'statusOut'}</pre>\n";
 	}
     if ($report->{'no-build'}) {
         print $fh "$report->{'no-build'}\n";
     }
     if ( $report->{'error'} ) {
-        print $fh "<h3><a id=\"error\">Error messages from assessment</a></h3>\n";
+        print $fh "<hr><H2><a id=\"error\">Error messages from assessment</a></H2>\n";
         print $fh "<pre>$report->{'error'}</pre>\n";
     }
     if ( $report->{'stdout'} ) {
-        print $fh "<hr><h3><a id=\"stdout\">Standard out</a></h3>\n";
+        print $fh "<hr><H2><a id=\"stdout\">Standard out</a></H2>\n";
         print $fh "<pre>$report->{'stdout'}</pre>\n";
     }
     if ( $report->{'stderr'} ) {
-        print $fh "<hr><h3><a id=\"stderr\">Standard error</a></h3>\n";
+        print $fh "<hr><H2><a id=\"stderr\">Standard error</a></H2>\n";
         print $fh "<pre>$report->{'stderr'}</pre>\n";
     }
     if ($report->{'versions'}) {
-        print $fh "<hr><h3><a id=\"versions\">Version information</a></h3>\n";
+        print $fh "<hr><H2><a id=\"versions\">Version information</a></H2>\n";
         my @versions =split(/\n/sxm, $report->{'versions'});
-        print $fh "<pre><TABLE><TR><TH align=left>Component</TH><TH align=left>Version</TH>\n";
-        foreach (@versions) {
+        #print $fh "<pre><TABLE><TR><TH align=left>Component</TH><TH align=left>Version</TH>\n";
+    	    
+        print $fh '<table><thead><tr><th><i class="fa fa-cog"></i><span> Component</span></th><th><i class="fa fa-code-fork"></i><span> Version</span></th></tr></thead><tbody>';
+		foreach (@versions) {
             my ($component,$version)=split(/:/sxm);
-            print $fh "<TR><TD>$component</TD><TD>$version</TD>\n";
+            print $fh "<tr><td>$component</td><td>$version</td></tr>\n";
         }
-        print $fh "</TABLE></pre>\n";
+        print $fh "</tbody></TABLE>\n";
     }
-    print $fh "<h5><pre>Report generated: ",scalar localtime,"</pre></h5>\n";
+    print $fh "<hr><pre>Report generated: ",scalar localtime,"</pre>\n";
     print $fh "</BODY>\n";
     print $fh "</HTML>\n";
     if (!close $fh) {
@@ -269,6 +283,21 @@ sub loadStatusOut { my ($tarball, $topdir) = @_ ;
     return;
 }
 
+#load the accessment time from the swamp_run.out file in the outputdisk.tar.gz
+sub loadTimeOut{my ($tarball, $topdir) = @_ ;
+    my $swampOut = rawTar($tarball, qq{$topdir/swamp_run.out});
+    my $lines = [split "\n", $swampOut];
+    my $lineNum = 0;
+    while ($lineNum < scalar(@$lines)) {
+        my $currline = $lines->[$lineNum];
+        if($currline eq "========================== date"){
+            return $lines->[$lineNum + 1];
+        }
+        $lineNum = $lineNum + 1;
+    }
+    return;
+}
+
 sub addErrorNote { my ($s) = @_;
     my $note;
     if ( !@{ $s->{'#errors'} } && !@{ $s->{'#warnings'} } ) {
@@ -281,7 +310,7 @@ sub addErrorNote { my ($s) = @_;
             my $errorString;
             $note = "(errors: $errCnt, warnings: $warnCnt)\n";
             $errorString .=
-              '<TABLE><TR><TH align=left>Failing Step</TH><TH align=left>Error Message</TH></TR>';
+              '<TABLE><thead><TR><TH><i class="fa fa-exclamation-triangle"></i><span> Failing Step</span></TH><TH><i class="fa fa-commenting-o"></i><span> Error Message</span></TH></TR></thead><tbody>';
             foreach my $t ( @{ $s->{'#order'} } ) {
                 my $status   = $t->{'status'};
                 my $taskName = $t->{'task'};
@@ -295,7 +324,7 @@ sub addErrorNote { my ($s) = @_;
                     }
                 }
             }
-            $errorString .= '</TABLE>';
+            $errorString .= '</tbody></TABLE>';
             $note = $errorString;
         }
     }

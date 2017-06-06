@@ -66,7 +66,9 @@ public class QuartermasterTest
         // get the XML-RPC controller URL
         String quartermasterURL = ConfigFileUtil.getQuartermasterURL(prop);
         serverCmdBOG = ConfigFileUtil.getMethodString("method.QUARTERMASTER_BILLOFGOODS", prop);
+        LOG.info("bill of goods command = " + serverCmdBOG);
         serverCmdViewerUpdate = ConfigFileUtil.getMethodString("method.QUARTERMASTER_UPDATEVIEWER", prop);
+        LOG.info("update view command = " + serverCmdViewerUpdate);
         XmlRpcClient client = null;
 
         try
@@ -189,7 +191,7 @@ public class QuartermasterTest
         {
             requestMap = new HashMap<String, String>();
             requestMap.put("vieweruuid", "6606b99e-cb01-11e3-8775-001a4a81450b");
-            requestMap.put("viewerstatus", "blatz");
+            requestMap.put("viewerstatus", "blort-blort");
 //            requestMap.put("vieweraddress", "127.0.0.1");
             requestMap.put("viewerproxyurl", "null");
             params = new ArrayList();
