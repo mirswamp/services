@@ -14,16 +14,27 @@ use Log::Log4perl;
 use Archive::Tar;
 use File::Basename qw(basename);
 use File::Copy qw(move cp);
+use POSIX qw(strftime);
+use JSON qw(from_json);
 
 use SWAMP::vmu_Support qw(
     trim
     systemcall
     getSwampDir
     getSwampConfig
-    getLoggingConfigString
-    loadProperties
     saveProperties
-    rpccall
+	checksumFile
+	launchPadStart
+	database_connect
+	database_disconnect
+	displaynameToMastername
+	masternameToPlatform
+	$LAUNCHPAD_SUCCESS
+	$LAUNCHPAD_BOG_ERROR
+	$LAUNCHPAD_FILESYSTEM_ERROR
+	$LAUNCHPAD_CHECKSUM_ERROR
+	$LAUNCHPAD_FORK_ERROR
+	$LAUNCHPAD_FATAL_ERROR
 );
 use SWAMP::vmu_PackageTypes qw(
     $C_CPP_PKG_STRING
@@ -64,8 +75,8 @@ BEGIN {
       updateExecutionResults
       copyAssessmentInputs
       createAssessmentConfigs
-      isSwampInABox
       isLicensedTool
+	  isSonatypeTool
       isRubyTool
       isFlake8Tool
       isBanditTool
@@ -78,6 +89,8 @@ BEGIN {
       isGrammaTechTool
       isRedLizardG
       isRedLizardTool
+	  isSynopsysC
+	  isSynopsysTool
       isJavaTool
       isJavaBytecodePackage
       isJavaPackage
@@ -91,6 +104,7 @@ BEGIN {
 
 my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
+my $tracelog = Log::Log4perl->get_logger('runtrace');
 
 sub _randoString {
     return join q{}, @_ [ map { rand @_ } 1 .. shift ] ;
@@ -112,187 +126,231 @@ sub identifyAssessment { my ($bogref) = @_ ;
     $log->info("Platform: $bogref->{'platform'}");
 }
 
-#####################
-#   AgentClient     #
-#####################
+my $bogtranslator = {
+	'platforms'	=> {
+		'platform_path'		=> 'platform',
+	},
+	'tools'		=> {
+		'tool_name'			=> 'toolname',
+		'tool_path'			=> 'toolpath',
+		'version_string'	=> 'tool-version',
+	},
+	'packages'	=> {
+		'package_name' 		=> 'packagename', 			
+		'build_target' 		=> 'packagebuild_target',		
+		'build_system' 		=> 'packagebuild_system',		
+		'build_dir' 		=> 'packagebuild_dir',		
+		'build_opt' 		=> 'packagebuild_opt',		
+		'build_cmd' 		=> 'packagebuild_cmd',		
+		'config_opt' 		=> 'packageconfig_opt',		
+		'config_dir' 		=> 'packageconfig_dir',		
+		'config_cmd' 		=> 'packageconfig_cmd',		
+		'package_path' 		=> 'packagepath',			
+		'source_path' 		=> 'packagesourcepath',		
+		'build_file' 		=> 'packagebuild_file',		
+		'package_type' 		=> 'packagetype',			
+		'bytecode_class_path'		=> 'packageclasspath',		
+		'bytecode_aux_class_path'	=> 'packageauxclasspath',		
+		'bytecode_source_path'		=> 'packagebytecodesourcepath',	
+		'android_sdk_target'		=> 'android_sdk_target', 		
+		'android_redo_build'		=> 'android_redo_build', 		# boolean converted to string
+		'use_gradle_wrapper'		=> 'use_gradle_wrapper', 		# boolean converted to string
+		'android_lint_target'		=> 'android_lint_target',		
+		'language_version'	=> 'language_version', 		
+		'maven_version'		=> 'maven_version', 			
+		'android_maven_plugin'		=> 'android_maven_plugin', 		
+		'package_language'	=> 'package_language', 		
+	},
+};
 
-my $agentUri;
-my $agentClient;
-
-sub _configureAgentClient {
-    $global_swamp_config ||= getSwampConfig();
-    my $host = $global_swamp_config->get('agentMonitorHost');
-    my $port = $global_swamp_config->get('agentMonitorJobPort');
-    my $uri = "http://$host:$port";
-    undef $agentClient;
-    return $uri;
+sub _translateToBOG { my ($merge, $title, $hashref, $keepnulls) = @_ ;
+	foreach my $key (keys %$hashref) {
+		if (exists($bogtranslator->{$title}->{$key})) {
+			my $newkey = $bogtranslator->{$title}->{$key};
+			if (defined($hashref->{$key})) {
+				my $value = $hashref->{$key};
+				if ($key eq 'IsBuildNeeded' || $key eq 'android_redo_build' || $key eq 'use_gradle_wrapper') {
+					$value = 'false' if ($value eq 0);
+					$value = 'true' if ($value eq 1);
+				}
+				$merge->{$newkey} = $value;
+			}
+			elsif ($keepnulls) {
+				$merge->{$newkey} = 'null';
+			}
+		}
+	}
 }
 
-# UNUSED
-sub updateAssessmentStatus { my ($execrunid, $status) = @_ ;
-    $agentUri ||= _configureAgentClient();
-    $agentClient ||= RPC::XML::Client->new($agentUri);
-    my $req = RPC::XML::request->new('agentMonitor.updateAssessmentStatus',
-        RPC::XML::string->new($execrunid),
-        RPC::XML::string->new($status)
-    );
-    my $result = rpccall($agentClient, $req);
-    if ($result->{'error'}) {
-        $log->error("updateAssessmentStatus - error: $result->{'error'}");
-        return 0;
-    }
-    return 1;
+sub _computeBOG { my ($execrunuid) = @_ ;
+	my ($tool_path, $package_path);
+	my ($tool_version_checksum, $package_version_checksum);
+    my $dbh = database_connect();
+	my $bog_query_result;
+    if ($dbh) {
+        my $query = q{SELECT * FROM assessment.exec_run_view WHERE execution_record_uuid = ?};
+        my $sth = $dbh->prepare($query);
+        $sth->bind_param(1, $execrunuid);
+        $sth->execute();
+        if ($sth->err) {
+            $log->error("select assessment.exec_run_view - execute error: ", $sth->errstr);
+        }
+        else {
+            $bog_query_result = $sth->fetchrow_hashref();
+			if ($sth->err) {
+            	$log->error("select assessment.exec_run_view - fetch error: ", $sth->errstr);
+				$bog_query_result = undef;
+			}
+        }
+        $sth->finish();
+        database_disconnect($dbh);
+	}
+	else {
+		$log->error("_computeBOG - database connection failed");
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+	if (! $bog_query_result) {
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+
+	# verify tool_path and tool_version_checksum
+	$tool_path = $bog_query_result->{'tool_path'};
+	$tool_version_checksum = $bog_query_result->{'tool_checksum'};
+	if ($tool_path && $tool_version_checksum) {
+		if (! -r $tool_path) {
+			$log->error("$tool_path not readable");
+			return $LAUNCHPAD_FILESYSTEM_ERROR;
+		}
+		elsif ((my $checksum = checksumFile($tool_path)) ne $tool_version_checksum) {
+			$log->error("checksum mismatch for: $tool_path found: $checksum - expected: $tool_version_checksum");
+			return $LAUNCHPAD_CHECKSUM_ERROR;
+		}
+	}
+	else {
+		$log->error("no tool_path or no tool_version_checksum");
+		$log->error('tool_path: ', $tool_path || '', ' tool_version_checksum: ', $tool_version_checksum || '');
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+
+	# veryify package_path and package_version_checksum
+	$package_path = $bog_query_result->{'package_path'};
+	$package_version_checksum = $bog_query_result->{'pkg_checksum'};
+	if ($package_path && $package_version_checksum) {
+		if (! -r $package_path) {
+			$log->error("$package_path not readable");
+			return $LAUNCHPAD_FILESYSTEM_ERROR;
+		}
+		elsif ((my $checksum = checksumFile($package_path)) ne $package_version_checksum) {
+			$log->error("checksum mismatch for: $package_path found: $checksum - expected: $package_version_checksum");
+			return $LAUNCHPAD_CHECKSUM_ERROR;
+		}
+	}
+	else {
+		$log->error("no package_path or no package_version_checksum");
+		$log->error('package_path: ', $package_path || '', ' package_version_checksum: ', $package_version_checksum || '');
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+
+	# compute final bog
+	my $bog = {};
+
+	# compute package dependency list
+	$bog->{'packagedependencylist'} = $bog_query_result->{'dependency_list'};
+	
+	# job and user information
+	$bog->{'execrunid'} = $execrunuid;
+	$bog->{'projectid'} = $bog_query_result->{'project_uuid'};
+	$bog->{'userid'} = $bog_query_result->{'user_uuid'};
+	$bog->{'user_cnf'} = $bog_query_result->{'user_cnf'};
+	
+	# Other bog entries - not from the database
+	$bog->{'version'} = '2';
+	my $config = getSwampConfig();
+	my $results_folder = $config->get('resultsFolder');
+	$bog->{'resultsfolder'} = $results_folder;
+	if (! -d $results_folder) {
+		$log->error("no results folder");
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+	
+	# translate database keywords to framework keywords
+	_translateToBOG($bog, 'platforms', $bog_query_result, 1);
+	_translateToBOG($bog, 'tools', $bog_query_result, 1);
+	_translateToBOG($bog, 'packages', $bog_query_result, 1);
+	
+	# translate database platform value to framework platform value
+	if (! $bog->{'platform'}) {
+		$log->error("no platform in database record");
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+	my $qcow = displaynameToMastername($bog->{'platform'});
+	if (! $qcow) {
+		$log->error("no qcow file for ", $bog->{'platform'});
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+	my $platform = masternameToPlatform($qcow);
+	if (! $platform) {
+		$log->error("no platform component in $qcow for ", $bog->{'platform'});
+		return $LAUNCHPAD_BOG_ERROR;
+	}
+	$bog->{'platform'} = $platform;
+	
+    return $bog;
 }
-
-#########################
-#   DispatcherClient    #
-#########################
-
-my $dispatcherUri;
-my $dispatcherClient;
-
-sub _configureDispatcherClient {
-    $global_swamp_config ||= getSwampConfig();
-    my $host = $global_swamp_config->get('dispatcherHost');
-    my $port = $global_swamp_config->get('dispatcherPort');
-    my $uri = "http://$host:$port";
-    undef $dispatcherClient;
-    return $uri;
-}
-
-#####################
-#   RunController   #
-#####################
-
+    
 sub doRun { my ($execrunuid) = @_ ;
-    $log->debug("doRun called with execrunuid: $execrunuid");
-    my $options = {'execrunid' => $execrunuid};
-    my $req = RPC::XML::request->new('swamp.runController.doRun', RPC::XML::struct->new($options));
-    $dispatcherUri ||= _configureDispatcherClient();
-    $dispatcherClient ||= RPC::XML::Client->new($dispatcherUri);
-    my $result = rpccall($dispatcherClient, $req);
-    if ($result->{'error'}) {
-        $log->error("doRun with $execrunuid error: $result->{'error'}");
-        return 0;
-    }
-    return 1;
-}
-
-#############################
-#   ExecuteRecordCollector  #
-#############################
-
-sub _getSingleExecutionRecord { my ($execrunid) = @_ ;
-    my %map;
-    $map{'execrunid'} = $execrunid;
-    my $req = RPC::XML::request->new('swamp.execCollector.getSingleExecutionRecord', RPC::XML::struct->new(\%map));
-    $dispatcherUri ||= _configureDispatcherClient();
-    $dispatcherClient ||= RPC::XML::Client->new($dispatcherUri);
-    my $result = rpccall($dispatcherClient, $req);
-    # Convert date strings back to epoch times
-    if (! $result->{'error'}) {
-        $result = $result->{'value'};
-        # Patch up the record if necessary so that it can be sent back thru updateExecutionResults.
-        if (defined($result->{'run_date'})) {
-            if ($result->{'run_date'} ne 'null') {
-                $result->{'run_date'} = scalar localtime str2time($result->{'run_date'});
-            }
-            else {
-                delete $result->{'run_date'};
-            }
-        }
-        if (defined($result->{'lines_of_code'})) {
-            if ($result->{'lines_of_code'} eq 'null') {
-                $result->{'lines_of_code'} = 'i__0';
-            }
-            else {
-                $result->{'lines_of_code'} = "i__$result->{'lines_of_code'}";
-            }
-        }
-        if (defined($result->{'execute_node_architecture_id'})) {
-            if ($result->{'execute_node_architecture_id'} eq 'null') {
-                $result->{'execute_node_architecture_id'} = 'unknown';
-            }
-        }
-        if (defined($result->{'cpu_utilization'})) {
-            if ($result->{'cpu_utilization'} eq 'null') {
-                $result->{'cpu_utilization'} = 'd__0';
-            }
-            else {
-                $result->{'cpu_utilization'} = "d__$result->{'cpu_utilization'}";
-            }
-        }
-        if (defined($result->{'completion_date'})) {
-            if ($result->{'completion_date'} ne 'null') {
-                # Ignore 0 and negative numbers
-                my $timeVal = str2time($result->{'completion_date'});
-                if ($timeVal > 1) {
-                    $result->{'completion_date'} = scalar localtime $timeVal;
-                }
-                else {
-                    delete $result->{'completion_date'};
-                }
-            }
-            else {
-                delete $result->{'completion_date'};
-            }
-        }
-    }
-    return $result;
+    $tracelog->trace("doRun called with execrunuid: $execrunuid");
+    my $options = _computeBOG($execrunuid);
+	# options is either a hash reference to the BOG
+	# or and enumeration of a LAUNCHPAD_*_ERROR
+	if (ref $options) {
+    	$tracelog->trace("doRun - _computeBOG returned bog - calling launchPadStart");
+		my $retval = launchPadStart($options);
+    	$tracelog->trace("doRun - launchPadStart returned: $retval");
+    	return $retval;
+	}
+	$tracelog->error("doRun failed to compute BOG for: $execrunuid error: $options");
+	$log->error("doRun failed to compute BOG for: $execrunuid error: $options");
+	return $options;
 }
 
 sub updateExecutionResults { my ($execrunid, $newrecord, $finalStatus) = @_ ;
-    my $oldrecord   = _getSingleExecutionRecord($execrunid);
-    $log->debug('updateExecutionResults oldrecord: ', sub {use Data::Dumper; Dumper($oldrecord);});
-    if ($oldrecord->{'error'}) {
-        $log->error("updateExecutionResults - error: $oldrecord->{'error'}");
-        return;
-    }
-    if (! defined($oldrecord)) {
-        $oldrecord = {
-            'run_date'                     => scalar localtime,
-            'cpu_utilization'              => 'd__0',
-            'lines_of_code'                => 'i__0',
-            'execute_node_architecture_id' => 'unknown'
-        };
-    }
-    else {
-        # If the run_date has never been set, set it
-        if (! defined($oldrecord->{'run_date'})) {
-            $oldrecord->{'run_date'} = scalar localtime;
-        }
-    }
-    if ($finalStatus) {
-        $oldrecord->{'completion_date'} = scalar localtime;
-    }
-    else {
-        delete $oldrecord->{'completion_date'} ;
-    }
-    # merge oldrecord into newrecord
-    if (! $oldrecord->{'error'}) {
-        $newrecord = { %$oldrecord, %$newrecord };
-    }
-    # Add other parameters to newrecord
-    $newrecord->{'execrunid'} = $execrunid;
-    $newrecord->{'timestamp'} = "i__" . time();
-    $log->debug('updateExecutionResults newrecord: ', sub {use Data::Dumper; Dumper($newrecord);});
-    my $req = RPC::XML::request->new('swamp.execCollector.updateExecutionResults', RPC::XML::struct->new($newrecord));
-    $dispatcherUri ||= _configureDispatcherClient();
-    $dispatcherClient ||= RPC::XML::Client->new($dispatcherUri);
-    my $result = rpccall($dispatcherClient, $req);
-    if ($result->{'error'}) {
-        $log->error("updateExecutionResults - error: $result->{'error'}");
-    }
+	if (my $dbh = database_connect()) {
+    	if ($finalStatus) {
+        	$newrecord->{'completion_date'} = strftime("%Y-%m-%d %H:%M:%S", localtime(time()));
+    	}
+		my $query = q{CALL assessment.update_execution_run_status_test(?, ?, ?, @r);};
+		my $sth = $dbh->prepare($query);
+		foreach my $key (keys %$newrecord) {
+			# execution_record_uuid
+			# field_name_in
+			# field_value_in
+			# return_string
+			$sth->bind_param(1, $execrunid);
+			$sth->bind_param(2, $key);
+			$sth->bind_param(3, $newrecord->{$key});
+			$sth->execute();
+			if (! $sth->err) {
+				my $result = $dbh->selectrow_array('SELECT @r');
+				if (! $result || ($result ne 'SUCCESS')) {
+        			$log->error("updateExecutionResults - error: $result");
+    			}
+			}
+			else {
+				$log->error("updateExecutionResults - error: ", $sth->errstr);
+			}
+		}
+		database_disconnect($dbh);
+	}
+	else {
+        $log->error("updateExecutionResults - database connection failed");
+	}
 }
 
 sub updateRunStatus { my ($execrunid, $status, $finalStatus) = @_ ;
     $finalStatus ||= 0;
     updateExecutionResults($execrunid, {'status' => $status}, $finalStatus);
 }
-
-#####################
-#   ResultCollector #
-#####################
 
 sub saveResult { my ($mapref) = @_ ;
     if (!defined($mapref->{'pathname'})) {
@@ -303,18 +361,48 @@ sub saveResult { my ($mapref) = @_ ;
         $log->error('saveResult - error: hash is missing execrunid');
         return {'error', 'hash is missing execrunid'};
     }
-    if ($mapref->{'pathname'} ne $mapref->{'pathname'}) {
-        $log->error("saveResult - pathname is not canonical $mapref->{'pathname'} vs " . $mapref->{'pathname'});
-        return {'error', "pathname is not canonical $mapref->{'pathname'} vs " . $mapref->{'pathname'}};
-    }
-    my $req = RPC::XML::request->new('swamp.resultCollector.saveResult', RPC::XML::struct->new($mapref));
-    $dispatcherUri ||= _configureDispatcherClient();
-    $dispatcherClient ||= RPC::XML::Client->new($dispatcherUri);
-    my $result = rpccall($dispatcherClient, $req);
-    if ($result->{'error'}) {
-        $log->error("saveResult - error: $result->{'error'}");
-        return 0;
-    }
+	if (my $dbh = database_connect()) {
+		# execution_record_uuid
+		# result_path_in
+		# result_checksum_in
+		# source_archive_path_in
+		# source_archive_checksum_in
+		# log_path_in
+		# log_checksum_in
+		# weakness_cnt_in
+		# lines_of_code_in
+		# status_out_in
+		# return_string
+		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, $mapref->{'execrunid'});
+		$sth->bind_param(2, $mapref->{'pathname'});
+		$sth->bind_param(3, $mapref->{'sha512sum'});
+		$sth->bind_param(4, $mapref->{'sourcepathname'});
+		$sth->bind_param(5, $mapref->{'source512sum'});
+		$sth->bind_param(6, $mapref->{'logpathname'});
+		$sth->bind_param(7, $mapref->{'log512sum'});
+		$sth->bind_param(8, $mapref->{'weaknesses'});
+		$sth->bind_param(9, $mapref->{'locSum'});
+		$sth->bind_param(10, $mapref->{'status_out'});
+		$sth->execute();
+		my $result;
+		if (! $sth->err) {
+			$result = $dbh->selectrow_array('SELECT @r');
+		}
+		else {
+			$log->error("saveResult - error: ", $sth->errstr);
+		}
+		database_disconnect($dbh);
+		if (! $result || ($result ne 'SUCCESS')) {
+			$log->error("saveResult - error: $result");
+			return 0;
+		}
+	}
+	else {
+        $log->error("saveResult - database connection failed");
+		return 0;
+	}
     return 1;
 }
 
@@ -398,6 +486,13 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         $value = $global_swamp_config->get('tool.ps-jtest.license.port');
         system("echo tool-ps-jtest-license-port = $value >> $dest/services.conf");
     }
+    elsif (isRedLizardTool($bogref)) {
+        $global_swamp_config = getSwampConfig();
+        my $value = $global_swamp_config->get('tool.rl-goanna.license.host');
+        system("echo tool-rl-goanna-license-host = $value >> $dest/services.conf");
+        $value = $global_swamp_config->get('tool.rl-goanna.license.port');
+        system("echo tool-rl-goanna-license-port = $value >> $dest/services.conf");
+    }
     elsif (isGrammaTechTool($bogref)) {
         $global_swamp_config ||= getSwampConfig();
         my $value = $global_swamp_config->get('tool.gt-csonar.license.host');
@@ -405,12 +500,12 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         $value = $global_swamp_config->get('tool.gt-csonar.license.port');
         system("echo tool-gt-csonar-license-port = $value >> $dest/services.conf");
     }
-    elsif (isRedLizardTool($bogref)) {
-        $global_swamp_config = getSwampConfig();
-        my $value = $global_swamp_config->get('tool.rl-goanna.license.host');
-        system("echo tool-rl-goanna-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.rl-goanna.license.port');
-        system("echo tool-rl-goanna-license-port = $value >> $dest/services.conf");
+    elsif (isSynopsysTool($bogref)) {
+        $global_swamp_config ||= getSwampConfig();
+        my $value = $global_swamp_config->get('tool.sy-coverity.license.host');
+        system("echo tool-sy-coverity-license-host = $value >> $dest/services.conf");
+        $value = $global_swamp_config->get('tool.sy-coverity.license.port');
+        system("echo tool-sy-coverity-license-port = $value >> $dest/services.conf");
     }
 
     # Copy the package tarball into VM input folder from the SAN.
@@ -433,11 +528,6 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         return 0;
     }
 
-    # Copy LOC tool
-    if (! cp("$basedir/bin/cloc-1.68.pl", $dest)) {
-        $log->error($bogref->{'execrunid'}, "Cannot copy LOC tool $OS_ERROR");
-        return 0;
-    }
     return 1;
 }
 
@@ -547,21 +637,16 @@ sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
     return 1;
 }
 
-sub isSwampInABox { my ($config) = @_ ;
-    if ($config->exists('SWAMP-in-a-Box')) {
-        if ($config->get('SWAMP-in-a-Box') =~ /yes/sxmi) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 sub isLicensedTool { my ($bogref) = @_ ;
     return (isParasoftTool($bogref) ||
             isGrammaTechTool($bogref) ||
-            isRedLizardTool($bogref));
+            isRedLizardTool($bogref) ||
+			isSynopsysTool($bogref));
 }
 
+sub isSonatypeTool { my ($bogref) = @_ ;
+	return ($bogref->{'toolname'} eq 'Sonatype Application Health Check');
+}
 sub isRubyTool { my ($bogref) = @_ ;
     return (
         $bogref->{'toolname'} eq 'RuboCop' ||
@@ -611,6 +696,12 @@ sub isRedLizardG { my ($bogref) = @_ ;
 }
 sub isRedLizardTool { my ($bogref) = @_ ;
     return (isRedLizardG($bogref));
+}
+sub isSynopsysC { my ($bogref) = @_ ;
+	return ($bogref->{'toolname'} eq 'Synopsys Static Analysis (Coverity)');
+}
+sub isSynopsysTool { my ($bogref) = @_ ;
+	return (isSynopsysC($bogref));
 }
 sub isJavaTool { my ($bogref) = @_ ;
     return ($bogref->{'toolname'} =~ /(Findbugs|PMD|Archie|Checkstyle|error-prone|Parasoft\ Jtest)/isxm);
@@ -673,18 +764,22 @@ sub createAssessmentConfigs { my ($bogref, $dest, $user, $password) = @_ ;
         'SWAMP_USERID' => '9999',
         'SWAMP_PASSWORD'=> $password}
     )) {
-        $log->warn($bogref->{'execrunid'}, 'Cannot save run-params.conf');
+        $log->warn("$bogref->{'execrunid'} Cannot save run-params.conf");
     }
     my $runprops = {'goal' => $goal};
     $global_swamp_config ||= getSwampConfig();
     my $internet_inaccessible = $global_swamp_config->get('SWAMP-in-a-Box.internet-inaccessible') || 'false';
     $runprops->{'internet-inaccessible'} = $internet_inaccessible;
     if (! saveProperties( "$dest/run.conf", $runprops)) {
-        $log->warn($bogref->{'execrunid'}, 'Cannot save run.conf');
+        $log->warn("$bogref->{'execrunid'} Cannot save run.conf");
         return 0;
     }
     if (! _createPackageConf($bogref, $dest)) {
-        $log->warn($bogref->{'execrunid'}, 'Cannot create package.conf');
+        $log->warn("$bogref->{'execrunid'} Cannot create package.conf");
+        return 0;
+    }
+    if (! _createUserConf($bogref, $dest)) {
+        $log->warn("$bogref->{'execrunid'} Cannot create user configuration file");
         return 0;
     }
     return 1;
@@ -803,6 +898,49 @@ sub _createPackageConf { my ($bogref, $dest) = @_ ;
     return saveProperties("$dest/package.conf", \%packageConfig);
 }
 
+sub _createUserConf { my ($bogref, $dest) = @_ ;
+	if (isSonatypeTool($bogref)) {
+		if (! $bogref->{'user_cnf'}) {
+			$log->warn("$bogref->{'execrunid'} No user_cnf - cannot create sonatype-data.conf");
+			return 0;
+		}
+		my $json;
+		eval {
+			$json = from_json($bogref->{'user_cnf'});
+		};
+		if ($@) {
+			$log->warn("$bogref->{'execrunid'} Failed to parse json string: $bogref->{'user_cnf'} error: $@");
+			$json = undef;
+			return 0;
+		}
+		my $userConfig = {};
+		if (! exists($json->{'name'})) {
+			$log->warn("$bogref->{'execrunid'} user_cnf does not contain user\'s full name: $bogref->{'user_cnf'}");
+			return 0;
+		}
+		if (! exists($json->{'email'})) {
+			$log->warn("$bogref->{'execrunid'} user_cnf does not contain user\'s email id: $bogref->{'user_cnf'}");
+			return 0;
+		}
+		if (! exists($json->{'organization'})) {
+			$log->warn("$bogref->{'execrunid'} user_cnf does not contain user\'s company name: $bogref->{'user_cnf'}");
+			return 0;
+		}
+    	$global_swamp_config ||= getSwampConfig();
+    	my $integrator_name = $global_swamp_config->get('sonatype_integrator');
+		if (! $integrator_name) {
+			$log->warn("$bogref->{'execrunid'} swamp.conf does not contain sonatype integrator name");
+			return 0;
+		}
+		$userConfig->{'full-name'} = $json->{'name'};
+		$userConfig->{'email-id'} = $json->{'email'};
+		$userConfig->{'company-name'} = $json->{'organization'};
+		$userConfig->{'integrator-name'} = $integrator_name;
+		return saveProperties("$dest/sonatype-data.conf", $userConfig);
+	}
+	return 1;
+}
+
 sub _mergeDependencies { my ($file) = @_ ;
     $log->debug("_mergeDependencies - file: $file");
     if (open (my $fd, '<', $file)) {
@@ -875,7 +1013,7 @@ sub _deployTarball { my ($tarfile, $dest) = @_ ;
 #   HTCondor ClassAd    #
 #########################
 
-sub updateClassAdAssessmentStatus { my ($execrunuid, $vmhostname, $status) = @_ ;
+sub updateClassAdAssessmentStatus { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $status) = @_ ;
     $global_swamp_config ||= getSwampConfig();
     my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
     $log->info("Status: $status");
@@ -884,6 +1022,8 @@ MyType=\"Generic\"
 Name=\"$execrunuid\"
 SWAMP_vmu_assessment_vmhostname=\"$vmhostname\"
 SWAMP_vmu_assessment_status=\"$status\"
+SWAMP_vmu_assessment_user_uuid=\"$user_uuid\"
+SWAMP_vmu_assessment_projectid=\"$projectid\"
 EOF
 ");
     if ($stat) {

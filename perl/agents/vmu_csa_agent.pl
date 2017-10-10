@@ -33,8 +33,7 @@ use SWAMP::vmu_Support qw(
 	getSwampDir
 	getSwampConfig
 	getLoggingConfigString
-	addExecRunLogAppender
-	removeExecRunLogAppender
+	switchExecRunAppenderLogFile
 	loadProperties
 	getJobDir
 	construct_vmhostname
@@ -47,6 +46,7 @@ use SWAMP::vmu_AssessmentSupport qw(
 	isParasoftJava
 	isGrammaTechCS
 	isRedLizardG
+	isSynopsysC
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
@@ -84,7 +84,6 @@ if (! defined($runnow)) {
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
@@ -118,7 +117,7 @@ while (1) {
 		# check to see if a job with the same exec run id is currently running, or has
 		# been run at some time in the past. this only applies to assessment runs.
 		my $execrunuid = $bog{'execrunid'};
-		addExecRunLogAppender($execrunuid);
+		switchExecRunAppenderLogFile($execrunuid);
 		$log->info( "Checking duplicate $execrunuid in queue");
 		if (isJobInQueue($execrunuid) || isJobInHistory($execrunuid)) {
 			# we can delete this bog file and skip the rest of the loop
@@ -138,7 +137,9 @@ while (1) {
 			$job_priority = -10;
 			$vmhostname = 'mswamp';
 		}
-		updateClassAdAssessmentStatus($execrunuid, $vmhostname, 'Creating HTCondor job');
+		my $user_uuid = $bog{'userid'};
+		my $projectid = $bog{'projectid'};
+		updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Creating HTCondor job');
 		$log->debug("creating assessment job: $execrunuid $bogfile");
 		$tracelog->trace("execrunuid: $execrunuid creating assessment job: $bogfile");
 		my $submitfile = $execrunuid . '.sub';
@@ -152,13 +153,13 @@ while (1) {
 		if ($clusterid != -1) {
 			# mark this jobdir with the clusterid
 			create_empty_file('ClusterId_' . $clusterid);
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, 'Waiting in HTCondor Queue');
+			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Waiting in HTCondor Queue');
 			$tracelog->trace("execrunuid: $execrunuid start succeeded");
 			$log->info("$execrunuid clusterid: $clusterid");
 		}
 		else {
 			$log->warn('Unable to submit BOG: cannot start HTCondor job.');
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $error_message);
+			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 			$tracelog->trace("$execrunuid start failed");
 		}
 		# return to rundir
@@ -166,7 +167,6 @@ while (1) {
     }
 }
 $log->info("$PROGRAM_NAME Exiting ($PID)");
-removeExecRunLogAppender();
 exit 0;
 
 sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
@@ -192,6 +192,9 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 	}
 	elsif (isRedLizardG($bogref)) {
 		$climits = "REDLIZARDG";
+	}
+	elsif (isSynopsysC($bogref)) {
+		$climits = "SYNOPSYSC";
 	}
 	my $submitbundle = $execrunuid . '_submitbundle.tar.gz';
 	if (open(my $fh, ">>", $submitfile)) {
@@ -346,7 +349,7 @@ sub readBogFiles { my ($path) = @_ ;
             $log->error("Unable to closedir $path $OS_ERROR");
         }
         foreach my $file (@bogfiles) {
-            next if ($file =~ m/vrun/sxim); # Do not include vrun BOG files in this loop.
+            next if ($file =~ m/vrun_/sxim); # Do not include vrun BOG files in this loop.
 			push @$bogFiles, $file;
         }
     }

@@ -79,13 +79,13 @@ sub listprojects {
     my ( $output, $status ) = systemcall($curl);
     if ($status) {    # error
         $projects->{'error'} = $output;
-        $log->error("Error listing projects: $output");
+        $log->error("Error - listprojects - curl: [$curl] output: [$output] status: ($status)");
     }
     else {
 		my $ref = _getAPIReturn($output);
         if ($ref->{'error'}) {
             $projects->{'error'} = $ref->{'error'};
-            $log->warn("Error listing projects: [$ref->{'error'}]");
+            $log->error("Error - listprojects - curl: [$curl] output: [$output] apiResult: ", $ref);
         }
         else {
             my $aref = $ref->{'projects'};
@@ -134,7 +134,7 @@ sub createproject {
         $ret = _getprojectid( $host, $apikey, $project, $package );
     }
     else {
-        $log->error("Error creating project <$host,$project,$package>: $output ($status) [$curl]");
+        $log->error("Error - createproject - curl: [$curl] output: [$output] status: ($status)");
     }
     return $ret;
 }
@@ -184,16 +184,16 @@ sub deleteproject {
 
         my ( $output, $status ) = systemcall($curl);
         if ( $status == 0 ) {
-            if (_checkAPIReturn($output) ne q{SUCCESS})  {
-                $log->error("Error deleting project <$host,$project,$package>:[$curl} $output");
-                
+			my $apiResult = _checkAPIReturn($output);
+            if ($apiResult ne q{SUCCESS}) {
+                $log->error("Error - deleteproject - curl: [$curl] output: [$output] apiResult: ", $apiResult);
             }
             else {
                 $ret = 1;
             }
         }
         else {
-            $log->error("Error deleting project <$host,$project,$package>:[$curl} $output");
+            $log->error("Error - deleteproject - curl: [$curl] output: [$output] status: ($status)");
         }
     }
     return $ret;
@@ -222,19 +222,19 @@ sub uploadanalysisrun {
 		if ( $status == 0 ) {
 			my $apiResult = _checkAPIReturn($output);
 			if ($apiResult eq q{SUCCESS}) {
+				$log->info("uploading project: $package curl: [$curl] output: [$output]");
 				$ret = 1;
 			}
 			else {
-				$log->warn("uploading project failed $apiResult");
+				$log->error("Error - uploadanalysisrun - curl: [$curl] output: [$output] apiResult: ", $apiResult);
 			}
-			$log->info("uploading project <$host,$project,$package>: $output [$curl]");
 		}
 		else {
-			$log->error("Error uploading project <$host,$project,$package>: $output ($status) [ $curl ]");
+			$log->error("Error - uploadanalysisrun - curl: [$curl] output: [$output] status: ($status)");
 		}
 	}
 	else {
-		$log->error("Error uploading project cannot find ID.<$host,$project,$package>");
+		$log->error("Error uploadanalysisrun - cannot find projectID: <$host,$apikey, $project,$package>");
 	}
 	return $ret;
 }

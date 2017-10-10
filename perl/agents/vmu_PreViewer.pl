@@ -7,6 +7,7 @@
 
 use strict;
 use warnings;
+use English '-no_match_vars';
 use File::Copy;
 use File::Remove qw(remove);
 use File::Basename;
@@ -27,6 +28,9 @@ use SWAMP::vmu_Support qw(
 	getSwampDir 
 	loadProperties 
 	getLoggingConfigString 
+	getSwampConfig
+	isSwampInABox
+	buildExecRunAppenderLogFileName
 	systemcall 
 	displaynameToMastername 
 	insertIntoInit
@@ -46,9 +50,16 @@ use SWAMP::vmu_ViewerSupport qw(
 );
 
 my $log;
+my $tracelog;
+my $config = getSwampConfig();
+my $execrunuid;
 my $clusterid;
 
 sub logfilename {
+	if (isSwampInABox($config)) {
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		return $name;
+	}
     my $name = basename($0, ('.pl'));
 	chomp $name;
 	$name =~ s/Pre//sxm;
@@ -84,8 +95,16 @@ sub patchDeltaQcow2ForInit { my ($execrunuid, $imagename, $vmhostname) = @_ ;
 
 sub createQcow2Disks { my ($bogref, $inputfolder, $outputfolder) = @_ ;
 	# delta qcow2
+	$log->info('Creating base image for: ', $bogref->{'platform'});
 	my $imagename = displaynameToMastername($bogref->{'platform'});
-	$log->info("Creating base image from: $imagename");
+    if (! $imagename) {
+        $log->error("createQcow2Disks - base image creation failed - no image");
+        return;
+    }
+    if (! -r $imagename) {
+        $log->error("createQcow2Disks - base image creation failed - $imagename not readable");
+        return;
+    }
 	my ($output, $status) = systemcall("qemu-img create -b $imagename -f qcow2 delta.qcow2");
 	if ($status) {
 		$log->error("createQcow2Disks - base image creation failed: $imagename $output $status");
@@ -139,23 +158,22 @@ sub extractBogFile { my ($execrunuid, $inputfolder) = @_ ;
 ########
 
 # args: execrunuid owner uiddomain clusterid procid [debug]
+# execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($execrunuid, $owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$clusterid);
-if (! $clusterid) {
-	# we have no clusterid for the log4perl log file name
+my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+if (! $execrunuid || ! $clusterid) {
+	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
 }
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
-# logger uses clusterid
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
-if (! $debug) {
-	$log->remove_appender('Screen');
-}
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PreViewer: $execrunuid Begin");
+$tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 listDirectoryContents();
 

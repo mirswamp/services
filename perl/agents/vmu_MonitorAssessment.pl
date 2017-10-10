@@ -7,6 +7,7 @@
 
 use strict;
 use warnings;
+use English '-no_match_vars';
 use File::Basename;
 use File::Spec::Functions;
 use Time::Local;
@@ -22,9 +23,10 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getSwampDir
 	getSwampConfig
+	isSwampInABox
+	buildExecRunAppenderLogFileName
 	getLoggingConfigString
 	systemcall
-	addExecRunLogAppender
 	loadProperties
 	construct_vmhostname
 	construct_vmdomainname
@@ -41,6 +43,9 @@ use SWAMP::ToolLicense qw(
 );
 
 my $log;
+my $tracelog;
+my $config = getSwampConfig();
+my $execrunuid;
 my $clusterid;
 my $events_file = catfile('events', 'JobVMEvents.log');
 my $MAX_OPEN_ATTEMPTS = 5;
@@ -54,12 +59,15 @@ my $FINAL_STATUS	= 'ENDASSESSMENT';
 
 my %status_messages = (
 	'RUNSHSTART'		=> 'Starting assessment run script',
-	'RUNCLOC'			=> 'Executing cloc on package',
 	'BEGINASSESSMENT'	=> 'Performing assessment',
 	$FINAL_STATUS		=> 'Shutting down the VM',
 );
 
 sub logfilename {
+	if (isSwampInABox($config)) {
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		return $name;
+	}
     my $name = basename($0, ('.pl'));
     chomp $name;
 	$name =~ s/Monitor//sxm;
@@ -67,17 +75,17 @@ sub logfilename {
     return catfile(getSwampDir(), 'log', $name . '.log');
 }
 
-sub send_command_to_vm { my ($execrunuid, $vmhostname, $vmdomainname, $command) = @_ ;
+sub send_command_to_vm { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $command) = @_ ;
 	my ($output, $status) = systemcall("sudo virsh $command $vmdomainname");
 	my $success_regex = 'Domain.*is being shutdown';
 	$success_regex = 'Domain.*was reset' if ($command eq 'reset');
 	if ($status || ($output && ($output !~ m/$success_regex/))) {
 		$log->error("virsh $command to: $vmdomainname failed: <$output>");
-		updateClassAdAssessmentStatus($execrunuid, $vmhostname, "vm $command failed");
+		updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, "vm $command failed");
 		return 0;
 	}
 	$log->info("virsh $command to: $vmdomainname succeeded");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, "vm $command");
+	updateClassAdAssessmentStatus($execrunuid, $user_uuid, $projectid, $vmhostname, "vm $command");
 	return 1;
 }
 
@@ -112,7 +120,7 @@ sub dump_vm_xml { my ($vmdomainname) = @_ ;
 	}
 }
 			
-sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
+sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname) = @_ ;
 	my $time_start = time();
 	my $sleep_time = 5; # seconds
 	my $update_interval = 60 * 10; # seconds
@@ -127,15 +135,19 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 		# check for termination
 		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
 			$log->info("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
+			# void the vm_password field in the database to turn off ssh access button
+			updateExecutionResults($execrunuid, {'vm_password' => ''});
 			return 1 if ($final_status_seen);
 			return -1 if ($any_status_seen);
 			return 0;
 		}
 		# any current status
 		if ($mstatus && exists($status_messages{$mstatus})) {
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $status_messages{$mstatus});
+			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $status_messages{$mstatus});
 			if ($mstatus eq $FINAL_STATUS) {
 				$final_status_seen = 1;
+				# void the vm_password field in the database to turn off ssh access button
+				updateExecutionResults($execrunuid, {'vm_password' => ''});
 			}
 			# dump vmdomainname xml on first status
 			if (! $any_status_seen) {
@@ -148,7 +160,7 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 		# no current status - have prior status
 		elsif ($last_status) {
 			if ($poll_count >= ($update_interval / $sleep_time)) {
-				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $status_messages{$last_status});
+				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $status_messages{$last_status});
 				$poll_count = 0;
 			}
 		}
@@ -156,7 +168,7 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 		elsif (! $shutdown_sent) {
 			# caught INT signal - attempt to shutdown vm and continue monitor
 			if ($done_int) {
-				send_command_to_vm($execrunuid, $vmhostname, $vmdomainname, 'shutdown');
+				send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 				$shutdown_sent = 1;
 				next;
 			}
@@ -171,7 +183,7 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 					$message = "VM Started and Failed - ";
 				}
 				$message .= "$date_start $date_now ($seconds)";
-				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 				$poll_count = 0;
 			}
 			# check for reset condition and attempt to reset
@@ -182,11 +194,11 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 				if (($time_now - $time_start) > ($RESET_WAIT_DURATION * ($reset_attempts + 1))) {
 					# attempt to reset for RESET_MAX_ATTEMPTS
 					if ($reset_attempts < $RESET_MAX_ATTEMPTS) {
-						my $success = send_command_to_vm($execrunuid, $vmhostname, $vmdomainname, 'reset');
+						my $success = send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'reset');
 						if (! $success) {
 							# on failure of reset -- shutdown
 							$log->error("vm: $vmdomainname reset failed - shutdown sent");
-							send_command_to_vm($execrunuid, $vmhostname, $vmdomainname, 'shutdown');
+							send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 							$shutdown_sent = 1;
 							# now just monitor for HTCondor to terminate the controlling job
 						}
@@ -194,7 +206,7 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 					}
 					else {
 						$log->error("vm: $vmdomainname has been reset $reset_attempts times - shutdown sent");
-						send_command_to_vm($execrunuid, $vmhostname, $vmdomainname, 'shutdown');
+						send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 						$shutdown_sent = 1;
 						# now just monitor for HTCondor to terminate the controlling job
 					}
@@ -207,19 +219,22 @@ sub monitor { my ($execrunuid, $vmhostname, $vmdomainname) = @_ ;
 	# caught TERM signal - attempt to shutdown vm
 	if ($vmdomainname) {
 		$log->info("MonitorAssessment: $execrunuid caught signal - shutdown $vmdomainname");
-		send_command_to_vm($execrunuid, $vmhostname, $vmdomainname, 'shutdown');
+		send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 	}
+	# void the vm_password field in the database to turn off ssh access button
+	updateExecutionResults($execrunuid, {'vm_password' => ''});
 }
 
 ########
 # Main #
 ########
 
-# args: execrunuid uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid [debug]
+# execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($execrunuid, $owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$clusterid);
-if (! $clusterid) {
-	# we have no clusterid for the log4perl log file name
+my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+if (! $execrunuid || ! $clusterid) {
+	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
 }
 
@@ -245,22 +260,21 @@ my $vmdomainname = construct_vmdomainname($owner, $uiddomain, $clusterid, $proci
 
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
-if (! $debug) {
-	$log->remove_appender('Screen');
-}
-addExecRunLogAppender($execrunuid);
 $log->level($debug ? $TRACE : $INFO);
 $log->info("MonitorAssessment: $execrunuid Begin");
+$tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 
 my %bog;
 my $bogfile = $execrunuid . '.bog';
 loadProperties($bogfile, \%bog);
+my $user_uuid = $bog{'userid'} || 'null';
+my $projectid = $bog{'projectid'} || 'null';
 
 # open Floodlight flow rule for licensed tools
 my $message = 'Obtaining VM IP Address';
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
-my $config = getSwampConfig();
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 my $vmip_lookup_delay = $config->get('vmip_lookup_delay') || 10;
 sleep $vmip_lookup_delay;
 my $vmip = getVMIPAddress($config, $vmhostname);
@@ -273,12 +287,12 @@ else {
 	$message = 'Failed to obtain vmip';
 	$log->error($message . ": $vmip");
 }
-updateExecutionResults($execrunuid, {'status' => $message, 'vmip' => "$vmip"});
+updateExecutionResults($execrunuid, {'status' => $message, 'vm_ip_address' => "$vmip"});
 
 # -1 vm returns status but not final
 #  0 vm returns no status
 #  1 vm returns final status
-my $status = monitor($execrunuid, $vmhostname, $vmdomainname);
+my $status = monitor($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname);
 $log->info("MonitorAssessment: loop returns status: $status");
 
 # close Floodlight flow rule for licensed tools

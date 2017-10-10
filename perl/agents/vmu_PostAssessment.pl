@@ -7,11 +7,13 @@
 
 use strict;
 use warnings;
+use English '-no_match_vars';
 use File::Copy;
 use File::Basename;
 use File::Spec::Functions;
 use Log::Log4perl::Level;
 use Log::Log4perl;
+use XML::XPath;
 
 use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
@@ -21,7 +23,9 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getSwampDir
 	getLoggingConfigString
-	addExecRunLogAppender
+	getSwampConfig
+	isSwampInABox
+	buildExecRunAppenderLogFileName
 	systemcall
 	loadProperties
 	checksumFile
@@ -31,18 +35,29 @@ use SWAMP::vmu_Support qw(
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
 	updateRunStatus
-	updateExecutionResults
 	saveResult
 	isJavaPackage
 	isCPackage
 	isPythonPackage
 	isRubyPackage
+	isSonatypeTool
+	isSynopsysC
 );
 
 my $log;
+my $tracelog;
+my $config = getSwampConfig();
+my $execrunuid;
 my $clusterid;
 
+my $inputarchive = 'inputdisk.tar.gz';
+my $outputarchive = 'outputdisk.tar.gz';
+
 sub logfilename {
+	if (isSwampInABox($config)) {
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		return $name;
+	}
     my $name = basename($0, ('.pl'));
 	chomp $name;
 	$name =~ s/Post//sxm;
@@ -108,61 +123,37 @@ sub parse_status_output { my ($outputfolder) = @_ ;
 	return ($status, $weaknesses);
 }
 
-sub parse_lines_of_code { my ($bogref, $outputfolder) = @_ ;
-	my $lines_of_code;
-	my $fh;
-	my $clocfile = catfile($outputfolder, 'cloc.out');
-	if (! open($fh, '<', $clocfile)) {
-		$log->error("parse_lines_of_code - read of $clocfile failed");
-		return (0, $lines_of_code);
-	}
-	my @lines = <$fh>;
-	close($fh);
-	$lines_of_code = 0;
-	foreach (@lines) {
-		if (isJavaPackage($bogref)) {
-			if (/,Java,/sxm) {
-				my @LOC = split( /,/sxm, $_ );
-				$lines_of_code += $LOC[-1];
-			}
-		}
-		elsif (isCPackage($bogref)) {
-			if ( /,C,/sxm || /,C\+\+,/sxm || /C.C\+\+\sHeader/sxm ) {
-				my @LOC = split( /,/sxm, $_ );
-				$lines_of_code += $LOC[-1];
-			}
-		}
-		elsif (isPythonPackage($bogref)) {
-			if (/,Python,/sxm) {
-				my @LOC = split( /,/sxm, $_ );
-				$lines_of_code += $LOC[-1];
-			}
-		}
-		elsif (isRubyPackage($bogref)) {
-			if (/,Ruby,/sxm) {
-				my @LOC = split( /,/sxm, $_ );
-				$lines_of_code += $LOC[-1];
-			}
-		}
-	}
-	return (1, $lines_of_code);
-}
-
-sub copy_parsed_results { my ($outputfolder, $resultsfolder) = @_ ;
-	my $configfile = catfile($outputfolder, "parsed_results.conf");
+sub load_config { my ($outputfolder, $configfilename) = @_ ;
+	my $configfile = catfile($outputfolder, $configfilename);
 	if (! -r $configfile) {
-		$log->warn("copy_parsed_results - $configfile not found");
-		return(0, '');
+		$log->warn("load_config - $configfile not found");
+		return;
 	}
 	my $config = loadProperties($configfile);
 	if (! defined($config)) {
-		$log->error("copy_parsed_results - failed to read $configfile");
+		$log->error("load_config - failed to read $configfile");
+		return;
+	}
+	return $config;
+}
+
+sub unarchive_results { my ($outputfolder, $config, $archive) = @_ ;
+	my $results_archive = catfile($outputfolder, $config->get($archive));
+	my ($output, $status) = systemcall("tar xf $results_archive --directory=$outputfolder");
+	if ($status) {
+		$log->error("unarchive_results - tar of $results_archive to $outputfolder failed: $output $status");
+		return 0;
+	}
+	return 1;
+}
+
+# save parsed SCARF file if extant
+sub copy_parsed_results { my ($outputfolder, $resultsfolder) = @_ ;
+	my $config = load_config($outputfolder, 'parsed_results.conf');
+	if (! $config) {
 		return(0, '');
 	}
-	my $parsed_results_archive = catfile($outputfolder, $config->get('parsed-results-archive'));
-	my ($output, $status) = systemcall("tar xf $parsed_results_archive --directory=$outputfolder");
-	if ($status) {
-		$log->error("copy_parsed_results - tar of $parsed_results_archive to $outputfolder failed: $output $status");
+	if (! unarchive_results($outputfolder, $config, 'parsed-results-archive')) {
 		return (0, '');
 	}
 	my $parsed_results_dir = $config->get('parsed-results-dir');
@@ -175,34 +166,148 @@ sub copy_parsed_results { my ($outputfolder, $resultsfolder) = @_ ;
 		$log->info("copying: $weaknesses_file to: ", $resultsfolder);
 		copy($weaknesses_file, $resultsfolder);
 	}
-	my $parsed_results_file = $config->get('parsed-results-file');
-	my $results_file = catfile($outputfolder, $parsed_results_dir, $parsed_results_file);
-	if (! -r $results_file) {
-		$log->error("copy_parsed_results - $results_file not found");
+	my $parsed_results_file_name = $config->get('parsed-results-file');
+	my $parsed_results_file = catfile($outputfolder, $parsed_results_dir, $parsed_results_file_name);
+	if (! -r $parsed_results_file) {
+		$log->error("copy_parsed_results - $parsed_results_file not found");
 		return (0, '');
 	}
-	$log->info("copying: $results_file to: ", $resultsfolder);
-	copy($results_file, $resultsfolder);
-	return (1, catfile($resultsfolder, $parsed_results_file));
+	$log->info("copying: $parsed_results_file to: ", $resultsfolder);
+	copy($parsed_results_file, $resultsfolder);
+	return (1, catfile($resultsfolder, $parsed_results_file_name));
 }
 
-sub create_and_copy_results { my ($vmdomainname, $framework_said_pass, $inputfolder, $outputfolder, $resultsfolder) = @_ ;
+# save results archive if extant
+sub copy_results { my ($outputfolder, $resultsfolder) = @_ ;
+	my $config = load_config($outputfolder, 'results.conf');
+	if (! $config) {
+		return(0, '', '');
+	}
+	if (! unarchive_results($outputfolder, $config, 'results-archive')) {
+		return (0, '', '');
+	}
+	my $results_dir = $config->get('results-dir');
+	my $ahc_results_file_name = $config->get('ahc-results-file');
+	my $ahc_results_archive_name = $config->get('ahc-results-archive');
+	my $ahc_results_archive = catfile($outputfolder, $results_dir, $ahc_results_archive_name);
+	if (! -r $ahc_results_archive) {
+		$log->error("copy_results - $ahc_results_archive not found");
+		return (0, '', '');
+	}
+	$log->info("copying: $ahc_results_archive to: ", $resultsfolder);
+	copy($ahc_results_archive, $resultsfolder);
+	return (1, $ahc_results_file_name, catfile($resultsfolder, $ahc_results_archive_name));
+}
+
+sub coverity_lines_of_code { my ($package_archive_file) = @_ ;
+	my $command = "/opt/swamp/thirdparty/cloc --quiet --csv $package_archive_file";
+	my ($output, $status) = systemcall($command);
+	if ($status) {
+		$log->error("coverity_lines_of_code - /opt/swamp/thirdparty/cloc --quiet --csv $package_archive_file failed - output: $output $status");
+		return -1;
+	}
+	my @lines = split "\n", $output;
+	# skip blank line and header line
+	shift @lines; shift @lines;
+	# assume files,language,blank,comment,code
+	my $locSum = 0;
+	foreach my $line (@lines) {
+		chomp $line;
+		# my ($files, $language, $blank, $comment, $code) = split ',', $line;
+		my (undef, undef, undef, undef, $code) = split ',', $line;
+		$locSum += $code if ($code =~ m/^\d+$/);
+	}
+	return $locSum;
+}
+
+sub old_coverity_lines_of_code { my ($outputfolder) = @_ ;
+	my $config = load_config($outputfolder, 'results.conf');
+	if (! $config) {
+		return -1;
+	}
+	if (! unarchive_results($outputfolder, $config, 'results-archive')) {
+		return -1;
+	}
+    my $results_dir = $config->get('results-dir');
+    my $assessment_summary_name = $config->get('assessment-summary-file');
+    my $assessment_summary_file = catfile($outputfolder, $results_dir, $assessment_summary_name);
+    if (! -r $assessment_summary_file) {
+        return -1;
+    }   
+    my $xp = XML::XPath->new(filename => $assessment_summary_file);
+    my $nodeset = $xp->find('/assessment-summary/assessment-artifacts/assessment/stdout');
+    my $locSum;
+    foreach my $node ($nodeset->get_nodelist) {
+        my $file = $node->string_value();
+        my $locfile = catfile($outputfolder, $results_dir, $file);
+        if (open(my $fh, '<', $locfile)) {
+            while (my $line = <$fh>) {
+                if ($line =~ m/Total LoC input to cov-analyze\s*:\s*(\d+)/) {
+                    $locSum += $1; 
+                    last;
+                }
+            }
+        }
+    }   
+	return -1 if (! defined($locSum));
+	return $locSum;
+}
+
+# currently we have 3 result types
+# SCARF xml - from parsed_results.conf
+# Sonatype zip - from results.conf
+# error results.tar.gz - for no results
+# Coverity is a special case that looks in parsed_results and results
+
+sub preserve_assessment_results { my ($bogref, $framework_said_pass, $outputfolder, $resultsfolder) = @_ ;
+	my $retval = 1;
+	my $have_results = 0;
+	my $assessment_results_file;
+	if (isSonatypeTool($bogref)) {
+		# add ahc results archive
+		# obtain ahc results file - hard coded as index.html for now
+		my $index_name;
+		my $results_archive;
+		($have_results, $index_name, $results_archive) = copy_results($outputfolder, $resultsfolder);
+		$log->info("results_archive $results_archive status: $have_results");
+		$assessment_results_file = $results_archive;
+	}
+	else {
+		# add parsed_results.xml and weaknesses.txt
+		my $parsed_results_file;
+		($have_results, $parsed_results_file) = copy_parsed_results($outputfolder, $resultsfolder);
+		$log->info("parsed_results_file: $parsed_results_file status: $have_results");
+		$assessment_results_file = $parsed_results_file;
+	}
+	if (! $have_results || ! $framework_said_pass) {
+		my $error_results_file = catfile($outputfolder, 'results.tar.gz');
+		if (-r $error_results_file) {
+			$log->info("copying: $error_results_file to: ", $resultsfolder);
+			copy($error_results_file, $resultsfolder);
+		}
+		else {
+			$log->error("preserve_assessment_results - $error_results_file not found");
+			$retval = 0;
+		}
+		$assessment_results_file = catfile($resultsfolder, $outputarchive);
+		$log->info("assessment_results_file set to: $assessment_results_file");
+	}
+	$log->info("returning assessment_results_file: $assessment_results_file");
+	return ($retval, $have_results, $assessment_results_file);
+}
+
+sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $resultsfolder) = @_ ;
 	my $retval = 1;
 
-	mkdir($resultsfolder);
-	my ($uid, $gid) = (getpwnam('mysql'))[2, 3];
-	chown($uid, $gid, $resultsfolder);
-	chmod(0755, $resultsfolder);
-
-	# add inputdisk.tar.gz
-	my ($output, $status) = systemcall("tar cvfz inputdisk.tar.gz $inputfolder");
+	# add inputarchive
+	my ($output, $status) = systemcall("tar cvfz $inputarchive $inputfolder");
 	if ($status) {
-		$log->error("create_and_copy_results - tar of $inputfolder failed: $output $status");
+		$log->error("preserve_assessment_data - tar of $inputfolder failed: $output $status");
 		$retval = 0;
 	}
 	else {
-		$log->info("copying: inputdisk.tar.gz to: ", $resultsfolder);
-		copy('inputdisk.tar.gz', $resultsfolder);
+		$log->info("copying: $inputarchive to: ", $resultsfolder);
+		copy($inputarchive, $resultsfolder);
 	}
 
 	# create vmlog directory and move files
@@ -249,76 +354,57 @@ sub create_and_copy_results { my ($vmdomainname, $framework_said_pass, $inputfol
 	$log->info("copying: $versions to: ", $outputfolder);
 	copy($versions, $outputfolder);
 
-    # add outputdisk.tar.gz
+    # add outputarchive
     my $using_gnu_tar = 0;
     ($output, $status) = systemcall('tar --version');
-
     if ($output =~ /GNU tar/smi) {
         $log->info('We appear to be using GNU tar');
         $using_gnu_tar = 1;
     }
-
-    my $outputarchive = 'outputdisk.tar.gz';
     ($output, $status) = systemcall("tar cvfz $outputarchive $outputfolder");
-
     if ($using_gnu_tar && $status == 1) {
-        $log->warn("create_and_copy_results - tar of $outputfolder encountered potential problem: $output $status");
+        $log->warn("preserve_assessment_data - tar of $outputfolder encountered potential problem: $output $status");
         $retval = 0;
     }
     elsif ($status) {
-        $log->error("create_and_copy_results - tar of $outputfolder failed: $output $status");
+        $log->error("preserve_assessment_data - tar of $outputfolder failed: $output $status");
         $retval = 0;
     }
-
     if (-r $outputarchive) {
         $log->info("copying: $outputarchive to: ", $resultsfolder);
         copy($outputarchive, $resultsfolder);
     }
 
-	# add status.out, swamp_run.out, parsed_results.xml, weaknesses.txt, and package-archive
+	# add status.out
 	my $status_file = catfile($outputfolder, 'status.out');
 	if (! -r $status_file) {
-		$log->error("create_and_copy_results - $status_file not found");
+		$log->error("preserve_assessment_data - $status_file not found");
 		$retval = 0;
 	}
 	else {
 		$log->info("copying: $status_file to: ", $resultsfolder);
 		copy($status_file, $resultsfolder);
 	}
+	
+	# add swamp_run.out
 	my $logfile = '';
 	my $swamp_run = catfile($outputfolder, 'swamp_run.out');
 	if (! -r $swamp_run) {
-		$log->error("create_and_copy_results - $swamp_run not found");
+		$log->error("preserve_assessment_data - $swamp_run not found");
 		$retval = 0;
 	}
 	else {
 		$log->info("copying: $swamp_run to: ", $resultsfolder);
 		copy($swamp_run, $resultsfolder);
-		$logfile = catfile($resultsfolder, '/swamp_run.out');
+		$logfile = catfile($resultsfolder, 'swamp_run.out');
 	}
 
-	(my $have_parsed_results, my $parsed_results_file) = copy_parsed_results($outputfolder, $resultsfolder);
-	$log->info("parsed_results_file: $parsed_results_file status: $have_parsed_results");
-	my $assessment_results_file = $parsed_results_file;
-	if (! $have_parsed_results || ! $framework_said_pass) {
-		my $error_results_file = catfile($outputfolder, 'results.tar.gz');
-		if (-r $error_results_file) {
-			$log->info("copying: $error_results_file to: ", $resultsfolder);
-			copy($error_results_file, $resultsfolder);
-		}
-		else {
-			$log->error("create_and_copy_results - $error_results_file not found");
-			$retval = 0;
-		}
-		$assessment_results_file = catfile($resultsfolder, "outputdisk.tar.gz");
-		$log->info("assessment_results_file set to: $assessment_results_file");
-	}
-
+	# add package-archive
 	my $package_archive_file = '';
 	my $fh;
 	my $conf = catfile($inputfolder, 'package.conf');
 	if (! open($fh, '<', $conf)) {
-		$log->error("create_and_copy_results - read of $conf failed");
+		$log->error("preserve_assessment_data - read of $conf failed");
 		$retval = 0;
 	}
 	else {
@@ -328,11 +414,11 @@ sub create_and_copy_results { my ($vmdomainname, $framework_said_pass, $inputfol
 		my $package_archive = (split '=', (grep {/package-archive/} @lines)[0])[1];
 		my $archive_file = catfile($inputfolder, $package_archive);
 		if (! $package_archive) {
-			$log->error("create_and_copy_results - package-archive not found in $conf");
+			$log->error("preserve_assessment_data - package-archive not found in $conf");
 			$retval = 0;
 		}
 		elsif (! -r $archive_file) {
-			$log->error("create_and_copy_results - $archive_file not found");
+			$log->error("preserve_assessment_data - $archive_file not found");
 			$retval = 0;
 		}
 		else {
@@ -341,32 +427,22 @@ sub create_and_copy_results { my ($vmdomainname, $framework_said_pass, $inputfol
 			$package_archive_file = catfile($resultsfolder, $package_archive);
 		}
 	}
-	$log->info("returning assessment_results_file: $assessment_results_file");
-	return ($retval, $have_parsed_results, $assessment_results_file, $package_archive_file, $logfile);
+	return ($retval, $package_archive_file, $logfile);
 }
 
-sub compute_metrics { my ($execrunuid, $bogref, $outputfolder) = @_ ;
-	my ($status, $lines_of_code) = parse_lines_of_code($bogref, $outputfolder);
-	if ($status) {
-		updateExecutionResults($execrunuid, {
-			'status'			=> 'Computing metrics',
-			'lines_of_code'		=> 'i__' . $lines_of_code,
-		});
-	}
-	return $status;
-}
-
-sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file) = @_ ;
+sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum) = @_ ;
 	$log->info("saving pathname: $assessment_results_file");
 	my %results = (
 			'execrunid'			=> $execrunuid,
-			'weaknesses'		=> 'i__' . $weaknesses,
+			'weaknesses'		=> $weaknesses,
 			'pathname'			=> $assessment_results_file,
 			'sha512sum'			=> checksumFile($assessment_results_file),
 			'logpathname'		=> $logfile,
 			'log512sum'			=> checksumFile($logfile),
 			'sourcepathname'	=> $package_archive_file,
 			'source512sum'		=> checksumFile($package_archive_file),
+			'status_out'		=> $status_out,
+			'locSum'			=> $locSum,
 			);
 	my $status = saveResult(\%results);
 	$log->info("saveResult returns: $status called with: ", sub {use Data::Dumper; Dumper(\%results);});
@@ -377,26 +453,24 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 # Main #
 ########
 
-# args: execrunuid uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid [debug]
+# execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($execrunuid, $owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$clusterid);
-if (! $clusterid) {
-	# we have no clusterid for the log4perl log file name
+my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+if (! $execrunuid || ! $clusterid) {
+	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
 }
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 my $vmdomainname = construct_vmdomainname($owner, $uiddomain, $clusterid, $procid);
 
-# logger uses clusterid
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
-if (! $debug) {
-	$log->remove_appender('Screen');
-}
-addExecRunLogAppender($execrunuid);
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PostAssessment: $execrunuid Begin");
+$tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 
 my $inputfolder = q{input};
@@ -405,24 +479,28 @@ my $outputfolder = q{output};
 my %bog;
 my $bogfile = $execrunuid . '.bog';
 loadProperties($bogfile, \%bog);
+my $user_uuid = $bog{'userid'} || 'null';
+my $projectid = $bog{'projectid'} || 'null';
 
 my $message = 'Extracting assessment results';
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 my $status = extract_outputdisk($outputfolder);
 if (! $status) {
 	$message = 'Failed to extract assessment results';
 	$log->info($message);
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 
 $message = 'Post-Processing';
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 # attempt to log status.out
+my $status_out = '';
 my $status_file = catfile($outputfolder, 'status.out');
 if (-r $status_file) {
 	my ($output, $status) = systemcall("cat $status_file");
 	if (! $status) {
 		$log->info("Contents of status.out:\n", $output);
+		$status_out = $output;
 	}
 	else {
 		$log->warn("Contents of status.out not found");
@@ -438,7 +516,7 @@ my $retry = 0;
 my $framework_said_pass = ($status == 1);
 $message = '';
 if ($status < 0) {
-	$message .= 'Failed to parse assessment results';
+	$message .= 'Failed to parse status.out';
 }
 elsif ($status) {
 	if ($status & 1) {
@@ -453,7 +531,7 @@ elsif ($status) {
 	}
 }
 else {
-	$message .= 'Assessment result not found ';
+	$message .= 'Assessment status.out not found ';
 }
 $log->info("Status: $message");
 # if not passed, attempt to log run.out
@@ -470,39 +548,51 @@ if (! $status || ! ($status & 1)) {
 	}
 }
 
-($status, my $have_parsed_results, my $assessment_results_file, my $package_archive_file, my $logfile) =
-	create_and_copy_results($vmdomainname, $framework_said_pass, $inputfolder, $outputfolder, catdir($bog{'resultsfolder'}, $execrunuid));
+# create results folder
+my $resultsfolder = catdir($bog{'resultsfolder'}, $execrunuid);
+mkdir($resultsfolder);
+my ($uid, $gid) = (getpwnam('mysql'))[2, 3];
+chown($uid, $gid, $resultsfolder);
+chmod(0755, $resultsfolder);
+
+($status, my $package_archive_file, my $logfile) =
+	preserve_assessment_data($vmdomainname, $inputfolder, $outputfolder, $resultsfolder);
 if (! $status) {
-	$message = 'Failed to preserve assessment results';
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+	$message = 'Failed to preserve assessment data';
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 
-$status = compute_metrics($execrunuid, \%bog, $outputfolder);
+($status, my $have_results, my $assessment_results_file) =
+	preserve_assessment_results(\%bog, $framework_said_pass, $outputfolder, $resultsfolder);
 if (! $status) {
-	$message = 'Failed to compute assessment result metrics';
-	$log->info("Status: $message");
+	$message = 'Failed to preserve assessment results';
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+}
+my $locSum;
+if (isSynopsysC(\%bog)) {
+	$locSum = coverity_lines_of_code($package_archive_file);
 }
 
 $message = 'Saving Results';
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
-my $results_in_db = save_results_in_database($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file);
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+my $results_in_db = save_results_in_database($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum);
 if (! $results_in_db) {
 	$message = 'Failed to save assessment results in database';
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 
 # FIXME - how should HTCondor be instructed to retry this job?
-if (! $framework_said_pass || ! $have_parsed_results || ! $results_in_db) {
+if (! $framework_said_pass || ! $have_results || ! $results_in_db) {
 	$message = 'Finished with Errors';
 	$message .= ' - Retry' if ($retry);
 	$log->error("Assessment: $execrunuid $message");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message, 1);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
 }
 else {
 	$message = 'Finished';
 	$log->info("Assessment: $execrunuid $message");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $message, 1);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
 }
 

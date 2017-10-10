@@ -7,6 +7,7 @@
 
 use strict;
 use warnings;
+use English '-no_match_vars';
 use File::Copy;
 use File::Basename;
 use File::Spec::Functions;
@@ -21,6 +22,9 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getSwampDir 
 	getLoggingConfigString 
+	getSwampConfig
+	isSwampInABox
+	buildExecRunAppenderLogFileName
 	systemcall 
 	loadProperties
 	construct_vmhostname
@@ -37,9 +41,16 @@ use SWAMP::vmu_ViewerSupport qw(
 );
 
 my $log;
+my $tracelog;
+my $config = getSwampConfig();
+my $execrunuid;
 my $clusterid;
 
 sub logfilename {
+	if (isSwampInABox($config)) {
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		return $name;
+	}
     my $name = basename($0, ('.pl'));
 	chomp $name;
 	$name =~ s/Post//sxm;
@@ -71,24 +82,23 @@ sub extract_outputdisk { my ($outputfolder) = @_ ;
 # Main #
 ########
 
-# args: execrunuid uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid [debug]
+# execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($execrunuid, $owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$clusterid);
-if (! $clusterid) {
-	# we have no clusterid for the log4perl log file name
+my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+if (! $execrunuid || ! $clusterid) {
+	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
 }
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
-# logger uses clusterid
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
-if (! $debug) {
-	$log->remove_appender('Screen');
-}
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PostViewer: $execrunuid Begin");
+$tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 
 my $outputfolder = q{output};

@@ -14,8 +14,10 @@ use Digest::SHA;
 use Log::Log4perl;
 use File::Basename qw(basename);
 use File::Path qw(remove_tree);
+use File::Spec::Functions;
 use RPC::XML;
 use RPC::XML::Client;
+use DBI;
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -25,82 +27,97 @@ BEGIN {
 	  getStandardParameters
 	  identifyScript
 	  listDirectoryContents
-	  HTCondorJobStatus
-	  $HTCondor_No_Status
-	  $HTCondor_Unexpanded
-	  $HTCondor_Idle
-	  $HTCondor_Running
-	  $HTCondor_Removed
-	  $HTCondor_Completed
-	  $HTCondor_Held
-	  $HTCondor_Submission_Error
 	  trim
       systemcall
 	  getSwampDir
       getSwampConfig
+	  isSwampInABox
       getLoggingConfigString
-      addExecRunLogAppender
-      removeExecRunLogAppender
+	  buildExecRunAppenderLogFileName
+      switchExecRunAppenderLogFile
       loadProperties
 	  saveProperties
 	  insertIntoInit
 	  displaynameToMastername
+	  masternameToPlatform
 	  checksumFile
 	  rpccall
 	  getJobDir
 	  makezip
 	  getUUID
+	  HTCondorJobStatus
+	  getHTCondorJobId
 	  start_process
 	  stop_process
+	  launchPadStart
+	  launchPadKill
 	  deleteJobDir
 	  createBOGfileName
 	  construct_vmhostname
 	  construct_vmdomainname
 	  create_empty_file
+	  isAssessmentRun
 	  isMetricRun
 	  isViewerRun
+	  database_connect
+	  database_disconnect
+
+	  $LAUNCHPAD_SUCCESS
+	  $LAUNCHPAD_BOG_ERROR
+	  $LAUNCHPAD_FILESYSTEM_ERROR
+	  $LAUNCHPAD_CHECKSUM_ERROR
+	  $LAUNCHPAD_FORK_ERROR
+	  $LAUNCHPAD_FATAL_ERROR
+
+	  runType
+	  $RUNTYPE_ARUN
+	  $RUNTYPE_VRUN
+	  $RUNTYPE_MRUN
     );
 }
 
-our $HTCondor_No_Status			= -1;
-our $HTCondor_Unexpanded		= 0;
-our $HTCondor_Idle				= 1;
-our $HTCondor_Running			= 2;
-our $HTCondor_Removed			= 3;
-our $HTCondor_Completed			= 4;
-our $HTCondor_Held				= 5;
-our $HTCondor_Submission_Error	= 6;
+our $LAUNCHPAD_SUCCESS			= 0;
+our $LAUNCHPAD_BOG_ERROR		= 1;
+our $LAUNCHPAD_FILESYSTEM_ERROR	= 2;
+our $LAUNCHPAD_CHECKSUM_ERROR	= 3;
+our $LAUNCHPAD_FORK_ERROR		= 4;
+our $LAUNCHPAD_FATAL_ERROR		= 5;
+
+our $RUNTYPE_ARUN	= 1;
+our $RUNTYPE_VRUN	= 2;
+our $RUNTYPE_MRUN	= 3;
 
 my $DEFAULT_CONFIG = getSwampDir() . '/etc/swamp.conf';
-my $MASTER_IMAGE_PATH = '/var/lib/libvirt/images/';
-my $EXEC_RUN_APPENDER_NAME = 'ExecRunUUID';
-my $EXEC_RUN_APPENDER_LAYOUT = Log::Log4perl::Layout::PatternLayout->new('%d: %p %P %F{1}-%L %m%n');
+# my $MASTER_IMAGE_PATH = '/var/lib/libvirt/images/';
+my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
 
-my $log = Log::Log4perl->get_logger(q{});
 my $global_swamp_config;
+my $log = Log::Log4perl->get_logger(q{});
+my $tracelog = Log::Log4perl->get_logger('runtrace');
 
 sub getSwampDir {
 	return "/opt/swamp";
 }
 
-sub getStandardParameters { my ($argv, $clusteridref) = @_ ;
+sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
 	# execrunuid owner uiddomain clusterid procid [debug]
 	my $argc = scalar(@$argv);
 	return if ($argc < 5 || $argc > 6);
-	my $execrunuid = $argv->[0];
+	$$execrunuidref = $argv->[0];
 	my $owner = $argv->[1];
 	my $uiddomain = $argv->[2];
 	$$clusteridref = $argv->[3];
 	my $procid = $argv->[4];
 	# debug is optional
 	my $debug = $argv->[5];
+	# execrunuid is returned via reference because it is global
 	# clusterid is returned via reference because it is global
-	return($execrunuid, $owner, $uiddomain, $procid, $debug);
+	return($owner, $uiddomain, $procid, $debug);
 }
 
 sub identifyScript { my ($argv) = @_ ;
 	my $cwd = getcwd();
-	$log->info("$PROGRAM_NAME ($PID) argv: <", (join ',', @$argv), ">");
+	$log->info("$PROGRAM_NAME ($PID) argv: <", (join ' ', @$argv), ">");
 	$log->info("uid: $REAL_USER_ID euid: $EFFECTIVE_USER_ID gid: $REAL_GROUP_ID egid: $EFFECTIVE_GROUP_ID");
 	$log->info("cwd: $cwd");
 	$log->info("executable: $EXECUTABLE_NAME");
@@ -119,54 +136,14 @@ sub listDirectoryContents { my ($dir) = @_ ;
 	}
 }
 
-# HTCondor JobStatus
-#	0	Unexpanded	U
-#	1	Idle	I
-#	2	Running	R
-#	3	Removed	X
-#	4	Completed	C
-#	5	Held	H
-#	6	Submission_err	E
-
-sub HTCondorJobStatus { my ($execrunuid, $clusterid, $procid) = @_ ;
-	return $HTCondor_No_Status if (! defined($clusterid));
-	$procid = 0 if (! defined($procid));
-
-	# first check condor_q for current job
-	my $command = qq{condor_q $clusterid . '.' . $procid -af JobStatus};
-	my ($output, $status) = systemcall($command);
-	if ($status) {
-		$log->error("Error - condor_q failed: $output");
-		return $HTCondor_No_Status;
+sub isAssessmentRun { my ($execrunuid) = @_ ;
+	if ($execrunuid =~ m/^M-/sxm) {
+		return 0;
 	}
-	# test output for positive integer in range
-	if ($output =~ m/^\d+$/) {
-		if ($output >= $HTCondor_Unexpanded && $output <= $HTCondor_Submission_Error) {
-			return $output;
-		}
+	if ($execrunuid =~ m/^vrun_/sxim) {
+		return 0;
 	}
-	# test output non empty string
-	$output = trim($output);
-	if (length($output)) {
-		$log->error("Error - condor_q failed: $output");
-		return $HTCondor_No_Status;
-	}
-
-	# second check condor_history for terminated job
-	$command = qq{condor_history $clusterid . '.' . $procid -af JobStatus};
-	($output, $status) = systemcall($command);
-	if ($status) {
-		$log->error("Error - condor_history failed: $output");
-		return $HTCondor_No_Status;
-	}
-	# test output for positive integer in range
-	if ($output =~ m/^\d+$/) {
-		if ($output >= $HTCondor_Unexpanded && $output <= $HTCondor_Submission_Error) {
-			return $output;
-		}
-	}
-	# status not found from condor_q nor condor_history
-	return $HTCondor_No_Status;
+	return 1;
 }
 
 sub isMetricRun { my ($execrunuid) = @_ ;
@@ -177,16 +154,104 @@ sub isMetricRun { my ($execrunuid) = @_ ;
 }
 
 sub isViewerRun { my ($execrunuid) = @_ ;
-	if ($execrunuid =~ m/^vrun\./sxim) {
+	if ($execrunuid =~ m/^vrun_/sxim) {
 		return 1;
 	}
 	return 0;
+}
+
+sub runType { my ($execrunuid) = @_ ;
+	if ($execrunuid =~ m/^M-/sxm) {
+		return $RUNTYPE_MRUN;
+	}
+	if ($execrunuid =~ m/^vrun_/sxim) {
+		return $RUNTYPE_VRUN;
+	}
+	return $RUNTYPE_ARUN;
 }
 
 sub trim { my ($string) = @_ ;
     $string =~ s/^\s+//sxm;
     $string =~ s/\s+$//sxm;
     return $string;
+}
+
+my $condor_manager;
+my $submit_node;
+
+sub _getHTCondorManager {
+	$global_swamp_config ||= getSwampConfig();
+	if (! isSwampInABox($global_swamp_config)) {
+		if (! $condor_manager) {
+			$condor_manager = $global_swamp_config->get('htcondor_condor_manager');
+			if (! $condor_manager) {
+				my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
+				if ($HTCONDOR_COLLECTOR_HOST) {
+					$condor_manager = $HTCONDOR_COLLECTOR_HOST;
+					$condor_manager =~ s/csacol/csacon/;
+					$condor_manager =~ s/(.*)\..*\.org$/$1\.mirsam.org/;
+				}
+			}
+		}
+	}
+	return $condor_manager;
+}
+
+sub _getHTCondorSubmitNode { my ($condor_manager) = @_ ;
+    $global_swamp_config ||= getSwampConfig();
+	if (! isSwampInABox($global_swamp_config)) {
+		$submit_node = $global_swamp_config->get('htcondor_submit_node');
+		if (! $submit_node) {
+			my $cmd = qq(condor_status -pool $condor_manager -schedd -af Name);
+			my ($output, $status) = systemcall($cmd);
+			if (! $status) {
+				if ($output) {
+					$submit_node = $output;
+					chomp $submit_node;
+				}
+			}
+		}
+	}
+	return $submit_node;
+}
+
+sub getHTCondorJobId { my ($execrunuid) = @_ ;
+    my $cmd = q(condor_q);
+	$condor_manager ||= _getHTCondorManager();
+	$submit_node ||= _getHTCondorSubmitNode($condor_manager);
+	if ($condor_manager && $submit_node) {
+		$cmd .= qq( -name $submit_node -pool $condor_manager);
+	}
+	$cmd .= qq( -constraint \'SWAMP_arun_execrunuid==\"$execrunuid\" || SWAMP_mrun_execrunuid==\"$execrunuid\" || SWAMP_vrun_execrunuid==\"$execrunuid\"\' -af CLUSTERID PROCID);                       
+	my ($output, $status) = systemcall($cmd);
+	if ($status) {
+		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $status $output");
+		return;
+	}
+	if ($output !~ m/^\d+\s+\d+$/) {
+		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $output");
+		return;
+	}
+	my ($clusterid, $procid) = split ' ', $output;
+	my $jobid = $clusterid . '.' . $procid;
+	return $jobid;
+}
+
+sub HTCondorJobStatus { my ($jobid) = @_ ;
+	my $cmd = q(condor_q);
+	$condor_manager ||= _getHTCondorManager();
+	$submit_node ||= _getHTCondorSubmitNode($condor_manager);
+	if ($condor_manager && $submit_node) {
+		$cmd .= qq( -name $submit_node -pool $condor_manager);
+	}
+	$cmd .= qq( -f \"%s\" JobStatus $jobid);
+	my ($output, $status) = systemcall($cmd);
+	if (! $status) {
+		if (! $output) {
+			return $output;
+		}
+	}
+	return;
 }
 
 sub construct_vmdomainname { my ($owner, $uiddomain, $clusterid, $procid) = @_ ;
@@ -239,18 +304,21 @@ sub start_process { my ($server) = @_ ;
     if ($OSNAME eq "MSWin32") {
         $log->warn("About to call fork() on a Win32 system.");
     }
-    if (!defined( $pid = fork())) {
-        $log->warn("Unable to fork process $server: $OS_ERROR");
+    if (! defined( $pid = fork())) {
+        $tracelog->trace("start_process: $server - fork error: $OS_ERROR");
         return;
     }
     elsif ($pid) {
+        $tracelog->trace("start_process: $server - returns pid: $pid");
         return $pid;
     }
     else {
+        $tracelog->trace("start_process: $server - calling exec");
         exec($server);    # Need a better way to tell if this failed.
                           # If we return from the exec call, bad bad things have happened.
         exit 6;
     }
+	$tracelog->trace("start_process: $server - error - returns undef");
     return;
 }
 
@@ -337,12 +405,15 @@ sub makezip { my ($oldname) = @_ ;
 sub checksumFile { my ($filename, $algorithm) = @_ ;
 	$algorithm ||= 512;
     my $sha = Digest::SHA->new(512);
-    if (defined(eval {$sha->addfile($filename, "pb");})) {
-        return $sha->hexdigest;
+	eval {
+		$sha->addfile($filename, "pb");
+	};
+	if ($@) {
+		$log->error("checksumFile - $filename $algorithm error - $@");
+        return 'ERROR';
     }
     else {
-		$log->error("checksumFile - $filename $algorithm error");
-        return 'ERROR';
+        return $sha->hexdigest;
     }
 }
 
@@ -350,19 +421,18 @@ sub rpccall { my ($client, $req) = @_ ;
     if (defined($req)) {
         my $res = $client->send_request($req);
         if (ref $res) {
-            if ($res->is_fault) {
-                my $str = $req->as_string();
-				$log->error('rpccall - error: ', sub{use Data::Dumper; Dumper($res->value);});
-                return {'error' => $res->value, 'fault' => 1};
+            if ($res->is_fault()) {
+				my $str = $res->value()->as_string();
+				$log->error("rpccall is_fault - error: $str");
+                return {'error' => $str, 'fault' => 1};
             }
             else {
-                return {'value' => $res->value};
+                return {'value' => $res->value()};
             }
         }
         else {
-            my $str = $req->as_string();
-			$log->error("rpccall - error: $str");
-            return {'error' => 'did not get a ref back', 'text' => $str};
+			$log->error("rpccall did not get a ref back - error: $res");
+            return {'error' => 'did not get a ref back', 'text' => $res};
         }
     }
     else {
@@ -441,6 +511,14 @@ sub _findConfig {
     return;
 }
 
+sub isSwampInABox { my ($config) = @_ ;
+	return 0 if (! $config);
+	if ($config->get('SWAMP-in-a-Box') || '' =~ m/yes/sxmi) {
+		return 1;
+	}
+    return 0;
+}
+
 sub getSwampConfig { my ($configfile) = @_ ;
 	$configfile ||= _findConfig();
     if (defined($configfile)) {
@@ -477,60 +555,29 @@ sub getLoggingConfigString {
     #
     # Otherwise, return a hard-coded configuration.
     #
-    my $config = <<'END_LOGGING_CONFIG';
-log4perl.logger            = TRACE, Logfile, Screen
-log4perl.category.runtrace = TRACE, RTLogfile
-
-log4perl.appender.Logfile          = Log::Log4perl::Appender::File
-log4perl.appender.Logfile.umask    = sub { 0000 };
-log4perl.appender.Logfile.filename = sub { logfilename(); };
-log4perl.appender.Logfile.mode     = append
-log4perl.appender.Logfile.layout   = Log::Log4perl::Layout::PatternLayout
-log4perl.appender.Logfile.layout.ConversionPattern = %d: %p %P %F{1}-%L %m%n
-
-log4perl.appender.Screen           = Log::Log4perl::Appender::Screen
-log4perl.appender.Screen.stderr    = 0
-log4perl.appender.Screen.Threshold = TRACE
-log4perl.appender.Screen.layout    = Log::Log4perl::Layout::PatternLayout
-log4perl.appender.Screen.layout.ConversionPattern = %r %p %P %F{1} %M %L> %m %n
-
-log4perl.appender.RTLogfile          = Log::Log4perl::Appender::File
-log4perl.appender.RTLogfile.umask    = sub { 0000 };
-log4perl.appender.RTLogfile.filename = /opt/swamp/log/runtrace.log
-log4perl.appender.RTLogfile.mode     = append
-log4perl.appender.RTLogfile.layout   = Log::Log4perl::Layout::PatternLayout
-log4perl.appender.RTLogfile.layout.ConversionPattern = %d: %p %P %F{1}-%L %m%n
-END_LOGGING_CONFIG
-
-    return \$config;
+    my $config = {
+    	'log4perl.rootLogger'   => 'ERROR, LOGFILE',
+    	'log4perl.appender.LOGFILE' => 'Log::Log4perl::Appender::File',
+    	'log4perl.appender.LOGFILE.filename' => catfile(getSwampDir(), 'log', 'noconfig.log'),
+    	'log4perl.appender.LOGFILE.layout' => 'Log::Log4perl::Layout::SimpleLayout',
+	};
+    return $config;
 }
 
-sub addExecRunLogAppender { my ($exec_run_uuid) = @_;
-    $global_swamp_config ||= getSwampConfig();
+sub buildExecRunAppenderLogFileName { my ($execrunuid) = @_ ;
+	my $name = catfile(getSwampDir(), 'log', $execrunuid . '.log');
+	return $name;
+}
 
+sub switchExecRunAppenderLogFile { my ($execrunuid) = @_ ;
+    $global_swamp_config ||= getSwampConfig();
     # A unified a-run log isn't helpful with multi-server setups.
     # For example, it will clutter the log directory on the data server.
-    if ($global_swamp_config->exists('SWAMP-in-a-Box')) {
-        if ($global_swamp_config->get('SWAMP-in-a-Box') =~ /yes/sxmi) {
-
-            # Remove an existing appender, if any.
-            removeExecRunLogAppender();
-
-            # Add the new appender.
-            my $exec_run_log_file = getSwampDir() . '/log/' . $exec_run_uuid . '.log';
-            my $file_appender = Log::Log4perl::Appender->new('Log::Log4perl::Appender::File',
-                    name     => $EXEC_RUN_APPENDER_NAME,
-                    filename => $exec_run_log_file,
-                    umask    => 0000,
-                    mode     => 'append');
-            $file_appender->layout($EXEC_RUN_APPENDER_LAYOUT);
-            $log->add_appender($file_appender);
-        }
-    }
-}
-
-sub removeExecRunLogAppender {
-    Log::Log4perl->eradicate_appender($EXEC_RUN_APPENDER_NAME);
+	if (isSwampInABox($global_swamp_config)) {
+		my $file_appender = Log::Log4perl::appender_by_name('Logfile');
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		$file_appender->file_switch($name);
+	}
 }
 
 sub systemcall { my ($command, $silent) = @_;
@@ -551,8 +598,37 @@ sub systemcall { my ($command, $silent) = @_;
     return ($output, $status);
 }
 
+sub masternameToPlatform { my ($qcow_name) = @_ ;
+	if (! $qcow_name) {
+		$log->error("No qcow file name specified");
+		return '';
+	}
+	my $platform = basename($qcow_name);
+	$platform =~ s/^condor-//;
+	$platform =~ s/-master-\d+.qcow2$//;
+	# my ($vendor, $release, $bits) = split /\-/, $platform;
+	# my ($major, $minor) = split /\./, $release;
+	# $platform = $vendor || '';
+	# $platform .= '-' . $major if ($major);
+	# $platform .= '.' . $minor if ($minor);
+	# $platform .= '-' . $bits if ($bits);
+	if (! $platform) {
+		$log->error("Could not translate $qcow_name to platform");
+		return '';
+	}
+	return $platform;
+}
+
 sub displaynameToMastername { my ($platform) = @_ ;
-    my ($output, $status) = systemcall("find $MASTER_IMAGE_PATH -name \"*$platform*\"");
+	if (! $platform) {
+		$log->error("No platform specified");
+		return '';
+	}
+	$log->trace("displaynameToMastername - platform: $platform");
+	$platform =~ s/\.minorversion\-/\.\*\-/;
+	my $findcmd = "find $MASTER_IMAGE_PATH -maxdepth 1 -name \"*$platform*\"";
+	$log->trace("displaynameToMastername - find command: $findcmd");
+    my ($output, $status) = systemcall($findcmd);
     if ($status) {
         $log->error("Cannot find images in: $MASTER_IMAGE_PATH for: $platform");
         return '';
@@ -571,6 +647,7 @@ sub displaynameToMastername { my ($platform) = @_ ;
     }
 	if (! $imagename) {
 		$log->error("Cannot find image for: $platform");
+		return '';
 	}
     return $imagename;
 }
@@ -691,6 +768,58 @@ sub insertIntoInit { my ($osimage, $script, $runshcmd, $vmhostname, $imagename) 
     return ($ostype, $ret);
 }
 
+#########################
+#	Launch Pad Client	#
+#########################
+
+my $launchpadUri;
+my $launchpadClient;
+
+sub _configureLaunchPadClient {
+	$global_swamp_config ||= getSwampConfig();
+	my $host = $global_swamp_config->get('agentMonitorHost');
+	my $port = $global_swamp_config->get('agentMonitorPort');
+    my $uri = "http://$host:$port";
+    undef $launchpadClient;
+    return $uri;
+}
+
+#########################
+#	Launch Pad Start	#
+#########################
+
+sub launchPadStart { my ($options)    = @_ ;
+    my $req = RPC::XML::request->new('swamp.launchPad.start', RPC::XML::struct->new($options));
+	$launchpadUri ||= _configureLaunchPadClient();
+	$launchpadClient ||= RPC::XML::Client->new($launchpadUri);
+    my $result = rpccall($launchpadClient, $req);
+	if ($result->{'error'}) {
+		$log->error("launchPadStart failed - error: ", sub { use Data::Dumper; Dumper($result->{'error'}); });
+		return $LAUNCHPAD_FATAL_ERROR;
+	}
+	my $status = $LAUNCHPAD_FATAL_ERROR;
+	$status = $result->{'value'} if (defined($result->{'value'}));
+	return $status;
+}
+
+#########################
+#	Launch Pad Kill		#
+#########################
+
+sub launchPadKill { my ($execrunuid, $jobid)    = @_ ;
+    my $req = RPC::XML::request->new('swamp.launchPad.kill', RPC::XML::string->new($execrunuid), RPC::XML::string->new($jobid));
+	$launchpadUri ||= _configureLaunchPadClient();
+	$launchpadClient ||= RPC::XML::Client->new($launchpadUri);
+    my $result = rpccall($launchpadClient, $req);
+	if ($result->{'error'}) {
+		$log->error("launchPadKill failed - error: ", sub { use Data::Dumper; Dumper($result->{'error'}); });
+		return $LAUNCHPAD_FATAL_ERROR;
+	}
+	my $status = $LAUNCHPAD_FATAL_ERROR;
+	$status = $result->{'value'} if (defined($result->{'value'}));
+	return $status;
+}
+
 #####################
 #	Agent Client	#
 #####################
@@ -705,6 +834,28 @@ sub _configureAgentClient {
     my $uri = "http://$host:$port";
     undef $agentClient;
     return $uri;
+}
+
+#############################
+#	Database Connectivity	#
+#############################
+
+sub database_connect {
+	$global_swamp_config ||= getSwampConfig();
+	my $dsnHost = $global_swamp_config->get('dbPerlDsnHost');
+	my $dsnPort = $global_swamp_config->get('dbPerlDsnPort');
+	my $dsn = "DBI:mysql:host=$dsnHost;port=$dsnPort";
+	my $user = $global_swamp_config->get('dbPerlUser');
+	my $password = $global_swamp_config->get('dbPerlPass');
+	my $dbh = DBI->connect($dsn, $user, $password, {PrintError => 0, RaiseError => 0});
+	if ($DBI::err) {
+		$log->error("database_connect failed: $DBI::err error: ", $DBI::errstr);
+	}
+	return $dbh;
+}
+
+sub database_disconnect { my ($dbh) = @_ ;
+	$dbh->disconnect();
 }
 
 #####################

@@ -7,6 +7,7 @@
 
 use strict;
 use warnings;
+use English '-no_match_vars';
 use Sys::Hostname;
 use File::Copy;
 use File::Remove qw(remove);
@@ -14,6 +15,7 @@ use File::Basename;
 use File::Spec::Functions;
 use Log::Log4perl::Level;
 use Log::Log4perl;
+use POSIX qw(strftime);
 
 use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
@@ -28,7 +30,9 @@ use SWAMP::vmu_Support qw(
 	getSwampDir
 	loadProperties
 	getLoggingConfigString
-	addExecRunLogAppender
+	getSwampConfig
+	isSwampInABox
+	buildExecRunAppenderLogFileName
 	systemcall
 	insertIntoInit
 	displaynameToMastername
@@ -46,12 +50,19 @@ use SWAMP::vmu_AssessmentSupport qw(
 );
 
 my $log;
+my $tracelog;
+my $config = getSwampConfig();
+my $execrunuid;
 my $clusterid;
 my $builderUser;
 my $builderPassword;
 my $hostname = hostname();
 
 sub logfilename {
+	if (isSwampInABox($config)) {
+		my $name = buildExecRunAppenderLogFileName($execrunuid);
+		return $name;
+	}
     my $name = basename($0, ('.pl'));
 	chomp $name;
 	$name =~ s/Pre//sxm;
@@ -62,7 +73,7 @@ sub logfilename {
 sub patchDeltaQcow2ForInit { my ($execrunuid, $imagename, $vmhostname) = @_ ;
 	my $swampdir = getSwampDir();
 	my $runshcmd =
-		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/nohup.out 2>&1 &\\n\"";
+		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/runsh.out 2>&1 &\\n\"";
 	my $gfname = 'init.gf';
 	my $script;
 	if (! open($script, '>', $gfname)) {
@@ -87,8 +98,16 @@ sub patchDeltaQcow2ForInit { my ($execrunuid, $imagename, $vmhostname) = @_ ;
 
 sub createQcow2Disks { my ($bogref, $inputfolder, $outputfolder) = @_ ;
 	# delta qcow2
+	$log->info('Creating base image for: ', $bogref->{'platform'});
 	my $imagename = displaynameToMastername($bogref->{'platform'});
-	$log->info("Creating base image from: $imagename");
+	if (! $imagename) {
+		$log->error("createQcow2Disks - base image creation failed - no image");
+		return;
+	}
+	if (! -r $imagename) {
+		$log->error("createQcow2Disks - base image creation failed - $imagename not readable");
+		return;
+	}
 	my ($output, $status) = systemcall("qemu-img create -b $imagename -f qcow2 delta.qcow2");
 	if ($status) {
 		$log->error("createQcow2Disks - base image creation failed: $imagename $output $status");
@@ -153,24 +172,22 @@ sub extractBogFile { my ($execrunuid, $outputfolder) = @_ ;
 ########
 
 # args: execrunuid owner uiddomain clusterid procid [debug]
+# execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($execrunuid, $owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$clusterid);
-if (! $clusterid) {
-	# we have no clusterid for the log4perl log file name
+my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+if (! $execrunuid || ! $clusterid) {
+	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
 }
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
-# logger uses clusterid
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
-if (! $debug) {
-	$log->remove_appender('Screen');
-}
-addExecRunLogAppender($execrunuid);
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PreAssessment: $execrunuid Begin");
+$tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 listDirectoryContents();
 
@@ -183,27 +200,29 @@ my $error_message = 'Unable to Start VM';
 my $bogref = extractBogFile($execrunuid, $outputfolder);
 if (! $bogref) {
 	$log->error("extractBogFile failed for: $execrunuid");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $error_message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, 'null', 'null', $error_message);
 	exit(1);
 }
 
 identifyAssessment($bogref);
+my $user_uuid = $bogref->{'userid'} || 'null';
+my $projectid = $bogref->{'projectid'} || 'null';
 
 my $status = populateInputDirectory($bogref, $inputfolder);
 if (! $status) {
 	$log->error("populateInputDirectory failed for: $execrunuid");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $error_message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 	exit(1);
 }
 my $imagename = createQcow2Disks($bogref, $inputfolder, $outputfolder);
 if (! $imagename) {
 	$log->error("createQcow2Disks failed for: $execrunuid");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $error_message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 	exit(1);
 }
 if (! patchDeltaQcow2ForInit($execrunuid, $imagename, $vmhostname)) {
 	$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $imagename $vmhostname");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $error_message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 	exit(1);
 }
 
@@ -211,7 +230,7 @@ my $eventsfolder = q{events};
 mkdir($eventsfolder);
 create_empty_file(catfile($eventsfolder, 'JobVMEvents.log'));
 $log->info("Starting virtual machine for: $execrunuid $imagename $vmhostname");
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, 'Starting virtual machine');
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Starting virtual machine');
 updateExecutionResults($execrunuid, {
 	'status'						=> 'Starting virtual machine',
 	'execute_node_architecture_id'	=> $hostname,
@@ -220,6 +239,7 @@ updateExecutionResults($execrunuid, {
 	'vm_password'					=> $builderPassword,
 	'vm_image'						=> $imagename,
 	'tool_filename'					=> $bogref->{'toolpath'},
+	'run_date'						=> strftime("%Y-%m-%d %H:%M:%S", localtime(time())),
 });
 
 listDirectoryContents();

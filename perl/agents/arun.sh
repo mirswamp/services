@@ -6,50 +6,52 @@
 # Copyright 2012-2017 Software Assurance Marketplace
 
 RUNOUT="$VMOUTPUTDIR/swamp_run.out"
-CLOCOUT="$VMOUTPUTDIR/cloc.out"
 EVENTOUT="/dev/ttyS1"
 
 if [ -f "$RUNOUT" ]; then
-    echo "`date`: Exiting immediately because $RUNOUT already exists" >> "$RUNOUT.2"
+    echo "`date`: Exiting immediately because $RUNOUT already exists" >> $RUNOUT
+	echo "run.sh pid: $$" >> $RUNOUT
+	echo "run.sh ppid: ${PPID}" >> $RUNOUT
+	echo "run.sh parent command: $(ps ${PPID} | tail -n 1)" >> $RUNOUT
+	echo "========================== env" >> $RUNOUT
+	env >> $RUNOUT 2>&1
+	echo "==========================" >> $RUNOUT
     exit
 fi
 
+echo "`date`: run.sh pid: $$" >> $RUNOUT
+echo "run.sh ppid: ${PPID}" >> $RUNOUT
+echo "run.sh parent command: $(ps ${PPID} | tail -n 1)" >> $RUNOUT
+
 echo "RUNSHSTART" > $EVENTOUT
 
-echo "begin run.sh" >> $RUNOUT
-echo "========================== date" >> $RUNOUT
-date >> $RUNOUT 2>&1
 echo "========================== id" >> $RUNOUT
 id >> $RUNOUT 2>&1
 echo "========================== env" >> $RUNOUT
 env >> $RUNOUT 2>&1
 echo "========================== pwd" >> $RUNOUT
 pwd >> $RUNOUT 2>&1
-echo "========================== find" >> $RUNOUT
-find . >> $RUNOUT 2>&1
 echo "==========================" >> $RUNOUT
-echo "==STARTIF" >> $RUNOUT
-/sbin/ifconfig >> $RUNOUT
-echo "==ENDIF" >> $RUNOUT
-
-line=$(grep package-archive package.conf)
-parts=(${line//=/ })
-PACKAGE=${parts[1]}
-
-echo "RUNCLOC" > $EVENTOUT
-
-echo "cloc $PACKAGE >> $CLOCOUT" >> $RUNOUT
-perl $VMINPUTDIR/cloc-1.68.pl --csv --quiet $PACKAGE >> $CLOCOUT 2>&1
 
 echo "BEGINASSESSMENT" > $EVENTOUT
-echo ::Assessing_package,`date +%s` >> $RUNOUT
 chmod +x $VMINPUTDIR/_run.sh
 export NOSHUTDOWN=1
+echo ::Assessing_package,`date +%s` >> $RUNOUT
 $VMINPUTDIR/_run.sh
 echo ::done Assessing_package,$?, `date +%s` >> $RUNOUT
-echo "Copying log files at: `date`" >> $RUNOUT
-cp /var/log/boot.log /mnt/out
-cp /var/log/messages /mnt/out
+
+
+if [ -f '/var/log/boot.log' -a -r '/var/log/boot.log' ]
+then
+	echo "Copying boot.log at: `date`" >> $RUNOUT
+	cp /var/log/boot.log /mnt/out
+fi
+if [ -f '/var/log/messages' -a -r '/var/log/messages' ]
+then
+	echo "Copying messages at: `date`" >> $RUNOUT
+	cp /var/log/messages /mnt/out
+fi
+
 echo "Shutting down assessment vm at: `date`" >> $RUNOUT
 echo "ENDASSESSMENT" > $EVENTOUT
 

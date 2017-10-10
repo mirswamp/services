@@ -18,6 +18,8 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig 
 	checksumFile 
 	rpccall
+	database_connect
+	database_disconnect
 );
 
 use parent qw(Exporter);
@@ -31,52 +33,49 @@ BEGIN {
 		$VIEWER_STATE_STOPPING
 		$VIEWER_STATE_JOBDIR_FAILED
 		$VIEWER_STATE_SHUTDOWN
+		$VIEWER_STATE_TERMINATING
+		$VIEWER_STATE_TERMINATED
+		$VIEWER_STATE_TERMINATE_FAILED
 		createrunscript
 		copyvruninputs
 		saveViewerDatabase
 		updateClassAdViewerStatus
 		getViewerStateFromClassAd
 		launchViewer
-		qmstoreviewer
-		launchPadStart
     );
 }
 
 my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
+my $tracelog = Log::Log4perl->get_logger('runtrace');
 
 #########################
 #	HTCondor ClassAd	#
 #########################
 
-our $VIEWER_STATE_NO_RECORD		= 0;
-our $VIEWER_STATE_LAUNCHING 	= 1;
-our $VIEWER_STATE_READY			= 2;
-our $VIEWER_STATE_STOPPING		= -1;
-our $VIEWER_STATE_JOBDIR_FAILED	= -2;
-our $VIEWER_STATE_SHUTDOWN		= -3;
+our $VIEWER_STATE_NO_RECORD			= 0;
+our $VIEWER_STATE_LAUNCHING 		= 1;
+our $VIEWER_STATE_READY				= 2;
+our $VIEWER_STATE_STOPPING			= -1;
+our $VIEWER_STATE_JOBDIR_FAILED		= -2;
+our $VIEWER_STATE_SHUTDOWN			= -3;
+our $VIEWER_STATE_TERMINATING		= -4;
+our $VIEWER_STATE_TERMINATED		= -5;
+our $VIEWER_STATE_TERMINATE_FAILED	= -6;
 
 sub updateClassAdViewerStatus { my ($execrunuid, $state, $status, $options) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
 	my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
 	$log->info("updateClassAdViewerStatus - collector: $HTCONDOR_COLLECTOR_HOST execrunuid: $execrunuid state: $state status: $status");
 	$log->debug("updateClassAdViewerStatus - options: ", sub { use Data::Dumper; Dumper($options); });
-	my $vmhostname = 'null';
-	my $viewer = 'null';
-	my $vmip = 'null';
-	my $apikey = 'null';
-	my $project = 'null';
-	my $viewer_instance_uuid = 'null';
-	my $viewer_url_uuid = 'null';
-	if ($options) {
-		$vmhostname = $options->{'vmhostname'} || 'null';
-		$viewer = $options->{'viewer'} || 'null';
-		$vmip = $options->{'vmip'} || 'null';
-		$apikey = $options->{'apikey'} || 'null';
-		$project = $options->{'project'} || 'null';
-		$viewer_instance_uuid = $options->{'viewer_uuid'} || 'null';
-		$viewer_url_uuid = $options->{'urluuid'} || 'null';
-	}
+	my $vmhostname = $options->{'vmhostname'} || 'null';
+	my $viewer = $options->{'viewer'} || 'null';
+	my $vmip = $options->{'vmip'} || 'null';
+	my $apikey = $options->{'apikey'} || 'null';
+	my $user_uuid = $options->{'userid'} || 'null';
+	my $projectid = $options->{'projectid'} || 'null';
+	my $viewer_instance_uuid = $options->{'viewer_uuid'} || 'null';
+	my $viewer_url_uuid = $options->{'urluuid'} || 'null';
     my ($output, $stat) = systemcall("condor_advertise -pool $HTCONDOR_COLLECTOR_HOST UPDATE_AD_GENERIC - <<'EOF'
 MyType=\"Generic\"
 Name=\"$execrunuid\"
@@ -86,7 +85,8 @@ SWAMP_vmu_viewer_status=\"$status\"
 SWAMP_vmu_viewer_name=\"$viewer\"
 SWAMP_vmu_viewer_vmip=\"$vmip\"
 SWAMP_vmu_viewer_apikey=\"$apikey\"
-SWAMP_vmu_viewer_project=\"$project\"
+SWAMP_vmu_viewer_user_uuid=\"$user_uuid\"
+SWAMP_vmu_viewer_projectid=\"$projectid\"
 SWAMP_vmu_viewer_instance_uuid=\"$viewer_instance_uuid\"
 SWAMP_vmu_viewer_url_uuid=\"$viewer_url_uuid\"
 EOF
@@ -99,7 +99,7 @@ EOF
 sub getViewerStateFromClassAd { my ($project_name, $viewer_name) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
     my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
-    my $command = qq{condor_status -pool $HTCONDOR_COLLECTOR_HOST -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_viewer_project SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
+    my $command = qq{condor_status -pool $HTCONDOR_COLLECTOR_HOST -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_user_uuid SWAMP_vmu_viewer_projectid SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
     my ($output, $status) = systemcall($command);
     if ($status) { 
         my $error_message = "condor_status $HTCONDOR_COLLECTOR_HOST failed - status: $status output: $output";
@@ -116,8 +116,8 @@ sub getViewerStateFromClassAd { my ($project_name, $viewer_name) = @_ ;
     	s/\"//g for @parts;
     	s/^\s+//g for @parts;
     	s/\s+$//g for @parts;
-    	my ($execrunuid, $state, $vstatus, $viewer, $vmip, $apikey, $project, $viewer_instance_uuid, $viewer_url_uuid) = @parts;
-    	if (($project eq $project_name) && ($viewer eq $viewer_name)) {
+    	my ($execrunuid, $state, $vstatus, $viewer, $vmip, $apikey, $user_uuid, $projectid, $viewer_instance_uuid, $viewer_url_uuid) = @parts;
+    	if (($projectid eq $project_name) && ($viewer eq $viewer_name)) {
 			if ($vstatus eq 'Viewer is up') {
         		return {
             		'state'     => $state,
@@ -396,71 +396,6 @@ sub copyvruninputs { my ($bogref, $dest) = @_ ;
 	return $retval;
 }
 
-#############################
-#	Quarter Master Client	#
-#############################
-
-my $quartermasterUri;
-my $quartermasterClient;
-
-sub _configureQuarterMasterClient {
-	$global_swamp_config ||= getSwampConfig();
-	my $host = $global_swamp_config->get('quartermasterHost');
-	my $port = $global_swamp_config->get('quartermasterPort');
-    my $uri = "http://$host:$port";
-    undef $quartermasterClient;
-    return $uri;
-}
-
-#####################
-#	qmstoreviewer	#
-#####################
-
-sub qmstoreviewer { my ($mapref)    = @_ ;
-    my $req = RPC::XML::request->new('swamp.viewer.storeViewerDatabase', RPC::XML::struct->new($mapref));
-	$quartermasterUri ||= _configureQuarterMasterClient();
-	$quartermasterClient ||= RPC::XML::Client->new($quartermasterUri);
-    my $result = rpccall($quartermasterClient, $req);
-	if ($result->{'error'}) {
-		$log->error("qmstoreviewer failed - error: ", sub { use Data::Dumper; Dumper($result->{'error'}); });
-	}
-	# this is a pass through of the result
-	return $result;
-}
-
-#########################
-#	Launch Pad Client	#
-#########################
-
-my $launchpadUri;
-my $launchpadClient;
-
-sub _configureLaunchPadClient {
-	$global_swamp_config ||= getSwampConfig();
-	my $host = $global_swamp_config->get('agentMonitorHost');
-	my $port = $global_swamp_config->get('agentMonitorPort');
-    my $uri = "http://$host:$port";
-    undef $launchpadClient;
-    return $uri;
-}
-
-#########################
-#	Launch Pad Start	#
-#########################
-
-sub launchPadStart { my ($mapref)    = @_ ;
-    my $execrunid = $mapref->{'execrunid'};
-    my $req = RPC::XML::request->new('swamp.launchPad.start', RPC::XML::struct->new($mapref));
-	$launchpadUri ||= _configureLaunchPadClient();
-	$launchpadClient ||= RPC::XML::Client->new($launchpadUri);
-    my $result = rpccall($launchpadClient, $req);
-	if ($result->{'error'}) {
-		$log->error("launchPadStart failed - error", sub { use Data::Dumper; Dumper($result->{'error'}); });
-		return 0;
-	}
-    return 1;
-}
-
 #####################
 #	Agent Client	#
 #####################
@@ -517,30 +452,47 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder, $saverunname) 
 	}
     my $sharedfolder = $bogref->{'resultsfolder'} . '/' . $bogref->{'viewer_uuid'};
     make_path($sharedfolder);
-    my %results;
-    $results{'viewerdbchecksum'} = checksumFile($savedbfile);
     if (! cp($savedbfile, $sharedfolder)) {
         $log->error("Cannot copy $savedbfile to $sharedfolder : $OS_ERROR");
         return 0;
     }
 	$log->info("Copied: $savedbfile to: $sharedfolder");
-    $results{'vieweruuid'} = $bogref->{'viewer_uuid'};
-    $results{'viewerdbpath'} = $sharedfolder . '/' . $savedbname;
     # MYSQL needs to own our result files folders so they can be cleaned up.
     my ($uid, $gid) = (getpwnam('mysql'))[2, 3];
     if (chown($uid, $gid, $sharedfolder) != 1) {
         $log->warn("Cannot chown folder $sharedfolder to mysql user. $OS_ERROR");
     }
-    if (chown($uid, $gid, $results{'viewerdbpath'}) != 1) {
-        $log->warn("Cannot chown file $results{'viewerdbpath'} to mysql user. $OS_ERROR");
+	my $viewerdbpath = $sharedfolder . '/' . $savedbname;
+    if (chown($uid, $gid, $viewerdbpath) != 1) {
+        $log->warn("Cannot chown file $viewerdbpath to mysql user. $OS_ERROR");
     }
-	$log->debug("Calling storeviewer with: ", sub { use Data::Dumper; Dumper(\%results); });
-    my $req = RPC::XML::request->new('agentMonitor.storeviewer', RPC::XML::struct->new(\%results));
-	$agentUri ||= _configureAgentClient();
-	$agentClient ||= RPC::XML::Client->new($agentUri);
-    my $result = rpccall($agentClient, $req);
-	if ($result->{'error'}) {
-		$log->error("saveViewerDatabase failed - error: ", sub { use Data::Dumper; Dumper($result->{'error'}); });
+	if (my $dbh = database_connect()) {
+		# viewer_instance_uuid_in
+		# viewer_db_path_in
+		# viewer_db_checksum_in
+		# return_string
+		my $query = q{CALL viewer_store.store_viewer(?, ?, ?, @r);};
+		my $sth = $dbh->prepare($query);
+		my $viewerinstanceuuid = $bogref->{'viewer_uuid'};
+		my $viewerdbchecksum = checksumFile($savedbfile);
+		$log->info("saveViewerDatabase - calling store_viewer with: $viewerinstanceuuid $viewerdbpath $viewerdbchecksum");
+		$sth->bind_param(1, $viewerinstanceuuid);
+		$sth->bind_param(2, $viewerdbpath);
+		$sth->bind_param(3, $viewerdbchecksum);
+		$sth->execute();
+		my $result;
+		if (! $sth->err) {
+			$result = $dbh->selectrow_array('SELECT @r');
+		}
+		database_disconnect($dbh);
+		if (! $result || ($result ne 'SUCCESS')) {
+			$log->error("saveViewerDatabase - error: $result");
+			return 0;
+		}
+		$log->info("saveViewerDatabase - store_viewer returns: $result");
+	}
+	else {
+        $log->error("saveViewerDatabase - database connection failed");
 		return 0;
 	}
     return 1;

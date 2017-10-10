@@ -56,7 +56,6 @@ GetOptions(
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 
 if ($asdaemon) {
    chdir(q{/});

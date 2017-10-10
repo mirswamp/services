@@ -29,24 +29,20 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 use SWAMP::vmu_Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
 	identifyScript
-	HTCondorJobStatus
-	$HTCondor_No_Status
-	$HTCondor_Unexpanded
-	$HTCondor_Idle
-	$HTCondor_Running
-	$HTCondor_Removed
-	$HTCondor_Completed
-	$HTCondor_Held
-	$HTCondor_Submission_Error
   	getSwampDir
   	getSwampConfig
   	getLoggingConfigString
-	addExecRunLogAppender
-	removeExecRunLogAppender
+	switchExecRunAppenderLogFile
   	getJobDir
 	construct_vmhostname
-  	systemcall
 	getUUID
+	launchPadStart
+	$LAUNCHPAD_SUCCESS
+    $LAUNCHPAD_BOG_ERROR
+    $LAUNCHPAD_FILESYSTEM_ERROR
+    $LAUNCHPAD_CHECKSUM_ERROR
+    $LAUNCHPAD_FORK_ERROR
+    $LAUNCHPAD_FATAL_ERROR
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
@@ -55,10 +51,11 @@ use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_STOPPING
 	$VIEWER_STATE_JOBDIR_FAILED
 	$VIEWER_STATE_SHUTDOWN
+	$VIEWER_STATE_TERMINATING
+	$VIEWER_STATE_TERMINATED
+	$VIEWER_STATE_TERMINATE_FAILED
 	getViewerStateFromClassAd
 	updateClassAdViewerStatus
-	launchPadStart
-	qmstoreviewer
 );
 
 if (! swamplock($PROGRAM_NAME)) {
@@ -84,7 +81,6 @@ GetOptions(
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
@@ -151,15 +147,6 @@ $daemon->add_method(
     }
 );
 
-@sig = ( 'int', 'int struct ' );
-$daemon->add_method(
-    {
-        'name'      => 'agentMonitor.storeviewer',
-        'signature' => \@sig,
-        'code'      => \&_storeviewer
-    }
-);
-
 my @signals = qw/TERM HUP INT/;
 my %map = ('signal' => \@signals);
 $log->info("$PROGRAM_NAME ($PID) entering listen loop at $serverhost on port: $port");
@@ -176,21 +163,18 @@ sub logfilename {
 #	execrunuid
 #	clusterid
 #	procid
-#	bog data for viewer
 # returns:
-# 	-1	wait
 # 	 0	failure
 #	>0	success
 sub _deleteJobDir { my ($server, $options) = @_ ;
 	my $execrunuid = $options->{'execrunuid'};
-	addExecRunLogAppender($execrunuid) if defined $execrunuid;
+	switchExecRunAppenderLogFile($execrunuid) if defined $execrunuid;
 	my $result = _deleteJobDirMain($server, $options);
-	removeExecRunLogAppender() if defined $execrunuid;
 	return $result;
 }
 
 sub _deleteJobDirMain { my ($server, $options) = @_ ;
-	$tracelog->trace('_deleteJobDir options: ', sub {use Data::Dumper; Dumper($options);});
+	$tracelog->trace("_deleteJobDir options: ", sub {use Data::Dumper; Dumper($options);});
 	# no execrunuid - cannot update class ad
 	if (! defined($options->{'execrunuid'})) {
 		$log->error('_deleteJobDir Error - no execrunuid');
@@ -244,13 +228,13 @@ sub _deleteJobDirMain { my ($server, $options) = @_ ;
 }
 
 sub _launchViewer { my ($server, $options) = @_ ;
-	$tracelog->trace('_launchViewer options: ', sub {use Data::Dumper; Dumper($options);});
+	$tracelog->trace("_launchViewer options: ", sub {use Data::Dumper; Dumper($options);});
 	my $stopping_poll_count = 24;
 	my $stopping_poll_sleep_time = 5;
 	my $state;
 	# get current viewer instance state
 	for (my $i = 0; $i < $stopping_poll_count; $i++) {
-		my $viewerState = getViewerStateFromClassAd($options->{'project'}, $options->{'viewer'});
+		my $viewerState = getViewerStateFromClassAd($options->{'projectid'}, $options->{'viewer'});
 		# timeout or error condition 
 		if (($i >= ($stopping_poll_count - 1)) || ! defined($viewerState->{'state'}) || defined($viewerState->{'error'})) {
 			$log->error("_launchViewer not launching viewer - getViewerStateFromClassAd returns: ", sub {use Data::Dumper; Dumper($viewerState);});
@@ -261,46 +245,45 @@ sub _launchViewer { my ($server, $options) = @_ ;
 			return 0;
 		}
 		my $state = $viewerState->{'state'};
+		# viewer prior terminate failed - it is still running so return success ?????
+		if ($state == $VIEWER_STATE_TERMINATE_FAILED) {
+        	$log->info("_launchViewer not launching viewer - prior terminate failed launchPadStart options: ", sub { use Data::Dumper; Dumper($options); });
+        	$tracelog->trace('_launchViewer - prior terminate failed'); 
+        	return 1;
+		}
 		# viewer is already launching or ready so return success
 		if ($state == $VIEWER_STATE_LAUNCHING || $state == $VIEWER_STATE_READY) {
         	$log->info("_launchViewer not launching viewer - pending launchPadStart options: ", sub { use Data::Dumper; Dumper($options); });
         	$tracelog->trace('_launchViewer - pending'); 
         	return 1;
 		}
-		# viewer is shutdown or does not exist so launch
-		if ($state == $VIEWER_STATE_SHUTDOWN || $state == $VIEWER_STATE_NO_RECORD) {
+		# viewer is shutdown, terminated or does not exist so launch
+		if ($state == $VIEWER_STATE_SHUTDOWN || $state == $VIEWER_STATE_NO_RECORD || $state == $VIEWER_STATE_TERMINATED) {
 			last;
 		}
-		# viewer is stopping so sleep waiting for it to shutdown
-		if ($state == $VIEWER_STATE_STOPPING) {
+		# viewer is stopping, or terminating so sleep waiting for it to shutdown
+		if ($state == $VIEWER_STATE_STOPPING || $state == $VIEWER_STATE_TERMINATING) {
         	$log->info("_launchViewer waiting for shutdown viewerState: ", sub { use Data::Dumper; Dumper($viewerState); });
 			sleep $stopping_poll_sleep_time;
 		}
 	}
 	# OK to launch new viewer instance
-	my $key = "$options->{'project'}.$options->{'viewer'}";
-	$key =~s/\s//sxmg;
-	$options->{'execrunid'} = "vrun.$key";
+	my $key = $options->{'projectid'} . '_' . $options->{'viewer'};
+	$key =~ s/\s//sxmg;
+	$options->{'execrunid'} = 'vrun' . '_' . $key;
 	$options->{'intent'} = 'VRUN'; # New field.
 	$options->{'apikey'} = getUUID();
-	# This is now the URL for the VM instead of project.
+	# This is now the URL for the VM instead of projectid.
 	# It needs to persist for THIS VM, but be unique next time.
 	$options->{'urluuid'} = qq{proxy-}.uri_escape(getUUID()); 
 	$options->{'platform'} = $config->get('master.viewer');
 	$options->{'vmhostname'} = 'vswamp';
 	$log->info("_launchViewer: invoking launchPadStart options: ", sub {use Data::Dumper; Dumper($options);});
 	updateClassAdViewerStatus($options->{'execrunid'}, $VIEWER_STATE_LAUNCHING, 'Launching viewer', $options);
-	my $result = launchPadStart($options);
-	if (! $result) {
-		$tracelog->trace('_launchViewer - launchPadStart failure'); 
+	if ((my $status = launchPadStart($options)) != $LAUNCHPAD_SUCCESS) {
+		$tracelog->trace("_launchViewer - launchPadStart failed - status: $status"); 
 		return 0;
 	}
 	$tracelog->trace('_launchViewer - launchPadStart success ');
 	return 1;
-}
-
-sub _storeviewer { my ($server, $options) = @_ ;
-	$tracelog->trace('__storeviewer options: ', sub {use Data::Dumper; Dumper($options);});
-	my $result = qmstoreviewer($options);
-	return $result;
 }

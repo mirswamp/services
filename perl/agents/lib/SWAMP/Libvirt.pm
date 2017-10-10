@@ -64,7 +64,7 @@ sub _findVMIPSource {
     my $network_name = $config->get('SWAMP-in-a-Box.libvirt.network') || q{};
 
     if ($network_name eq q{}) {
-		if ($IP_SOURCE_TYPE != $IP_FROM_NSLOOKUP) {
+		if (! $IP_SOURCE_TYPE || ($IP_SOURCE_TYPE != $IP_FROM_NSLOOKUP)) {
         	$log->info('Using nslookup');
 		}
 		$IP_SOURCE_TYPE = $IP_FROM_NSLOOKUP;
@@ -92,7 +92,7 @@ sub _findVMIPSource {
     my $leases_file = "/var/lib/libvirt/dnsmasq/${network_name}.leases";
 
     if (-r $status_file) {
-		if ($IP_SOURCE_TYPE != $IP_FROM_LIBVIRT_DNSMASQ_STATUS) {
+		if (! $IP_SOURCE_TYPE || ($IP_SOURCE_TYPE != $IP_FROM_LIBVIRT_DNSMASQ_STATUS)) {
         	$log->info("Found $status_file");
 		}
         $IP_SOURCE_TYPE = $IP_FROM_LIBVIRT_DNSMASQ_STATUS; 
@@ -101,7 +101,7 @@ sub _findVMIPSource {
     }
 
     if (-r $leases_file) {
-		if ($IP_SOURCE_TYPE != $IP_FROM_LIBVIRT_DNSMASQ_LEASES) {
+		if (! $IP_SOURCE_TYPE || ($IP_SOURCE_TYPE != $IP_FROM_LIBVIRT_DNSMASQ_LEASES)) {
         	$log->info("Found $leases_file");
 		}
         $IP_SOURCE_TYPE = $IP_FROM_LIBVIRT_DNSMASQ_LEASES; 
@@ -152,8 +152,12 @@ sub _queryLibvirtStatusFile {
 sub _queryLibvirtLeasesFile {
     my ($vmhostname, $leases_file_name) = @_;
     my ($leases_file_contents, $exit_code) = systemcall(qq{cat $leases_file_name});
+	my @leases_file_contents = split "\n", $leases_file_contents;
 
-    my @lines = grep { /$vmhostname/sxm } $leases_file_contents;
+    my @lines = grep { /$vmhostname/sxm } @leases_file_contents;
+	if (! scalar(@lines)) {
+		return (q{}, 0);
+	}
     my $vm_ip = $lines[0];
     chomp $vm_ip;
 

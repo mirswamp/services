@@ -216,21 +216,22 @@ sub savereport {
 	print $fh "<hr>";	
 
     if ( $report->{'no-build'} ) {
-        print $fh "<li><a href=#nobuild>Error messages from no-build step</a></li>\n";
+        print $fh "<li><a href=\"#nobuild\">Error messages from no-build step</a></li>\n";
     }
     if ( $report->{'error'} ) {
-        print $fh "<li><a href=#error>Error messages from assessment</a></li>\n";
+        print $fh "<li><a href=\"#error\">Error messages from assessment</a></li>\n";
     }
     if ( $report->{'stdout'} ) {
-        print $fh "<li><a href=#stdout>Standard out</a></li>\n";
+        print $fh "<li><a href=\"#stdout\">Standard out</a></li>\n";
     }
     if ( $report->{'stderr'} ) {
-        print $fh "<li><a href=#stderr>Standard error</a></li>\n";
+        print $fh "<li><a href=\"#stderr\">Standard error</a></li>\n";
     }
     if ( $report->{'versions'} ) {
-        print $fh "<li><a href=#versions>Version information</a></li>\n";
+        print $fh "<li><a href=\"#versions\">Version information</a></li>\n";
     }
-    print $fh qq{<li><a href=${url}$uuid/$report->{'tarball'}>Download all failed results as a single file</a></li>};
+    print $fh qq{<li><a href=\"${url}$uuid/$report->{'tarball'}\">Download all failed results as a single file</a></li>};
+    print $fh qq{<li><a href=\"https://www.swampinabox.org/doc/statusout.pdf\" target=\"_blank\">Status.out and Debugging SWAMP Failures</a></li>};
     print $fh "<p>";
 
 	if ($report->{'statusOut'}) {

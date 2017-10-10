@@ -28,11 +28,17 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getSwampConfig
 	getLoggingConfigString
-	addExecRunLogAppender
-	removeExecRunLogAppender
+	switchExecRunAppenderLogFile
 	getSwampDir
+	$LAUNCHPAD_SUCCESS
+	$LAUNCHPAD_BOG_ERROR
+	$LAUNCHPAD_FILESYSTEM_ERROR
+	$LAUNCHPAD_CHECKSUM_ERROR
+	$LAUNCHPAD_FORK_ERROR
+	$LAUNCHPAD_FATAL_ERROR
 );
 use SWAMP::vmu_AssessmentSupport qw(
+	updateClassAdAssessmentStatus
 	updateRunStatus
 	doRun
 );
@@ -57,10 +63,13 @@ if ( defined($drain) || defined($list) ) {
     $asdaemon = 0;    # Draining the queue overrides daemonizing self
 }
 
+# This is the start of an assessment run so remove the tracelog file if extant
+my $tracelogfile = catfile(getSwampDir(), 'log', 'runtrace.log');
+truncate($tracelogfile, 0) if (-r $tracelogfile);
+
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
@@ -96,50 +105,68 @@ if ($asdaemon) {
 }
 chdir($startupdir);
 
-if ( defined($list) ) {
+if (defined($list)) {
     my $aref = loadQueue();
-    $log->info("Queue has $#{$aref} items in it");
-    foreach my $idx ( 0 .. $#{$aref} ) {
-        print "$idx $aref->[$idx]\n";
-        if ( $list != 0 && $idx >= $list ) {
-            last;
-        }
+    $log->info("Queue has " . scalar(@$aref) . " items in it");
+	my $index = 0;
+    foreach my $execrunuid (@$aref) {
+        print "$index) $execrunuid\n";
+		$index += 1;
+		last if ($list != 0 && $index >= $list);
     }
     exit 0;
 }
-if ( isSWAMPRunning() ) {
-    if ( defined($drain) ) {    # Drain the queue
+
+if (isSWAMPRunning()) {
+	# Drain the queue
+    if (defined($drain)) {    
         drainSwamp();
     }
     else {
-        addExecRunLogAppender($execrunuid);
+        switchExecRunAppenderLogFile($execrunuid);
         $tracelog->trace("execrunuid: $execrunuid - calling doRun");
         $log->info("Attempting to launch run $execrunuid");
-        if (! doRun($execrunuid)) {
-            $tracelog->trace("execrunuid: $execrunuid - doRun failed");
-            # If the call failed, save the run in the queue
-            saveRun($execrunuid);
-            updateRunStatus($execrunuid, 'Demand Queued', 1);
-            $log->info("Unable to launch run $execrunuid. Added run to the queue.");
-            removeExecRunLogAppender();
-        }
-        else {
+        my $status = doRun($execrunuid);
+		# HTCondor submit succeeded
+        if ($status == $LAUNCHPAD_SUCCESS) {
             $tracelog->trace("execrunuid: $execrunuid - doRun succeeded");
             $log->info("Run $execrunuid successfully launched.");
-            removeExecRunLogAppender();
-            # Successful call to doRun() => try and drain the SWAMP.
+			# set database status to success
+			
+            # Successful call to doRun() => try to drain the SWAMP.
             $drain = 0;
             drainSwamp();
+		}
+		# BOG file created on submit node
+		elsif ($status == $LAUNCHPAD_FORK_ERROR) {
+            $tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
+            $log->error("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
+			my $status_message = 'HTCondor Submit Failed - BOG Queued';
+			# this is terminal case so update collector and database
+			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+			updateRunStatus($execrunuid, $status_message, 1);
+			# set database status to success
+		}
+		else {
+            $tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
+            $log->error("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
+			my $status_message = 'HTCondor Submit Aborted - UUID Queued';
+			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+			updateRunStatus($execrunuid, $status_message, 1);
+			# set database status to failure
+			saveRun($execrunuid);
         }
     }
 }
-else {                          # SWAMP is administratively off, just add item to queue and be done.
+# SWAMP is administratively off, just add item to queue and be done.
+else { 
     if ( defined($execrunuid) ) {
-        addExecRunLogAppender($execrunuid);
+        switchExecRunAppenderLogFile($execrunuid);
         saveRun($execrunuid);
-        updateRunStatus($execrunuid, 'SWAMP Off Queued', 1);
+		my $status_message = 'SWAMP off Queued';
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+        updateRunStatus($execrunuid, $status_message, 1);
         $log->info("SWAMP is Off at the moment. Run $execrunuid has been added to the queue.");
-        removeExecRunLogAppender();
     }
     if ( defined($drain) ) {
         $log->error("SWAMP is Off at the moment and cannot be drained.");
@@ -155,20 +182,23 @@ sub drainSwamp {
             next;
         }
         my $execrunuid = $aref->[$idx];
-        addExecRunLogAppender($execrunuid);
+        switchExecRunAppenderLogFile($execrunuid);
         $log->info("processing run " . $execrunuid . " from the queue.");
         # If the call succeeded, delete the
         # item from the queue
-        if (doRun($execrunuid)) {
-            updateRunStatus($execrunuid, 'Drain ReLaunch');
+        if (doRun($execrunuid) == $LAUNCHPAD_SUCCESS) {
+			my $status_message = 'Drain ReLaunch';
+			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+            updateRunStatus($execrunuid, $status_message);
             $log->info("Run " . $execrunuid . " has been successfully launched from the queue.");
-            $execrunuid = 'done';
+            $aref->[$idx] = 'done';
         }
         else {
-            updateRunStatus($execrunuid, 'Drain ReQueued', 1);
+			my $status_message = 'Drain ReQueued';
+			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+            updateRunStatus($execrunuid, $status_message, 1);
             $log->info("Run " . $execrunuid . " failed to launch and remains in the queue.");
         }
-        removeExecRunLogAppender();
         if ( $drain != 0 && $idx >= $drain ) {
             last;
         }
@@ -207,9 +237,10 @@ sub queueFilename {
 
 sub loadQueue {
     my $filename = queueFilename();
-    my $ret      = ();
+    my $ret = [];
     if ( swamplock($filename) ) {
-        $ret = retrieve($filename);
+		# file is locked - safe to test it
+        $ret = retrieve($filename) if (! -z $filename);
         nstore( \my @arr, $filename );
         swampunlock($filename);
     }

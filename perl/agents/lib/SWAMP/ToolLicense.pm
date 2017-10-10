@@ -14,14 +14,15 @@ use Log::Log4perl;
 use POSIX qw(strftime);
 use SWAMP::vmu_Support qw(
 	systemcall
+	isSwampInABox
 	getSwampConfig
 );
 use SWAMP::vmu_AssessmentSupport qw(
-	isSwampInABox
 	isLicensedTool
 	isParasoftTool
 	isGrammaTechTool
 	isRedLizardTool
+	isSynopsysTool
 );
 use SWAMP::Libvirt qw(getVMIPAddress);
 
@@ -101,13 +102,13 @@ sub getvmmacaddr { my ($vmdomainname) = @_ ;
 	return $vmmac;
 }
 
-sub build_rulename { my ($floodlight_flowprefix, $time, $vmhostname, $idx) = @_ ;
+sub build_rulename { my ($floodlight_flowprefix, $time, $vmhostname, $idx, $port) = @_ ;
 	my $date = sprintf(strftime('%Y%m%d%H%M%S', localtime($time)));
 	my $rulename;
 	if ($vmhostname =~ m/(\d+)/sxm) {
 		$vmhostname = $1;
 	}
-	$rulename = "$floodlight_flowprefix-$vmhostname-$date-$idx";
+	$rulename = "$floodlight_flowprefix-$vmhostname-$date-$idx-$port";
 	return $rulename;
 }
 
@@ -122,7 +123,7 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
 	# Need a flow for each switch
 	foreach my $switch (@{$switches}) {
 		# Update flow rule for forward direction
-		my $rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx);
+		my $rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx, $port);
     	my %flow = (
         	"switch"     => $switch->{'switchDPID'},
         	"name"       => $rulename,
@@ -151,7 +152,7 @@ sub floodlight_flows_on { my ($floodlight_url, $floodlight_params) = @_ ;
     	# Update the flow rule for the reverse direction, allowing any port back
     	delete $flow{'tcp_dst'};
 		$flow{'tcp_src'} = $port;
-		$rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx);
+		$rulename = build_rulename($floodlight_flowprefix, $time, $vmhostname, $idx, $port);
     	$flow{'name'} = $rulename;
         $flow{'ipv4_src'} = $dst_ip . '/32';
     	$flow{'ipv4_dst'} = $src_ip;
@@ -175,7 +176,7 @@ sub openLicense { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
 
         my $floodlight_url = $config->get('floodlight');
 
-        my ($license_flowprefix, $license_port, $license_serverip);
+        my ($license_flowprefix, $license_port, $license_aux_port, $license_serverip);
         if (isParasoftTool($bogref)) {
             $license_flowprefix = $config->get('parasoft_flowprefix');
             $license_port = int( $config->get('parasoft_port') );
@@ -194,13 +195,20 @@ sub openLicense { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
             $license_serverip = $config->get('redlizard_server_ip');
             $log->info("open floodlight rule for RedLizard $license_serverip $license_port");
         }
+        elsif (isSynopsysTool($bogref)) {
+            $license_flowprefix = $config->get('synopsys_flowprefix');
+            $license_port = int( $config->get('synopsys_port') );
+            $license_aux_port = int( $config->get('synopsys_aux_port') );
+            $license_serverip = $config->get('synopsys_server_ip');
+            $log->info("open floodlight rule for Synopsys $license_serverip $license_port and $license_aux_port");
+        }
 
         $log->trace("Floodlight: $floodlight_url $license_flowprefix $license_port");
         $log->trace("License Server IP: " . ($license_serverip || 'N/A'));
 
         my $nameserver = $config->get('nameserver');
         my $vmnetdomain = $config->get('vmnetdomain');
-        $log->trace("VM: $nameserver $vmnetdomain ");
+        $log->trace("VM nameserver: $nameserver VM domain: $vmnetdomain");
 
         if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
             # second chance to get vmip on previous error
@@ -219,6 +227,16 @@ sub openLicense { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
         foreach my $rulename (@{$rulenames}) {
             $log->trace("added rule: $rulename");
         }
+		if ($license_aux_port) {
+			my $floodlight_params = [$license_flowprefix, $vmip, $license_serverip, $license_aux_port, $vmhostname];
+
+			my $aux_rulenames = floodlight_flows_on($floodlight_url, $floodlight_params);
+			$log->info("added rule count: ", scalar(@{$rulenames}));
+			foreach my $rulename (@{$aux_rulenames}) {
+				$log->trace("added rule: $rulename");
+				push @$rulenames, $rulename;
+			}
+		}
         return ($rulenames, $vmip);
     }
     # second chance to get vmip on previous error - or pass through previous success

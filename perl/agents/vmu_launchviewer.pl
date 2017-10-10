@@ -25,7 +25,6 @@ use POSIX qw(setsid);
 use XML::LibXML;
 use XML::LibXSLT;
 use XML::DOM;
-#use HTML::Entities;
 use Time::localtime;
 
 use FindBin;
@@ -50,6 +49,9 @@ use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_STOPPING
 	$VIEWER_STATE_JOBDIR_FAILED
 	$VIEWER_STATE_SHUTDOWN
+	$VIEWER_STATE_TERMINATING
+	$VIEWER_STATE_TERMINATED
+	$VIEWER_STATE_TERMINATE_FAILED
 	getViewerStateFromClassAd
 	launchViewer
 );
@@ -129,10 +131,13 @@ GetOptions(
 	'end_date=s'			=> \$end_date,
 );
 
+# This is the start of a viewer run so remove the tracelog file if extant
+my $tracelogfile = catfile(getSwampDir(), 'log', 'runtrace.log');
+truncate($tracelogfile, 0) if (-r $tracelogfile);
+
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
@@ -211,7 +216,7 @@ sub doViewerVM {
 	if ($state != $VIEWER_STATE_READY && $state != $VIEWER_STATE_LAUNCHING) {
 		my %launchMap = (
 			'resultsfolder' => $config->get('resultsFolder'),
-			'project'       => $project_name,
+			'projectid'     => $project_name,
 			'viewer'        => $viewer_name,
 			'viewer_uuid'   => $viewer_uuid,
 		);
@@ -234,6 +239,15 @@ sub doViewerVM {
             $log->info("viewer is ready - project_name: $project_name viewer_name: $viewer_name");
 			last;
 		}
+		if (($state == $VIEWER_STATE_TERMINATING) || ($state == $VIEWER_STATE_TERMINATED)){
+            $log->info("viewer is terminated by user - project_name: $project_name viewer_name: $viewer_name");
+			# terminate could still fail here
+			return 0;
+		}
+		if ($state == $VIEWER_STATE_TERMINATE_FAILED) {
+            $log->info("viewer user terminate failed - project_name: $project_name viewer_name: $viewer_name");
+			return ERROR;
+		}
         sleep $sleep_time;
         $viewerState = getViewerStateFromClassAd($project_name, $viewer_name);
         if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
@@ -253,11 +267,11 @@ sub doViewerVM {
 			push @file_path, $source_archive;
 		}
 		if ($viewer_name eq 'CodeDX') {
-			$log->info("Calling uploadanalysysrun $package_name", sub { use Data::Dumper; Dumper(\@file_path); });
+			$log->info("Calling uploadanalysysrun $package_name ", sub { use Data::Dumper; Dumper(\@file_path); });
 			$retCode = uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
 		}
 		elsif ($viewer_name eq 'ThreadFix') {
-			$log->info("Calling threadfix_uploadanalysysrun $package_name", sub { use Data::Dumper; Dumper(\@file_path); });
+			$log->info("Calling threadfix_uploadanalysysrun $package_name ", sub { use Data::Dumper; Dumper(\@file_path); });
 			$retCode = threadfix_uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
 		}
 		if ($retCode == OK) {
@@ -315,97 +329,158 @@ sub printPara {
 }
 
 
+sub doNativeError { my ($file, $outputdir) = @_ ;
+	$log->info("doNativeError - processing error result: $file");
+	my $config = getSwampConfig();
+	my $retCode = 0;
+	my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
+	make_path($outputdir);
+	if ( cp( $file, $outputdir )) {
+		$log->info("Copied $file to $outputdir ret=[${htmlfile}${ext}]");
+		my $topdir = 'out';
+		$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
+		my $report = generatereport(catfile($outputdir, $htmlfile . $ext), $topdir);
+		my $savereport = catfile($outputdir, 'assessmentreport.html');
+		$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
+		# save the header information and pass them into the saverepost()
+		my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date);
+		savereport($report, $savereport, $config->get('reporturl'),\@header);
+		system("/bin/chmod 644 $savereport");
+		# Do not remove this print statement
+		# This is the result returned to the calling program via the shell
+		$log->info("doNativeError returns: assessmentreport.html");
+		print "assessmentreport.html\n";
+	}
+	else {
+		$log->error("Cannot copy $file to $outputdir $OS_ERROR");
+		print "ERROR Cannot copy $file to $outputdir $OS_ERROR\n";
+		$retCode = 3;
+	}
+	return $retCode;
+}
+
+sub doNativeHTML { my ($file, $outputdir) = @_ ;
+	$log->info("doNativeHTML - processing html result: $file");
+	my $retCode = 0;
+	make_path($outputdir);
+	chdir $outputdir;
+	# basename of HTML archive
+	my $base = basename($file);
+	if (! -r $base) {
+		$log->info("Copying $file to $outputdir");
+		# archive not found in outputdir so copy it in
+		if (! cp($file, $outputdir)) {
+			$log->error("Cannot copy $file to $outputdir $OS_ERROR");
+			print "ERROR Cannot copy $file to $outputdir $OS_ERROR\n";
+			$retCode = 3;
+		}
+		# if copy succeeded unzip archive
+		else {
+			my ($output, $status) = systemcall("unzip $base");
+			if ($status) {
+				$log->error("Cannot unzip $file to $outputdir - error: $output");
+				$retCode = 3;
+			}
+		}
+	}
+	else {
+		$log->info("Found $file in $outputdir");
+	}
+	# archive successfully unzipped
+	if (! $retCode) {
+		if (! -r "index.html") {
+			$log->error("Cannot find index.html in $outputdir");
+			$retCode = 3;
+		}
+		else {
+			# Do not remove this print statement
+			# This is the result returned to the calling program via the shell
+			$log->info("doNativeHTML returns: index.html");
+			print "index.html\n";
+		}
+	}
+	return $retCode;
+}
+
+sub doNativeSCARF { my ($file, $tool_name) = @_ ;
+	$log->info("doNativeSCARF - processing xml result: $file");
+	my $retCode = 0;
+	my $isCommon = 1;
+	if ( system("head $file|grep -q '<AnalyzerReport'") != 0 ) {
+		$isCommon = 0;
+	}
+	my $xsltfile = getXSLTFile( $tool_name, $isCommon );
+	$log->info("Transforming $tool_name $file with $xsltfile");
+
+	my $xslt = XML::LibXSLT->new();
+	my $source;
+
+	# Wrap this in an eval to catch any exceptions parsing output from the assessment.
+	my $success = eval { $source = XML::LibXML->load_xml( 'location' => $file ); };
+	
+	if ( defined($success) ) {
+		my $style_doc;  
+		# wrap the load style_doc in an eval to catch any exceptions
+		my $xslt_success = eval { $style_doc = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 ); };
+		if( defined($xslt_success)){
+			# save the elements to insert
+			# my $file_creation_time = ctime((stat($file))->mtime); 
+			addReportTime($source);
+			my $stylesheet = $xslt->parse_stylesheet($style_doc);
+			my $results    = $stylesheet->transform($source);
+			# insert the header information into the HTML
+			my $fullResult = insertHTML($results);
+			my $filename   = q{nativereport.html};
+			$log->info('Creating:', catfile($outputdir, $filename));
+			make_path($outputdir);
+			my $fullPath = catfile($outputdir, $filename);
+			# open the HTML file path
+			if ( open my $fh, '>', $fullPath ) {
+				print $fh $fullResult;
+				close $fh;
+				# Do not remove this print statement
+				# This is the result returned to the calling program via the shell
+				$log->info("doNativeSCARF returns: $filename");
+				print "${filename}\n";
+			}
+			else {
+				$retCode = 2;
+			}
+		}
+		else {
+			$log->error("Loading $xsltfile threw an exception.");
+			print "ERROR Cannot load $xsltfile as XML document\n";
+			$retCode = 2;
+		}
+	}
+	else {
+		$log->error("Loading $file threw an exception.");
+		print "ERROR Cannot load $file as XML document\n";
+		$retCode = 2;
+	}
+	return $retCode;
+}
+
 # Native viewer needs to look at the report XML file found in $inputdir
 sub doNative {
-	my $config = getSwampConfig();
     #my $r = printPara();
 	my $retCode = 0;
     foreach my $file (@file_path) {
-        my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
-        my $filetype = `file $file`;
-
-        if ( $filetype !~ /XML.*document/sxm ) {
-            $log->info("File $file: not XML");
-            make_path($outputdir);
-            if ( cp( $file, $outputdir )) {
-                $log->info("Copied $file to $outputdir ret=[${htmlfile}${ext}]");
-				my $topdir = 'out';
-				$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
-                my $report = generatereport(catfile($outputdir, $htmlfile . $ext), $topdir);
-				my $savereport = catfile($outputdir, 'assessmentreport.html');
-				$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
-                # save the header information and pass them into the saverepost()
-                my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date);
-				savereport($report, $savereport, $config->get('reporturl'),\@header);
-                system("/bin/chmod 644 $savereport");
-                print "assessmentreport.html\n";
-            }
-            else {
-                $log->error("Cannot copy $file to $outputdir $OS_ERROR");
-                print "ERROR Cannot copy $file to $outputdir $OS_ERROR\n";
-                $retCode = 3;
-            }
+		$log->info("doNative - processing file: $file");
+        if ($file =~ m/\.xml$/sxmi) {
+			$retCode = doNativeSCARF($file, $tool_name);
             next;
         }
-        my $isCommon = 1; # SCARF files 
-        if ( system("head $file|grep -q '<AnalyzerReport'") != 0 ) {
-			$isCommon = 0;
-        }
-        my $xsltfile = getXSLTFile( $tool_name, $isCommon );
-        $log->info("Transforming $tool_name $file with $xsltfile");
-
-        my $xslt = XML::LibXSLT->new();
-        my $source;
-
-        # Wrap this in an eval to catch any exceptions parsing output from the assessment.
-        my $success = eval { $source = XML::LibXML->load_xml( 'location' => $file ); };
-		
-		if ( defined($success) ) {
-            my $style_doc;  
-			# wrap the load style_doc in an eval to catch any exceptions
-			my $xslt_success = eval { $style_doc = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 ); };
-			if( defined($xslt_success)){
-				#save the elements to insert
-
-				#my $file_creation_time = ctime((stat($file))->mtime); 
-				addReportTime($source);
-
-				my $stylesheet = $xslt->parse_stylesheet($style_doc);
-				my $results    = $stylesheet->transform($source);
-				
-				# insert the header information into the HTML
-				my $fullResult = insertHTML($results);
-				
-				my $filename   = q{nativereport.html};
-	
-				$log->info('Creating:', catfile($outputdir, $filename));
-            	make_path($outputdir);
-            	
-				my $fullPath = catfile($outputdir, $filename);
-				my $fh;
-				# open the HTML file path
-				if ( !open $fh, '>', $fullPath ) {
-					return 0;
-				}
-				print $fh $fullResult;
-				close $fh;
-				
-				# Do not move this print statement
-				print "${filename}\n";
-				# Do not move this print statement
-				
-				$log->info("Writing HTML done...");	
-			}else{
-				$log->error("Loading $xsltfile threw an exception.");
-            	print "ERROR Cannot load $xsltfile as XML document\n";
-            	$retCode = 2;
-			}
-        }
-        else {
-            $log->error("Loading $file threw an exception.");
-            print "ERROR Cannot load $file as XML document\n";
-            $retCode = 2;
-        }
+		elsif ($file =~ m/\.zip$/sxmi) {
+			$retCode = doNativeHTML($file, $outputdir);
+		}
+		elsif ($file =~ m/\.tar\.gz$/sxmi) {
+			$retCode = doNativeError($file, $outputdir);
+		}
+		else {
+			$log->error("doNative - cannot process file: $file");
+			$retCode = 3;
+		}
     }
     return $retCode;
 }

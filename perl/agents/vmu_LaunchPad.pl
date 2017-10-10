@@ -30,13 +30,20 @@ use SWAMP::vmu_Support qw(
 	getSwampDir
 	getSwampConfig
 	getLoggingConfigString
-	addExecRunLogAppender
-	removeExecRunLogAppender
+	switchExecRunAppenderLogFile
 	getUUID
 	createBOGfileName
 	saveProperties
 	start_process
 	stop_process
+	systemcall
+	getHTCondorJobId
+	$LAUNCHPAD_SUCCESS
+	$LAUNCHPAD_BOG_ERROR
+	$LAUNCHPAD_FILESYSTEM_ERROR
+	$LAUNCHPAD_CHECKSUM_ERROR
+	$LAUNCHPAD_FORK_ERROR
+	$LAUNCHPAD_FATAL_ERROR
 );
 
 if (! swamplock($PROGRAM_NAME)) {
@@ -62,7 +69,6 @@ GetOptions(
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
-$log->remove_appender('Screen');
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
@@ -117,12 +123,21 @@ if (! defined($serverhost)) {
 my $daemon = RPC::XML::Server->new('host' => $serverhost, 'port' => $port);
 
 # Add methods to our server
-my @sig = ( 'struct', 'struct struct' );
+my @sig = ( 'int', 'int struct' );
 $daemon->add_method(
     {
         'name'      => 'swamp.launchPad.start',
         'signature' => \@sig,
         'code'      => \&_launchpadStart
+    }
+);
+
+@sig = ( 'int', 'int string string' );
+$daemon->add_method(
+    {
+        'name'      => 'swamp.launchPad.kill',
+        'signature' => \@sig,
+        'code'      => \&_launchpadKill
     }
 );
 
@@ -135,29 +150,30 @@ sub logfilename {
 my @signals = qw/TERM HUP INT/;
 my %map     = ( 'signal' => \@signals );
 $log->info("$PROGRAM_NAME ($PID) entering listen loop at $serverhost on port: $port");
+# start any jobs that are in the runqueue
 startCSAAgent();
 my $res = $daemon->server_loop(%map);
 exit 0;
 
-sub _launchpadStart { my ($server, $bogref) = @_ ;
-	my $execrunuid = ${$bogref}{'execrunid'};
-	addExecRunLogAppender($execrunuid);
-	my $result = _launchpadStartMain($server, $bogref);
-	removeExecRunLogAppender();
-	return $result;
+sub _launchpadKill { my ($server, $execrunuid, $jobid) = @_ ;
+	switchExecRunAppenderLogFile($execrunuid);
+	# issue condor_rm jobid
+	my ($output, $status) = systemcall("condor_rm $jobid");
+	if ($status) {
+		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid: $status $output");
+		return $LAUNCHPAD_FATAL_ERROR;
+	}
+	if ($output !~ m/Job $jobid marked for removal/) {
+		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid: $output");
+		return $LAUNCHPAD_FATAL_ERROR;
+	}
+	return $LAUNCHPAD_SUCCESS;
 }
 
-sub _launchpadStartMain { my ($server, $bogref) = @_ ;
+sub _launchpadStart { my ($server, $bogref) = @_ ;
     my $execrunuid = ${$bogref}{'execrunid'};
-	$tracelog->trace("_launchpadStart - execrunuid: $execrunuid");
-    $log->debug("launchpadStart from $server->{'peerhost'}:$server->{'peerport'}($execrunuid)");
-    # The quartermaster places errors in the error key of BOG.
-    # This should normally not make it as far as the LaunchPad, but belts braces.
-    # If there is an error key, do not proceed and instead return an error.
-    if (defined($bogref->{'error'})) {
-	$log->error("job not launched: launchpadStart found an error key in the BOG for $execrunuid");
-        return { 'error', "Error creating job: $bogref->{'error'}" };
-    }
+	switchExecRunAppenderLogFile($execrunuid);
+	$tracelog->trace("_launchpadStart - execrunuid: $execrunuid from ", $server->{'peerhost'}, ':', $server->{'peerport'});
     my $csaOpt = q{};
     # Persist the BOG to file
     my $bogfile = createBOGfileName($execrunuid);
@@ -167,31 +183,34 @@ sub _launchpadStartMain { my ($server, $bogref) = @_ ;
         }
     }
     if (! saveProperties($bogfile, $bogref, "Bill Of Goods File: $PROGRAM_NAME")) {
-		$log->error("unable to create BOG file for $execrunuid");
+		$log->error("_launchpadStart - execrunuid: $execrunuid error saving: $bogfile");
 		$tracelog->trace("_launchpadStart - execrunuid: $execrunuid error saving: $bogfile");
-        return { 'error', "Cannot save BOG file $bogfile: $OS_ERROR" };
+        return $LAUNCHPAD_FILESYSTEM_ERROR;
     }
     else {
-		$log->info("saved $bogfile for run: $execrunuid");
+		$log->info("_launchpadStart - execrunuid: $execrunuid saved: $bogfile");
 		$tracelog->trace("_launchpadStart - execrunuid: $execrunuid saved: $bogfile");
     }
 	$tracelog->trace("_launchpadStart - execrunuid: $execrunuid calling startCSAAgent csaOpt: $csaOpt");
-    startCSAAgent($execrunuid, $csaOpt);
-    return {};
+    my $status = startCSAAgent($execrunuid, $csaOpt);
+    return $status;
 }
 
 sub startCSAAgent { my ($execrunuid, $options) = @_ ;
 	$options ||= q{};
     my $dir = catdir(getSwampDir(), 'run');
 	my $script = catfile(getSwampDir(), 'bin', 'vmu_csa_agent_launcher');
-    $log->debug( "start_process: $script --bog $dir $options" );
-	$tracelog->trace('startCSAAgent - ', $execrunuid ? "execrunuid: $execrunuid " : '', " forking child: $script options: --bog $dir $options");
-    my $childID = start_process("$script --bog $dir $options");
-    if (defined($childID)) {
-		$log->info("started $script with pid: $childID");
+    $log->info( "startCSAAgent - start_process $script --bog $dir $options" );
+    $tracelog->trace( "startCSAAgent - start_process $script --bog $dir $options" );
+    my $childPID = start_process("$script --bog $dir $options");
+    if (defined($childPID)) {
+    	$tracelog->trace( "startCSAAgent - start_process returned childPID: $childPID");
+    	$log->info( "startCSAAgent - start_process returned childPID: $childPID");
+    	return $LAUNCHPAD_SUCCESS;
     }
     else {
-        $log->error( "Unable to start $script");
+        $tracelog->trace( "startCSAAgent - start_process $script failed");
+        $log->error( "startCSAAgent - start_process $script failed");
+		return $LAUNCHPAD_FORK_ERROR;
     }
-    return;
 }
