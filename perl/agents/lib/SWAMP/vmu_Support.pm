@@ -1,12 +1,13 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 package SWAMP::vmu_Support;
 use strict;
 use warnings;
 use English '-no_match_vars';
+use POSIX qw(setsid);
 use Cwd;
 use ConfigReader::Simple;
 use Data::UUID;
@@ -18,12 +19,14 @@ use File::Spec::Functions;
 use RPC::XML;
 use RPC::XML::Client;
 use DBI;
+use Capture::Tiny qw(:all);
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
 BEGIN {
     require Exporter;
     @EXPORT_OK = qw(
+	  runScriptDetached
 	  getStandardParameters
 	  identifyScript
 	  listDirectoryContents
@@ -97,6 +100,36 @@ my $tracelog = Log::Log4perl->get_logger('runtrace');
 
 sub getSwampDir {
 	return "/opt/swamp";
+}
+
+sub runScriptDetached {
+    chdir(q{/});
+    if (! open(STDIN, '<', File::Spec->devnull)) {
+        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
+        exit;
+    }
+    if (! open(STDOUT, '>', File::Spec->devnull)) {
+        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
+        exit;
+    }
+    my $pid = fork();
+    if (! defined($pid)) {
+        $log->error("fork failed: $OS_ERROR");
+        exit;
+    }
+    if ($pid) {
+        # parent
+        exit(0);
+    }
+    # child
+    if (setsid() == -1) {
+        $log->error("child - setsid failed: $OS_ERROR");
+        exit;
+    }
+    if (! open(STDERR, ">&STDOUT")) {
+        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
+        exit;
+    }
 }
 
 sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
@@ -222,19 +255,32 @@ sub getHTCondorJobId { my ($execrunuid) = @_ ;
 	if ($condor_manager && $submit_node) {
 		$cmd .= qq( -name $submit_node -pool $condor_manager);
 	}
-	$cmd .= qq( -constraint \'SWAMP_arun_execrunuid==\"$execrunuid\" || SWAMP_mrun_execrunuid==\"$execrunuid\" || SWAMP_vrun_execrunuid==\"$execrunuid\"\' -af CLUSTERID PROCID);                       
+	$cmd .= qq( -constraint \'regexp(\"$execrunuid\", SWAMP_arun_execrunuid) || regexp(\"$execrunuid\", SWAMP_mrun_execrunuid) || regexp(\"$execrunuid\", SWAMP_vrun_execrunuid)\' -af Cmd SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid);
 	my ($output, $status) = systemcall($cmd);
 	if ($status) {
 		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $status $output");
 		return;
 	}
-	if ($output !~ m/^\d+\s+\d+$/) {
+	if ($output !~ m/^.swamp\-\d+\-\d+/) {
 		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $output");
 		return;
 	}
-	my ($clusterid, $procid) = split ' ', $output;
+	chomp $output;
+	my ($type_clusterid_procid, $arun_execrunuid, $mrun_execrunuid, $vrun_execrunuid) = split ' ', $output;
+	my ($type, $clusterid, $procid) = split '-', $type_clusterid_procid;
+	$type =~ s/swamp/run/;
 	my $jobid = $clusterid . '.' . $procid;
-	return $jobid;
+	my $returned_execrunuid = 'undefined';
+	if ($type eq 'arun') {
+		$returned_execrunuid = $arun_execrunuid;
+	}
+	elsif ($type eq 'mrun') {
+		$returned_execrunuid = $mrun_execrunuid;
+	}
+	elsif ($type eq 'vrun') {
+		$returned_execrunuid = $vrun_execrunuid;
+	}
+	return ($jobid, $type, $returned_execrunuid);
 }
 
 sub HTCondorJobStatus { my ($jobid) = @_ ;
@@ -581,6 +627,25 @@ sub switchExecRunAppenderLogFile { my ($execrunuid) = @_ ;
 }
 
 sub systemcall { my ($command, $silent) = @_;
+	my ($stdout, $stderr, $exit) = capture {
+		system($command);
+	};
+	if (! $silent) {
+		if ($exit) {
+        	my $msg = "$command failed with exit status: $exit\n";
+        	if (defined($stdout)) {
+            	$msg .= "\tstdout: ($stdout)\n";
+        	}
+        	if (defined($stderr)) {
+            	$msg .= "\tstderr: ($stderr)\n";
+        	}
+			$log->error("systemcall - error: $msg");
+		}
+	}
+    return ($stdout, $exit);
+}
+
+sub oldsystemcall { my ($command, $silent) = @_;
     my $handler = $SIG{'CHLD'};
     local $SIG{'CHLD'} = 'DEFAULT';
     my ($output, $status) = ($_ = qx{$command 2>&1}, $CHILD_ERROR >> 8);
@@ -698,8 +763,8 @@ sub _handleUbuntu { my ($opts) = @_;
 
     #Ubuntu hostname should not have FQDN
     print $script "write /etc/hostname \"${vmhostname}\\n\"\n";
-    print $script "write /etc/rc2.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc2.d/S99runsh\n";
+    print $script "write /etc/rc.local $runshcmd\n";
+    print $script "chmod 0777 /etc/rc.local\n";
     return $ostype;
 }
 
@@ -862,11 +927,9 @@ sub database_disconnect { my ($dbh) = @_ ;
 #	Delete Job Dir	#
 #####################
 
-sub deleteJobDir { my ($execrunuid, $clusterid, $procid) = @_ ;
+sub deleteJobDir { my ($execrunuid) = @_ ;
 	my $options = {};
 	$options->{'execrunuid'} = $execrunuid;
-	$options->{'clusterid'} = $clusterid;
-	$options->{'procid'} = $procid;
     my $req = RPC::XML::request->new('agentMonitor.deleteJobDir', RPC::XML::struct->new($options));
 	$agentUri ||= _configureAgentClient();
 	$agentClient ||= RPC::XML::Client->new($agentUri);

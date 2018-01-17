@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -11,13 +11,13 @@ use warnings;
 use strict;
 use Cwd qw(getcwd);
 use English '-no_match_vars';
+use POSIX qw(WNOHANG waitpid);
 use File::Basename qw(basename);
 use File::Spec qw(devnull);
 use File::Spec::Functions;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl;
 use Log::Log4perl::Level;
-use POSIX qw(:sys_wait_h setsid);
 use RPC::XML::Server;
 use RPC::XML;
 
@@ -26,6 +26,7 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::vmu_Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	runScriptDetached
 	identifyScript
 	getSwampDir
 	getSwampConfig
@@ -37,7 +38,6 @@ use SWAMP::vmu_Support qw(
 	start_process
 	stop_process
 	systemcall
-	getHTCondorJobId
 	$LAUNCHPAD_SUCCESS
 	$LAUNCHPAD_BOG_ERROR
 	$LAUNCHPAD_FILESYSTEM_ERROR
@@ -53,7 +53,7 @@ if (! swamplock($PROGRAM_NAME)) {
 my $serverhost;
 my $port;
 my $debug = 0;
-my $asdaemon = 0;
+my $asdetached = 0;
 my $configfile;
 my $startupdir = getcwd();
 
@@ -63,7 +63,7 @@ GetOptions(
     'port=i'   => \$port,
     'config=s' => \$configfile,
     'debug'    => \$debug,
-    'daemon'   => \$asdaemon,
+    'detached'   => \$asdetached,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
@@ -72,36 +72,7 @@ $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
-
-if ($asdaemon) {
-    chdir(q{/});
-    if (! open(STDIN, '<', File::Spec->devnull)) {
-        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    my $pid = fork();
-    if (! defined($pid)) {
-        $log->error("fork failed: $OS_ERROR");
-        exit;
-    }
-    if ($pid) {
-        # parent
-        exit(0);
-    }
-    # child
-    if (setsid() == -1) {
-    	$log->error("child - setsid failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDERR, ">&STDOUT")) {
-    	$log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
-        exit;
-    }
-}
+runScriptDetached() if ($asdetached);
 
 local $SIG{'CHLD'} = sub {
 	$log->info("CHLD signal");

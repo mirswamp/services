@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -18,7 +18,6 @@ use File::Path qw(remove_tree);
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl;
 use Log::Log4perl::Level;
-use POSIX qw(setsid);
 use RPC::XML::Server;
 use RPC::XML;
 use URI::Escape qw(uri_escape);
@@ -28,6 +27,7 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::vmu_Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	runScriptDetached
 	identifyScript
   	getSwampDir
   	getSwampConfig
@@ -65,7 +65,7 @@ if (! swamplock($PROGRAM_NAME)) {
 my $serverhost;
 my $port;
 my $debug = 0;
-my $asdaemon = 0;
+my $asdetached = 0;
 my $configfile;
 my $startupdir = getcwd();
 
@@ -75,7 +75,7 @@ GetOptions(
     'port=i'   => \$port,
     'config=s' => \$configfile,
     'debug'    => \$debug,
-    'daemon'   => \$asdaemon,
+    'detached'   => \$asdetached,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
@@ -85,35 +85,7 @@ my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
 
-if ($asdaemon) {
-    chdir(q{/});
-    if (! open(STDIN, '<', File::Spec->devnull)) {
-        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    my $pid = fork();
-    if (! defined($pid)) {
-        $log->error("fork failed: $OS_ERROR");
-        exit;
-    }
-    if ($pid) {
-        # parent
-        exit(0);
-    }
-    # child
-    if (setsid() == -1) {
-        $log->error("child - setsid failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDERR, ">&STDOUT")) {
-        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
-        exit;
-    }
-}
+runScriptDetached() if ($asdetached);
 chdir($startupdir);
 
 my $config = getSwampConfig($configfile);
@@ -161,8 +133,6 @@ sub logfilename {
 
 # options contains
 #	execrunuid
-#	clusterid
-#	procid
 # returns:
 # 	 0	failure
 #	>0	success
@@ -175,7 +145,6 @@ sub _deleteJobDir { my ($server, $options) = @_ ;
 
 sub _deleteJobDirMain { my ($server, $options) = @_ ;
 	$tracelog->trace("_deleteJobDir options: ", sub {use Data::Dumper; Dumper($options);});
-	# no execrunuid - cannot update class ad
 	if (! defined($options->{'execrunuid'})) {
 		$log->error('_deleteJobDir Error - no execrunuid');
 		$tracelog->trace('_deleteJobDir - Error - no execrunuid');
@@ -183,25 +152,11 @@ sub _deleteJobDirMain { my ($server, $options) = @_ ;
 		return 0;
 	}
 	my $execrunuid = $options->{'execrunuid'};
-	if (! defined($options->{'clusterid'})) {
-		$log->error("_deleteJobDir Error - $execrunuid - no clusterid");
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid - no clusterid");
-		# failure
-		return 0;
-	}
-	my $clusterid = $options->{'clusterid'};
-	if (! defined($options->{'procid'})) {
-		$log->error("_deleteJobDir Error - $execrunuid $clusterid - no procid");
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid $clusterid - no procid");
-		# failure
-		return 0;
-	}
-	my $procid = $options->{'procid'};
 	my $jobDir = getJobDir($execrunuid);
 	my $jobDirPath = catdir(getSwampDir(), 'run', $jobDir);
 	if (! -d $jobDirPath) {
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid $clusterid $procid - jobDir: $jobDirPath is not a directory");
-		$log->error("_deleteJobDir - Error - $execrunuid $clusterid $procid - jobDir: $jobDirPath is not a directory");
+		$tracelog->trace("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath is not a directory");
+		$log->error("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath is not a directory");
 		# failure
 		return 0;
 	}
@@ -214,14 +169,14 @@ sub _deleteJobDirMain { my ($server, $options) = @_ ;
 			my ($file, $message) = %$diag;
 			$error_string .= $file . ' ' . $message . ' ';
 		}
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid $clusterid $procid - jobDir: $jobDirPath remove failed - result: $result");
-		$log->error("_deleteJobDir - Error - $execrunuid $clusterid $procid - jobDir: $jobDirPath remove failed  - result: $result - error: $error_string");
+		$tracelog->trace("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath remove failed - result: $result");
+		$log->error("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath remove failed  - result: $result - error: $error_string");
 		# set result to 0 on error in case it was >0 but an error occurred anyway
 		$result = 0;
 	}
 	else {
-		$tracelog->trace("_deleteJobDir - $execrunuid $clusterid $procid jobDir: $jobDirPath removed: $result");
-		$log->info("_deleteJobDir - $execrunuid $clusterid $procid - jobDir: $jobDirPath removed: $result");
+		$tracelog->trace("_deleteJobDir - $execrunuid jobDir: $jobDirPath removed: $result");
+		$log->info("_deleteJobDir - $execrunuid - jobDir: $jobDirPath removed: $result");
 	}
 	# return >0 on success, 0 on failure
 	return $result;

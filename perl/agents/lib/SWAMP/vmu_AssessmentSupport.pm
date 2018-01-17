@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 package SWAMP::vmu_AssessmentSupport;
 use strict;
@@ -14,6 +14,7 @@ use Log::Log4perl;
 use Archive::Tar;
 use File::Basename qw(basename);
 use File::Copy qw(move cp);
+use File::Spec::Functions;
 use POSIX qw(strftime);
 use JSON qw(from_json);
 
@@ -75,7 +76,7 @@ BEGIN {
       updateExecutionResults
       copyAssessmentInputs
       createAssessmentConfigs
-      isLicensedTool
+      needsFloodlightAccessTool
 	  isSonatypeTool
       isRubyTool
       isFlake8Tool
@@ -84,7 +85,9 @@ BEGIN {
       isHRLTool
       isParasoftC
       isParasoftJava
-      isParasoftTool
+      isParasoft9Tool
+      isParasoft10Tool
+	  isOWASPDCTool
       isGrammaTechCS
       isGrammaTechTool
       isRedLizardG
@@ -213,46 +216,53 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 		return $LAUNCHPAD_BOG_ERROR;
 	}
 
-	# verify tool_path and tool_version_checksum
-	$tool_path = $bog_query_result->{'tool_path'};
-	$tool_version_checksum = $bog_query_result->{'tool_checksum'};
-	if ($tool_path && $tool_version_checksum) {
-		if (! -r $tool_path) {
-			$log->error("$tool_path not readable");
-			return $LAUNCHPAD_FILESYSTEM_ERROR;
+	$global_swamp_config ||= getSwampConfig();
+	my $compute_bog_checksums = $global_swamp_config->get('computeBOGChecksums');
+	if ($compute_bog_checksums) {
+		# verify tool_path and tool_version_checksum
+		$tool_path = $bog_query_result->{'tool_path'};
+		$tool_version_checksum = $bog_query_result->{'tool_checksum'};
+		if ($tool_path && $tool_version_checksum) {
+			if (! -r $tool_path) {
+				$log->error("$tool_path not readable");
+				return $LAUNCHPAD_FILESYSTEM_ERROR;
+			}
+			elsif ((my $checksum = checksumFile($tool_path)) ne $tool_version_checksum) {
+				$log->error("checksum mismatch for: $tool_path found: $checksum - expected: $tool_version_checksum");
+				return $LAUNCHPAD_CHECKSUM_ERROR;
+			}
 		}
-		elsif ((my $checksum = checksumFile($tool_path)) ne $tool_version_checksum) {
-			$log->error("checksum mismatch for: $tool_path found: $checksum - expected: $tool_version_checksum");
-			return $LAUNCHPAD_CHECKSUM_ERROR;
+		else {
+			$log->error("no tool_path or no tool_version_checksum");
+			$log->error('tool_path: ', $tool_path || '', ' tool_version_checksum: ', $tool_version_checksum || '');
+			return $LAUNCHPAD_BOG_ERROR;
 		}
-	}
-	else {
-		$log->error("no tool_path or no tool_version_checksum");
-		$log->error('tool_path: ', $tool_path || '', ' tool_version_checksum: ', $tool_version_checksum || '');
-		return $LAUNCHPAD_BOG_ERROR;
-	}
 
-	# veryify package_path and package_version_checksum
-	$package_path = $bog_query_result->{'package_path'};
-	$package_version_checksum = $bog_query_result->{'pkg_checksum'};
-	if ($package_path && $package_version_checksum) {
-		if (! -r $package_path) {
-			$log->error("$package_path not readable");
-			return $LAUNCHPAD_FILESYSTEM_ERROR;
+		# veryify package_path and package_version_checksum
+		$package_path = $bog_query_result->{'package_path'};
+		$package_version_checksum = $bog_query_result->{'pkg_checksum'};
+		if ($package_path && $package_version_checksum) {
+			if (! -r $package_path) {
+				$log->error("$package_path not readable");
+				return $LAUNCHPAD_FILESYSTEM_ERROR;
+			}
+			elsif ((my $checksum = checksumFile($package_path)) ne $package_version_checksum) {
+				$log->error("checksum mismatch for: $package_path found: $checksum - expected: $package_version_checksum");
+				return $LAUNCHPAD_CHECKSUM_ERROR;
+			}
 		}
-		elsif ((my $checksum = checksumFile($package_path)) ne $package_version_checksum) {
-			$log->error("checksum mismatch for: $package_path found: $checksum - expected: $package_version_checksum");
-			return $LAUNCHPAD_CHECKSUM_ERROR;
+		else {
+			$log->error("no package_path or no package_version_checksum");
+			$log->error('package_path: ', $package_path || '', ' package_version_checksum: ', $package_version_checksum || '');
+			return $LAUNCHPAD_BOG_ERROR;
 		}
-	}
-	else {
-		$log->error("no package_path or no package_version_checksum");
-		$log->error('package_path: ', $package_path || '', ' package_version_checksum: ', $package_version_checksum || '');
-		return $LAUNCHPAD_BOG_ERROR;
 	}
 
 	# compute final bog
 	my $bog = {};
+
+	# notify_when_complete_flag
+	$bog->{'notify_when_complete_flag'} = $bog_query_result->{'notify_when_complete_flag'};
 
 	# compute package dependency list
 	$bog->{'packagedependencylist'} = $bog_query_result->{'dependency_list'};
@@ -265,11 +275,10 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 	
 	# Other bog entries - not from the database
 	$bog->{'version'} = '2';
-	my $config = getSwampConfig();
-	my $results_folder = $config->get('resultsFolder');
+	my $results_folder = $global_swamp_config->get('resultsFolder');
 	$bog->{'resultsfolder'} = $results_folder;
 	if (! -d $results_folder) {
-		$log->error("no results folder");
+		$log->error("results folder: ", defined($results_folder) ? $results_folder : 'not defined', ' is not a directory.');
 		return $LAUNCHPAD_BOG_ERROR;
 	}
 	
@@ -319,7 +328,7 @@ sub updateExecutionResults { my ($execrunid, $newrecord, $finalStatus) = @_ ;
     	if ($finalStatus) {
         	$newrecord->{'completion_date'} = strftime("%Y-%m-%d %H:%M:%S", localtime(time()));
     	}
-		my $query = q{CALL assessment.update_execution_run_status_test(?, ?, ?, @r);};
+		my $query = q{CALL assessment.update_execution_run_status(?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
 		foreach my $key (keys %$newrecord) {
 			# execution_record_uuid
@@ -467,47 +476,35 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         $log->error($bogref->{'execrunid'}, "BOG is missing packagepath specification.");
         return 0;
     }
+	if (! -r $bogref->{'packagepath'}) {
+        $log->error($bogref->{'execrunid'}, ' package: ', $bogref->{'packagepath'}, ' not readable.');
+		return 0;
+	}
     if (!defined( $bogref->{'toolpath'})) {
         $log->error($bogref->{'execrunid'}, "BOG is missing toolpath specification.");
         return 0;
     }
-    if (! _copyInputsTools($bogref, $dest)) {
+	if (! -r $bogref->{'toolpath'}) {
+        $log->error($bogref->{'execrunid'}, ' tool: ', $bogref->{'toolpath'}, ' not readable.');
+		return 0;
+	}
+	my $status;
+	eval {
+		$status = _copyInputsTools($bogref, $dest);
+	};
+	if ($@ || ! $status) {
+		$log->error("_copyInputsTools failed for: ", $bogref->{'toolpath'}, ' status: ', defined($status) ? $status : 'no status',  " eval result: $@");
+		return 0;
+	}
+	
+    my $basedir = getSwampDir();
+    # copy services.conf to the input destination directory
+	my $servicesconf = catfile($basedir, 'etc', 'services.conf');
+    if (! cp($servicesconf, $dest)) {
+        $log->error($bogref->{'execrunid'}, "Cannot copy $servicesconf to $dest $OS_ERROR");
         return 0;
     }
-    # create services.conf in the input destination directory
-    if (isParasoftTool($bogref)) {
-        $global_swamp_config ||= getSwampConfig();
-        my $value = $global_swamp_config->get('tool.ps-ctest.license.host');
-        system("echo tool-ps-ctest-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.ps-ctest.license.port');
-        system("echo tool-ps-ctest-license-port = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.ps-jtest.license.host');
-        system("echo tool-ps-jtest-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.ps-jtest.license.port');
-        system("echo tool-ps-jtest-license-port = $value >> $dest/services.conf");
-    }
-    elsif (isRedLizardTool($bogref)) {
-        $global_swamp_config = getSwampConfig();
-        my $value = $global_swamp_config->get('tool.rl-goanna.license.host');
-        system("echo tool-rl-goanna-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.rl-goanna.license.port');
-        system("echo tool-rl-goanna-license-port = $value >> $dest/services.conf");
-    }
-    elsif (isGrammaTechTool($bogref)) {
-        $global_swamp_config ||= getSwampConfig();
-        my $value = $global_swamp_config->get('tool.gt-csonar.license.host');
-        system("echo tool-gt-csonar-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.gt-csonar.license.port');
-        system("echo tool-gt-csonar-license-port = $value >> $dest/services.conf");
-    }
-    elsif (isSynopsysTool($bogref)) {
-        $global_swamp_config ||= getSwampConfig();
-        my $value = $global_swamp_config->get('tool.sy-coverity.license.host');
-        system("echo tool-sy-coverity-license-host = $value >> $dest/services.conf");
-        $value = $global_swamp_config->get('tool.sy-coverity.license.port');
-        system("echo tool-sy-coverity-license-port = $value >> $dest/services.conf");
-    }
-
+	
     # Copy the package tarball into VM input folder from the SAN.
     if (! cp($bogref->{'packagepath'}, $dest)) {
         $log->error($bogref->{'execrunid'}, "Cannot read packagepath $bogref->{'packagepath'} $OS_ERROR");
@@ -515,7 +512,6 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
     }
 
     _addUserDepends($bogref, "$dest/os-dependencies.conf");
-    my $basedir = getSwampDir();
     my $file = "$basedir/thirdparty/resultparser.tar";
     _deployTarball($file, $dest);
     # Add result parser's *-os-dependencies.conf to the mix, and merge for uniqueness
@@ -637,11 +633,18 @@ sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
     return 1;
 }
 
-sub isLicensedTool { my ($bogref) = @_ ;
-    return (isParasoftTool($bogref) ||
+sub needsFloodlightAccessTool { my ($bogref) = @_ ;
+    return (isParasoft9Tool($bogref) ||
+            isParasoft10Tool($bogref) ||
             isGrammaTechTool($bogref) ||
             isRedLizardTool($bogref) ||
-			isSynopsysTool($bogref));
+			isSynopsysTool($bogref) ||
+			isOWASPDCTool($bogref)
+		   );
+}
+
+sub isOWASPDCTool { my ($bogref) = @_ ;
+	return ($bogref->{'toolname'} eq 'OWASP Dependency Check');
 }
 
 sub isSonatypeTool { my ($bogref) = @_ ;
@@ -682,8 +685,11 @@ sub isParasoftC { my ($bogref) = @_ ;
 sub isParasoftJava { my ($bogref) = @_ ;
     return ($bogref->{'toolname'} eq 'Parasoft Jtest');
 }
-sub isParasoftTool { my ($bogref) = @_ ;
-    return (isParasoftC($bogref) || isParasoftJava($bogref));
+sub isParasoft9Tool { my ($bogref) = @_ ;
+    return ((isParasoftC($bogref) || isParasoftJava($bogref)) && ($bogref->{'tool-version'} =~ m/^9\./));
+}
+sub isParasoft10Tool { my ($bogref) = @_ ;
+    return ((isParasoftC($bogref) || isParasoftJava($bogref)) && ($bogref->{'tool-version'} =~ m/^10\./));
 }
 sub isGrammaTechCS { my ($bogref) = @_ ;
     return ($bogref->{'toolname'} eq 'GrammaTech CodeSonar');

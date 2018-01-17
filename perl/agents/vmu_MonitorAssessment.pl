@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -37,9 +37,9 @@ use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
 );
 use SWAMP::Libvirt qw(getVMIPAddress);
-use SWAMP::ToolLicense qw(
-	openLicense
-	closeLicense
+use SWAMP::FloodlightAccess qw(
+	openFloodlightAccess
+	closeFloodlightAccess
 );
 
 my $log;
@@ -95,7 +95,7 @@ sub get_next_status { my ($file, $final_status_seen) = @_ ;
 	if (! open($fh, '<', $file)) {
 		$open_attempts += 1;
 		if (! $final_status_seen) {
-			$log->error("Failed to open events file: $file $open_attempts");
+			$log->warn("Failed to open events file: $file $open_attempts");
 		}
 		return ($open_attempts, '');
 	}
@@ -278,7 +278,7 @@ updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 
 my $vmip_lookup_delay = $config->get('vmip_lookup_delay') || 10;
 sleep $vmip_lookup_delay;
 my $vmip = getVMIPAddress($config, $vmhostname);
-(my $license_result, $vmip) = openLicense($config, \%bog, $vmhostname, $vmip);
+(my $license_result, $vmip) = openFloodlightAccess($config, \%bog, $vmhostname, $vmip);
 if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
 	$message = 'Obtained vmip';
 	$log->info($message . ": $vmip");
@@ -296,20 +296,20 @@ my $status = monitor($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomain
 $log->info("MonitorAssessment: loop returns status: $status");
 
 # close Floodlight flow rule for licensed tools
-closeLicense($config, \%bog, $license_result);
+closeFloodlightAccess($config, \%bog, $license_result);
 
 # signal delete jobdir on sumbit node iff some status returned from vm
 if ($status) {
-	$status = deleteJobDir($execrunuid, $clusterid, $procid);
+	$status = deleteJobDir($execrunuid);
 	if ($status) {
-		$log->info("MonitorAssessment: - job directory for: $execrunuid $clusterid $procid successfully deleted");
+		$log->info("MonitorAssessment: - job directory for: $execrunuid successfully deleted");
 	}
 	else {
-		$log->error("MonitorAssessment - job directory for: $execrunuid $clusterid $procid deletion failed");
+		$log->error("MonitorAssessment - job directory for: $execrunuid deletion failed");
 	}
 }
 else {
-	$log->info("MonitorAssessment: - job directory for: $execrunuid $clusterid $procid deletion skipped");
+	$log->info("MonitorAssessment: - job directory for: $execrunuid deletion skipped");
 }
 
 $log->info("MonitorAssessment: $execrunuid Exit");

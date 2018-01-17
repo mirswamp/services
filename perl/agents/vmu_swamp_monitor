@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -18,14 +18,14 @@ use File::Spec::Functions;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl::Level;
 use Log::Log4perl;
-use POSIX qw(:sys_wait_h WNOHANG);    # for nonblocking read
-use POSIX qw(setsid waitpid);
+use POSIX qw(WNOHANG waitpid);    # for nonblocking read
 
 use FindBin qw($Bin);
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::vmu_Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	runScriptDetached
   	loadProperties
   	getLoggingConfigString
   	getSwampConfig
@@ -42,7 +42,7 @@ use sigtrap 'handler', \&hup_handler,  'HUP';
 
 my $debug   = 0;
 my $config;
-my $asdaemon = 0;
+my $asdetached = 1;
 my $startupdir = getcwd();
 my $basedir = abs_path("$FindBin::Bin/..");
 
@@ -50,42 +50,14 @@ my @PRESERVEARGV = @ARGV;
 GetOptions(
     'debug'      => \$debug,
     'config|C=s' => \$config,
-    'daemon'     => \$asdaemon,
+    'detached!'     => \$asdetached,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 
-if ($asdaemon) {
-   chdir(q{/});
-    if (! open(STDIN, '<', File::Spec->devnull)) {
-        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    my $pid = fork();
-    if (! defined($pid)) {
-        $log->error("fork failed: $OS_ERROR");
-        exit;
-    }
-    if ($pid) {
-        # parent
-        exit(0);
-    }
-    # child
-    if (setsid() == -1) {
-    	$log->error("child - setsid failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDERR, ">&STDOUT")) {
-        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
-        exit;
-    }
-}
+runScriptDetached() if ($asdetached);
 chdir($startupdir);
 
 #** @var %children a map of child process ids indexed by the same alias name used with `%processes`

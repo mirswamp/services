@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -108,7 +108,7 @@ sub get_next_status { my ($file, $final_status_seen) = @_ ;
 	if (! open($fh, '<', $file)) {
 		$open_attempts += 1;
 		if (! $final_status_seen) {
-			$log->error("Failed to open events file: $file $open_attempts");
+			$log->warn("Failed to open events file: $file $open_attempts");
 		}
 		return ($open_attempts, '');
 	}
@@ -241,13 +241,13 @@ $message = "Viewer is shutting down";
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, $message, \%bog);
 
 # signal delete jobdir on sumbit node
-my $status = deleteJobDir($execrunuid, $clusterid, $procid);
+my $status = deleteJobDir($execrunuid);
 if ($status) {
-	$log->info("MonitorViewer - job directory for: $execrunuid $clusterid $procid successfully deleted");
+	$log->info("MonitorViewer - job directory for: $execrunuid successfully deleted");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, "Viewer shutdown complete", \%bog);
 }
 else {
-	$log->error("MonitorViewer - job directory for: $execrunuid $clusterid $procid deletion failed");
+	$log->error("MonitorViewer - job directory for: $execrunuid deletion failed");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_JOBDIR_FAILED, "Viewer shutdown incomplete", \%bog);
 }
 

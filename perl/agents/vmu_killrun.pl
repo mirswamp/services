@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -20,7 +20,9 @@ use FindBin qw($Bin);
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::vmu_Support qw(
+	runScriptDetached
 	identifyScript
+	deleteJobDir
 	getLoggingConfigString 
 	getSwampConfig
 	getSwampDir 
@@ -30,13 +32,6 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_SUCCESS
 	getHTCondorJobId
 	HTCondorJobStatus
-	isAssessmentRun
-	isViewerRun
-	isMetricRun
-	runType
-	$RUNTYPE_ARUN
-	$RUNTYPE_VRUN
-	$RUNTYPE_MRUN
 );
 
 use SWAMP::vmu_AssessmentSupport qw(
@@ -59,16 +54,17 @@ use SWAMP::vmu_ViewerSupport qw(
 );
 
 my $debug = 0;
+my $asdetached = 1;
 my $log;
 my $tracelog;
 my $execrunuid;
 my $kill_sleep_time = 5; 	# seconds
 my $kill_wait_time = 180;	# seconds
-my $kill_rewrite_status_count = 5;
-my $config = getSwampConfig();
+my $kill_rewrite_status_count = 10;
 
 sub logfilename {
 	if ($execrunuid) {
+		my $config = getSwampConfig();
     	if (isSwampInABox($config)) {
         	my $name = buildExecRunAppenderLogFileName($execrunuid);
         	return $name;
@@ -81,8 +77,9 @@ sub logfilename {
 
 my @PRESERVEARGV = @ARGV;
 GetOptions(
-	'debug'	=> \$debug,
+	'debug'						=> \$debug,
 	'execution_record_uuid=s'	=> \$execrunuid,
+	'detached!'					=> \$asdetached,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
@@ -93,35 +90,38 @@ $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
 
 if ($execrunuid) {
-	my $jobid = getHTCondorJobId($execrunuid);
+	runScriptDetached() if ($asdetached);
+	my ($jobid, $type, $returned_execrunuid) = getHTCondorJobId($execrunuid);
 	if ($jobid && ($jobid =~ m/^\d+\.\d+$/)) {
 		my $viewerbog = {};
-		if (isViewerRun($execrunuid)) {
-			($viewerbog->{'projectid'}, $viewerbog->{'viewer'}) = (split '_', $execrunuid)[1,2];
+		if ($type eq 'vrun') {
+			my $viewer_name = (split, '_', $returned_execrunuid)[2];
+			$viewerbog->{'projectid'} = $execrunuid;
+			$viewerbog->{'viewer'} = $viewer_name;
 		}
-    	my $retval = launchPadKill($execrunuid, $jobid);
+    	my $retval = launchPadKill($returned_execrunuid, $jobid);
 		if ($retval != $LAUNCHPAD_SUCCESS) {
 			my $status_message = 'Terminate Failed';
-			$tracelog->trace("$PROGRAM_NAME launchPadKill returned failure for $execrunuid $jobid: $retval $status_message");
-			if (isAssessmentRun($execrunuid)) {
-				updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
-				updateRunStatus($execrunuid, $status_message, 1);
+			$tracelog->trace("$PROGRAM_NAME launchPadKill returned failure for $returned_execrunuid $jobid: $retval $status_message");
+			if ($type eq 'arun' || $type eq 'mrun') {
+				updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
+				updateRunStatus($returned_execrunuid, $status_message, 1);
 			}
-			elsif (isViewerRun($execrunuid)) {
-				updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_TERMINATE_FAILED, $status_message, $viewerbog);
+			elsif ($type eq 'vrun') {
+				updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATE_FAILED, $status_message, $viewerbog);
 			}
 		}
 		else {
 			my $status_message = 'Terminating';
-			$tracelog->trace("$PROGRAM_NAME launchPadKill returned success for $execrunuid $jobid: $retval $status_message");
+			$tracelog->trace("$PROGRAM_NAME launchPadKill returned success for $returned_execrunuid $jobid: $retval $status_message");
 			my $done = 0;
 			my $total_sleep_time = 0;
 			while (! $done) {
-				if (isAssessmentRun($execrunuid)) {
-					updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+				if ($type eq 'arun' || $type eq 'mrun') {
+					updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
 				}
-				elsif (isViewerRun($execrunuid)) {
-					updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_TERMINATING, $status_message, $viewerbog);
+				elsif ($type eq 'vrun') {
+					updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATING, $status_message, $viewerbog);
 				}
 				my $retval = HTCondorJobStatus($jobid);
 				last if (! $retval);
@@ -129,17 +129,25 @@ if ($execrunuid) {
 				sleep $kill_sleep_time;
 				$total_sleep_time += $kill_sleep_time;
 			}
-			$status_message = 'Terminated';
-			if (isAssessmentRun($execrunuid)) {
-				updateExecutionResults($execrunuid, {'vm_password' => ''});
-				updateRunStatus($execrunuid, $status_message, 1);
+			my $status = deleteJobDir($returned_execrunuid);
+			if ($status) {
+				$tracelog->info("$PROGRAM_NAME - job directory for: $returned_execrunuid successfully deleted");
 			}
+			else {
+				$tracelog->info("$PROGRAM_NAME - job directory for: $returned_execrunuid deletion failed");
+			}
+			$status_message = 'Terminated';
+			if ($type eq 'arun' || $type eq 'mrun') {
+				updateExecutionResults($returned_execrunuid, {'vm_password' => ''});
+				updateRunStatus($returned_execrunuid, $status_message, 1);
+			}
+			# rewrite status until the exec node job monitor has exited
 			for (my $i = 0; $i < $kill_rewrite_status_count; $i++) {
-				if (isAssessmentRun($execrunuid)) {
-					updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+				if ($type eq 'arun' || $type eq 'mrun') {
+					updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
 				}
-				elsif (isViewerRun($execrunuid)) {
-					updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_TERMINATED, $status_message, $viewerbog);
+				elsif ($type eq 'vrun') {
+					updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATED, $status_message, $viewerbog);
 				}
 				sleep $kill_sleep_time;
 			}

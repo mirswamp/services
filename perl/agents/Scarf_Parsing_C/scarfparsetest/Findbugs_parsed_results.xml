@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<AnalyzerReport package_name="javaexample" assess_fw="java-assess" tool_version="3.0.1" parser_fw="resultparser" tool_name="findbugs" package_version="unknown" assess_fw_version="2.6.6" build_root_dir="/home/builder/build" parser_fw_version="3.1.4" uuid="a854870e-5fd4-4749-91a7-3ad7448cc6e7" platform_name="ubuntu-16.04-64" package_root_dir="pkg1" assessment_start_ts="1513288190.7482595">
+  <BugInstance id="0">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">overstep</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="true">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>5</StartLine>
+        <EndLine>5</EndLine>
+        <Explanation>At Main.java:[line 5]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>CORRECTNESS</BugGroup>
+    <BugCode>AIOB_ARRAY_INDEX_OUT_OF_BOUNDS</BugCode>
+    <BugRank>5</BugRank>
+    <BugSeverity>1</BugSeverity>
+    <BugMessage>Method Main.overstep() attempts to access an array element outside the array's size
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:5 ****** Primary Bug Location
+  At Main.java:[line 5]
+</BugMessage>
+    <ResolutionSuggestion> 			 			&lt;p&gt;This method accesses an array element using a literal index that is known to be outside the size 			of the specified array. This will cause an ArrayIndexOutOfBoundsException at runtime.&lt;/p&gt; 			 		</ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[0]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="1">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="true">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>13</StartLine>
+        <EndLine>13</EndLine>
+        <Explanation>At Main.java:[line 13]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>STYLE</BugGroup>
+    <BugCode>DLS_DEAD_LOCAL_STORE</BugCode>
+    <BugRank>17</BugRank>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Dead store to result in Main.main(String[])
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:13 ****** Primary Bug Location
+  At Main.java:[line 13]
+</BugMessage>
+    <ResolutionSuggestion>  &lt;p&gt; This instruction assigns a value to a local variable, but the value is not read or used in any subsequent instruction. Often, this indicates an error, because the value computed is never used. &lt;/p&gt; &lt;p&gt; Note that Sun's javac compiler often generates dead stores for final local variables.  Because FindBugs is a bytecode-based tool, there is no easy way to eliminate these false positives. &lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[1]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="2">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="true">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>10</StartLine>
+        <EndLine>10</EndLine>
+        <Explanation>At Main.java:[line 10]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>BAD_PRACTICE</BugGroup>
+    <BugCode>ES_COMPARING_STRINGS_WITH_EQ</BugCode>
+    <BugRank>11</BugRank>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Comparison of String objects using == or != in Main.main(String[]) 
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:10 ****** Primary Bug Location
+  At Main.java:[line 10]
+</BugMessage>
+    <ResolutionSuggestion>    &lt;p&gt;This code compares &lt;code&gt;java.lang.String&lt;/code&gt; objects for reference equality using the == or != operators. Unless both strings are either constants in a source file, or have been interned using the &lt;code&gt;String.intern()&lt;/code&gt; method, the same string value may be represented by two different String objects. Consider using the &lt;code&gt;equals(Object)&lt;/code&gt; method instead.&lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[2]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="3">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">finalize</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="false">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <Explanation>At Main.java:[line 20]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>BAD_PRACTICE</BugGroup>
+    <BugCode>FI_EMPTY</BugCode>
+    <BugRank>16</BugRank>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Main.finalize() is empty and should be deleted
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:20 ***
+  At Main.java:[line 20]
+</BugMessage>
+    <ResolutionSuggestion>    &lt;p&gt; Empty &lt;code&gt;finalize()&lt;/code&gt; methods are useless, so they should   be deleted.&lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[3]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="4">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">finalize</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="false">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <Explanation>At Main.java:[line 20]</Explanation>
+      </Location>
+    </BugLocations>
+    <CweId>583</CweId>
+    <BugGroup>MALICIOUS_CODE</BugGroup>
+    <BugCode>FI_PUBLIC_SHOULD_BE_PROTECTED</BugCode>
+    <BugRank>18</BugRank>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Main.finalize() is public; should be protected
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:20 ***
+  At Main.java:[line 20]
+</BugMessage>
+    <ResolutionSuggestion>    &lt;p&gt; A class's &lt;code&gt;finalize()&lt;/code&gt; method should have protected access,    not public.&lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[4]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="5">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">overstep</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="true">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>5</StartLine>
+        <EndLine>5</EndLine>
+        <Explanation>At Main.java:[line 5]</Explanation>
+      </Location>
+      <Location id="1" primary="false">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>5</StartLine>
+        <EndLine>5</EndLine>
+        <Explanation>At Main.java:[line 5]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>CORRECTNESS</BugGroup>
+    <BugCode>RANGE_ARRAY_INDEX</BugCode>
+    <BugRank>7</BugRank>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Array index is out of bounds: 20
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:5 ****** Primary Bug Location
+  At Main.java:[line 5]
+*** pkg1/javaexample/src/Main.java:5 ***
+  At Main.java:[line 5]
+</BugMessage>
+    <ResolutionSuggestion>     &lt;p&gt; Array operation is performed, but array index is out of bounds, which will result in ArrayIndexOutOfBoundsException at runtime.&lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[5]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="6">
+    <ClassName>Main</ClassName>
+    <Methods>
+      <Method id="0" primary="true">run</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="0" primary="true">
+        <SourceFile>pkg1/javaexample/src/Main.java</SourceFile>
+        <StartLine>16</StartLine>
+        <EndLine>16</EndLine>
+        <Explanation>At Main.java:[line 16]</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>STYLE</BugGroup>
+    <BugCode>ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD</BugCode>
+    <BugRank>15</BugRank>
+    <BugSeverity>1</BugSeverity>
+    <BugMessage>Write to static field Main.qq from instance method Main.run()
+
+Bug Path:
+
+*** pkg1/javaexample/src/Main.java:16 ****** Primary Bug Location
+  At Main.java:[line 16]
+</BugMessage>
+    <ResolutionSuggestion>    &lt;p&gt; This instance method writes to a static field. This is tricky to get correct if multiple instances are being manipulated, and generally bad practice. &lt;/p&gt;  </ResolutionSuggestion>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/BugCollection/BugInstance[6]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugSummary>
+    <BugCategory group="BAD_PRACTICE" code="ES_COMPARING_STRINGS_WITH_EQ" count="1" bytes="1504" />
+    <BugCategory group="BAD_PRACTICE" code="FI_EMPTY" count="1" bytes="1126" />
+    <BugCategory group="CORRECTNESS" code="AIOB_ARRAY_INDEX_OUT_OF_BOUNDS" count="1" bytes="1303" />
+    <BugCategory group="CORRECTNESS" code="RANGE_ARRAY_INDEX" count="1" bytes="1480" />
+    <BugCategory group="MALICIOUS_CODE" code="FI_PUBLIC_SHOULD_BE_PROTECTED" count="1" bytes="1178" />
+    <BugCategory group="STYLE" code="DLS_DEAD_LOCAL_STORE" count="1" bytes="1455" />
+    <BugCategory group="STYLE" code="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD" count="1" bytes="1242" />
+  </BugSummary>
+</AnalyzerReport>

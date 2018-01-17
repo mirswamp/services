@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -153,6 +153,15 @@ sub extractBogFile { my ($execrunuid, $inputfolder) = @_ ;
 	return \%bog;
 }
 
+sub exit_prescript_with_error {
+	$log->info("Exiting $PROGRAM_NAME ($PID) with error");
+   	$log->info("Unlinking delta, input, and output disks for HTCondor");
+    unlink 'delta.qcow2' if (-e 'delta.qcow2');
+    unlink 'inputdisk.qcow2' if (-e 'inputdisk.qcow2');
+    unlink 'outputdisk.qcow2' if (-e 'outputdisk.qcow2');
+    exit(1);
+}
+
 ########
 # Main #
 ########
@@ -163,7 +172,7 @@ sub extractBogFile { my ($execrunuid, $inputfolder) = @_ ;
 my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
-	exit(1);
+	exit_prescript_with_error();
 }
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
@@ -187,7 +196,7 @@ my $bogref = extractBogFile($execrunuid, $inputfolder);
 if (! $bogref) {
 	$log->error("extractBogFile failed for: $execrunuid");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit(1);
+	exit_prescript_with_error();
 }
 $bogref->{'vmhostname'} = $vmhostname;
 
@@ -195,18 +204,18 @@ my $status = populateInputDirectory($bogref, $inputfolder);
 if (! $status) {
 	$log->error("populateInputDirectory failed for: $execrunuid");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit(1);
+	exit_prescript_with_error();
 }
 my $imagename = createQcow2Disks($bogref, $inputfolder, $outputfolder);
 if (! $imagename) {
 	$log->error("createQcow2Disks failed for: $execrunuid");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit(1);
+	exit_prescript_with_error();
 }
 if (! patchDeltaQcow2ForInit($execrunuid, $imagename, $vmhostname)) {
 	$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $imagename $vmhostname");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit(1);
+	exit_prescript_with_error();
 }
 
 my $eventsfolder = q{events};

@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -594,6 +594,28 @@ else {
 	$log->info("Assessment: $execrunuid $message");
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
+}
+
+if ($bog{'notify_when_complete_flag'}) {
+	my $swamp_api_web_server = $config->get('swamp_api_web_server');
+	if (! $swamp_api_web_server) {
+		$log->error("assessment notification failed - no swamp_api_web_server found in swamp.conf");
+	}
+	else {
+		my $notify_route = "/execution_records/$execrunuid/notify";
+		my $post_url = 'https://' . $swamp_api_web_server . $notify_route;
+		my $command = "curl --silent --insecure -H 'Accept: application/json' --header \"Content-Length:0\" -X POST $post_url";
+		my ($output, $status) = systemcall($command);
+		if ($status || $output) {
+			$log->error("$command failed - status: $status output: [$output]");
+		}
+		else {
+			$log->info("$command succeeded - status: $status output: [$output]");
+		}
+	}
+}
+else {
+	$log->info("Email notification is not turned on for: $execrunuid", sub {use Data::Dumper; Dumper(\%bog);});
 }
 
 $log->info("PostAssessment: $execrunuid Exit");

@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -15,16 +15,10 @@ use English '-no_match_vars';
 use File::Basename qw(basename fileparse);
 use File::Copy qw(cp);
 use File::Path qw(make_path);
-use File::Spec qw(devnull);
 use File::Spec::Functions;
-use File::stat;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl::Level;
 use Log::Log4perl;
-use POSIX qw(setsid);
-use XML::LibXML;
-use XML::LibXSLT;
-use XML::DOM;
 use Time::localtime;
 
 use FindBin;
@@ -35,6 +29,7 @@ use SWAMP::ThreadFix qw(threadfix_uploadanalysisrun);
 use SWAMP::vmu_PackageTypes qw($GENERIC_PKG $JAVABYTECODE_PKG);
 use SWAMP::vmu_FrameworkUtils qw(generatereport savereport);
 use SWAMP::vmu_Support qw(
+	runScriptDetached
 	identifyScript
 	systemcall
 	getLoggingConfigString 
@@ -62,7 +57,7 @@ use constant 'ERROR'   =>  -1;
 use constant 'TIMEOUT' =>	2;
 
 my $startupdir = getcwd();
-my $asdaemon   = 1;
+my $asdetached   = 1;
 my $debug      = 0;
 
 #** @var $inputdir The absolute path location where raw results can currently be found.
@@ -118,7 +113,7 @@ GetOptions(
     'package=s'             => \$package_name,
     'package_type=s'        => \$package_type,
     'project=s'             => \$project_name,
-    'daemon!'               => \$asdaemon,
+    'detached!'               => \$asdetached,
     'debug'                 => \$debug,
 	#Header info in NativeViewer
 	'package_name=s'		=> \$package_name,
@@ -142,35 +137,9 @@ my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
 
-if ($asdaemon && ($viewer_name =~ /CodeDX/ixsm) || ($viewer_name =~ /ThreadFix/ixsm)) {
+if ($asdetached && ($viewer_name =~ /CodeDX/ixsm) || ($viewer_name =~ /ThreadFix/ixsm)) {
 	print "SUCCESS\n"; # this string is propagated back to the database sys_eval to simply indicate that the script has started
-    chdir(q{/});
-    if (! open(STDIN, '<', File::Spec->devnull)) {
-		$log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
-		exit ERROR;
-	}
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-		$log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
-		exit ERROR;
-	}
-    my $pid = fork();
-	if (! defined($pid)) {
-		$log->error("fork failed: $OS_ERROR");
-		exit ERROR;
-	}
-    if ($pid) {
-    	# parent
-		exit(0);
-	}
-	# child
-    if (setsid() == -1) {
-		$log->error("child - setsid failed: $OS_ERROR");
-		exit ERROR;
-	}
-    if (! open(STDERR, ">&STDOUT")) {
- 		$log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
-		exit ERROR;
-	}
+	runScriptDetached();
 }
 chdir($startupdir);
 
@@ -258,7 +227,7 @@ sub doViewerVM {
 		$state = $viewerState->{'state'};
     }
     if ($state != $VIEWER_STATE_READY) {
-		$log->error('Error launch timed out after ', 60 * $sleep_time, "seconds - project_name: $project_name viewer_name: $viewer_name");
+		$log->error('Error launch timed out after ', 60 * $sleep_time, " seconds - project_name: $project_name viewer_name: $viewer_name");
 		unlink $source_archive if ($removeZip);
 		return TIMEOUT;
 	}
@@ -314,7 +283,7 @@ sub printPara {
     $log->info("$tool_name");
     $log->info("$package_name");
     $log->info("$project_name");
-    $log->info("$asdaemon");
+    $log->info("$asdetached");
 	$log->info("$debug");
 	$log->info("$package_name");
 	$log->info("$package_version");
@@ -345,7 +314,10 @@ sub doNativeError { my ($file, $outputdir) = @_ ;
 		# save the header information and pass them into the saverepost()
 		my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date);
 		savereport($report, $savereport, $config->get('reporturl'),\@header);
-		system("/bin/chmod 644 $savereport");
+		my ($output, $status) = systemcall("/bin/chmod 644 $savereport");
+		if ($status) {
+			$log->error("Failed to chmod output: $output status: $status");
+		}
 		# Do not remove this print statement
 		# This is the result returned to the calling program via the shell
 		$log->info("doNativeError returns: assessmentreport.html");
@@ -403,77 +375,63 @@ sub doNativeHTML { my ($file, $outputdir) = @_ ;
 }
 
 sub doNativeSCARF { my ($file, $tool_name) = @_ ;
-	$log->info("doNativeSCARF - processing xml result: $file");
+	$log->info("doNativeSCARF - tool_name: $tool_name");
 	my $retCode = 0;
-	my $isCommon = 1;
-	if ( system("head $file|grep -q '<AnalyzerReport'") != 0 ) {
-		$isCommon = 0;
-	}
-	my $xsltfile = getXSLTFile( $tool_name, $isCommon );
-	$log->info("Transforming $tool_name $file with $xsltfile");
-
-	my $xslt = XML::LibXSLT->new();
-	my $source;
-
-	# Wrap this in an eval to catch any exceptions parsing output from the assessment.
-	my $success = eval { $source = XML::LibXML->load_xml( 'location' => $file ); };
-	
-	if ( defined($success) ) {
-		my $style_doc;  
-		# wrap the load style_doc in an eval to catch any exceptions
-		my $xslt_success = eval { $style_doc = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 ); };
-		if( defined($xslt_success)){
-			# save the elements to insert
-			# my $file_creation_time = ctime((stat($file))->mtime); 
-			addReportTime($source);
-			my $stylesheet = $xslt->parse_stylesheet($style_doc);
-			my $results    = $stylesheet->transform($source);
-			# insert the header information into the HTML
-			my $fullResult = insertHTML($results);
-			my $filename   = q{nativereport.html};
-			$log->info('Creating:', catfile($outputdir, $filename));
-			make_path($outputdir);
-			my $fullPath = catfile($outputdir, $filename);
-			# open the HTML file path
-			if ( open my $fh, '>', $fullPath ) {
-				print $fh $fullResult;
-				close $fh;
-				# Do not remove this print statement
-				# This is the result returned to the calling program via the shell
-				$log->info("doNativeSCARF returns: $filename");
-				print "${filename}\n";
-			}
-			else {
-				$retCode = 2;
-			}
-		}
-		else {
-			$log->error("Loading $xsltfile threw an exception.");
-			print "ERROR Cannot load $xsltfile as XML document\n";
-			$retCode = 2;
-		}
+	# constructs the arguments for the JSON parsing call
+	my $JSONname   = q{nativereport.json};
+	my $JSONPath = catfile($outputdir,$JSONname);
+	my $tool_name = checkToolStringSpace($tool_name);
+	my $toolListPath = catfile(getSwampDir(), 'etc', 'Scarf_ToolList.json');
+	my $parsingScript = catfile(getSwampDir(), 'bin', 'vmu_Scarf_CParsing');
+	my $reportTime = ctime();
+	make_path($outputdir);
+	# print the metadata information into a tempfile in the outputdir, for the CParsing program
+	my $metaDataFile = q{SCARFmetaData};
+	my $metaDataPath = catfile($outputdir, $metaDataFile);
+	my $fullMetaDataResult = $package_name . "\n" . $tool_name . "\n" . $platform_name . "\n" . $start_date . "\n" . $package_version . "\n" . $tool_version . "\n" . $platform_version . "\n" . $end_date . "\n" . $reportTime . "\n" . 'package_uid' . "\n" . 'package_vesion_uid' . "\n" . 'tool_uid' . "\n" .'tool_version_uid' . "\n" . 'platform_uid' . "\n" . 'platform_version_uid';
+	$log->info('Saving the assessment metadata to ', $metaDataPath);
+	if(open my $fh, '>', $metaDataPath) {
+		print $fh $fullMetaDataResult;
+		close $fh;
 	}
 	else {
-		$log->error("Loading $file threw an exception.");
-		print "ERROR Cannot load $file as XML document\n";
 		$retCode = 2;
+	}
+	
+	# concatenate strings into a command string and pass into the system call
+	# append the assessment_start_time, assessment_end_time and report_generation_time because they are not in the SCARF file
+	my $parsingCmd = $parsingScript . ' -input_file ' . $file . ' -output_file ' . $JSONPath . ' -tool_name ' . $tool_name . ' -tool_list ' . $toolListPath . ' -metadata_path ' . $metaDataPath;
+	$log->info('cwd: ', getcwd(), ' command: ', $parsingCmd);
+	my ($output, $status) = systemcall($parsingCmd);
+	$log->info('Logging from vmu_Scarf_Parsing: ', $output);
+	if ($status) {
+		$log->error("Parsing the SCARF results into JSON threw an exception status: $status output: $output");
+	}
+	else {
+		# Do not remove this print statement
+		# This is the result returned to the calling program via the shell
+		$log->info("doNativeSCARF returns: $JSONname");
+		print "${JSONname}\n";
 	}
 	return $retCode;
 }
 
 # Native viewer needs to look at the report XML file found in $inputdir
 sub doNative {
-    #my $r = printPara();
+    # my $r = printPara();
 	my $retCode = 0;
     foreach my $file (@file_path) {
 		$log->info("doNative - processing file: $file");
+		# process SCARF results
         if ($file =~ m/\.xml$/sxmi) {
 			$retCode = doNativeSCARF($file, $tool_name);
             next;
         }
+		# process SONATYPE results
 		elsif ($file =~ m/\.zip$/sxmi) {
 			$retCode = doNativeHTML($file, $outputdir);
 		}
+		# process ERROR results
 		elsif ($file =~ m/\.tar\.gz$/sxmi) {
 			$retCode = doNativeError($file, $outputdir);
 		}
@@ -485,69 +443,12 @@ sub doNative {
     return $retCode;
 }
 
-
-sub insertHTML {
-	my $original = shift;
-	#my $CompletionTime = shift;	
-
-	# split the HTML in the position where the NativeViewer Header will get included	
-	my $delimiter  = "<h1>Place_to_insert_NativeViewer_Headerinfo</h1>";
-	my @strs = split(/$delimiter/,$original );
-
-	my $FirstLineInfo = '<div class="row"><div class="col-sm-3"><h2>Package Name</h2><span>'. ($package_name).'</span></div><div class="col-sm-3"><h2>Tool Name</h2><span>'.($tool_name).'</span></div> <div class="col-sm-3"><h2>Platform Name</h2><span>'.($platform_name).'</span></div><div class="col-sm-3"><h2>Assessment Start Time</h2><span>'.($start_date).'</span></div></div>';
-
-	my $SecondLineInfo = '<div class="row"><div class="col-sm-3"><h2>Package Version</h2><span>'. ($package_version).'</span></div><div class="col-sm-3"><h2>Tool Version</h2><span>'.($tool_version).'</span></div> <div class="col-sm-3"><h2>Platform Version</h2><span>'.($platform_version).'</span></div><div class="col-sm-3"><h2>Assessment Complete Time</h2><span>'.($end_date).'</span></div></div>';
-	
-	return join "", $strs[0],$FirstLineInfo,$SecondLineInfo,$strs[1];
-}
-
-
-
-# add the report-generation-time element into the parsed_results.xml 
-sub addReportTime {
-	my $source = shift;
-	my $root = $source->getDocumentElement();
-	my $reportTime = $source->createElement("Report_Time");
-	my $localT = ctime();
-	$reportTime->appendText($localT);
-	$root->appendChild($reportTime);
-}
-
-sub getXSLTFile {
-    my $tool     = shift;
-    my $isCommon = shift;
-    my $xsltfile;
-    my $suffix = q{};
-    if ($isCommon) {
-        $suffix = q{_common};
-    }
-    my %lookup = ( 
-		'CodeSonar'	=> 'codesonar',
-		'PMD' => 'pmd', 
-        'Findbugs' => 'findbugs',
-        'Archie' => 'archie',
-        'error-prone' => 'generic',
-        'checkstyle' => 'generic',
-        'Pylint' => 'generic',
-        'cppcheck' => 'cppcheck',
-        'clang' => 'clang-sa',
-        'gcc' => 'gcc',
-		'Dawn' => 'dawn',
-		'RevealDroid' => 'reveal',
-		'android' => 'androidlint',
-
-	);
-    foreach my $key (keys %lookup) {
-		if ($tool =~ /$key/isxm) {
-            $xsltfile = "$lookup{$key}${suffix}.xslt";
-            last;
-        }
-    }
-	if (! $xsltfile) {
-		$xsltfile = 'generic_common.xslt';
-	}
-	$log->info('The style file used is ',$xsltfile);
-    return File::Spec->catfile(getSwampDir(), 'etc', $xsltfile);
+# Split the toolname with space if there is space
+# Returns the first string after split
+sub checkToolStringSpace {
+	my $toolName = shift;
+	my @array = split(' ', $toolName);
+	return $array[0];
 }
 
 sub logfilename {

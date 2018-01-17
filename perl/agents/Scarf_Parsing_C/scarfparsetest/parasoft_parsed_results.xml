@@ -1,0 +1,745 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<AnalyzerReport parser_fw="resultparser" package_root_dir="pkg1" assess_fw_version="1.1.10" package_name="snappy-c" parser_fw_version="3.1.4" uuid="f49dce66-c644-4100-8511-0dcfd31b31ab" tool_version="10.3.2" build_root_dir="/home/builder/build" assessment_start_ts="1512145807.841832" build_fw="c-assess" tool_name="ps-ctest" assess_fw="c-assess" build_fw_version="1.1.10" package_version="master" platform_name="centos-6.9-64">
+  <BugInstance id="0">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>48</StartLine>
+        <EndLine>48</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>SECURITY</BugGroup>
+    <BugCode>SECURITY-13</BugCode>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Unsafe string function 'snprintf' is being used</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/StdViol[1]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="1">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>50</StartLine>
+        <EndLine>50</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>SECURITY</BugGroup>
+    <BugCode>SECURITY-12</BugCode>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Avoid using unsafe string function 'strcpy' in your program</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/StdViol[2]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="2">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>73</StartLine>
+        <EndLine>73</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>SECURITY</BugGroup>
+    <BugCode>SECURITY-13</BugCode>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Unsafe string function 'getopt' is being used</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/StdViol[3]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="3">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1426</StartLine>
+        <EndLine>1426</EndLine>
+        <Explanation>Violation Cause; Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1430</StartLine>
+        <EndLine>1430</EndLine>
+        <Explanation>Important; Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="3" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1434</StartLine>
+        <EndLine>1434</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295</Explanation>
+      </Location>
+      <Location id="4" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1436</StartLine>
+        <EndLine>1436</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295</Explanation>
+      </Location>
+      <Location id="5" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1437</StartLine>
+        <EndLine>1437</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295</Explanation>
+      </Location>
+      <Location id="6" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1435</StartLine>
+        <EndLine>1435</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295</Explanation>
+      </Location>
+      <Location id="7" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1385</StartLine>
+        <EndLine>1385</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: iov_out-&gt;iov_len == 4294967295</Explanation>
+      </Location>
+      <Location id="8" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1390</StartLine>
+        <EndLine>1390</EndLine>
+        <Explanation>Important; Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="9" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1394</StartLine>
+        <EndLine>1394</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: (writer.iov+writer.curvec).iov_len-writer.curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="10" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1300</StartLine>
+        <EndLine>1300</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="11" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1301</StartLine>
+        <EndLine>1301</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="12" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1302</StartLine>
+        <EndLine>1302</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="13" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1303</StartLine>
+        <EndLine>1303</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="14" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1304</StartLine>
+        <EndLine>1304</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="15" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>195</StartLine>
+        <EndLine>195</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="16" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>198</StartLine>
+        <EndLine>198</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="17" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>200</StartLine>
+        <EndLine>200</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="18" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>201</StartLine>
+        <EndLine>201</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="19" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>202</StartLine>
+        <EndLine>202</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="20" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>219</StartLine>
+        <EndLine>219</EndLine>
+        <Explanation>Important values: const char data[5]</Explanation>
+      </Location>
+      <Location id="21" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1306</StartLine>
+        <EndLine>1306</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="22" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>272</StartLine>
+        <EndLine>272</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: (s-&gt;iov+s-&gt;curvec).iov_len-s-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="23" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>273</StartLine>
+        <EndLine>273</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: iov-&gt;iov_len-s-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="24" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>274</StartLine>
+        <EndLine>274</EndLine>
+        <Explanation>Important; Important values: const char data[5]; Tracked variables: iov-&gt;iov_len-s-&gt;curoff == 4294967295</Explanation>
+      </Location>
+      <Location id="25" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>275</StartLine>
+        <EndLine>275</EndLine>
+        <Explanation>Important values: const char data[5]; Tracked variables: nlen == 4294967295</Explanation>
+      </Location>
+      <Location id="26" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>276</StartLine>
+        <EndLine>276</EndLine>
+        <Explanation>Violation Point; Important values: const char data[5]; Tracked variables: nlen == 4294967295</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>BD-PB</BugGroup>
+    <BugCode>BD-PB-OVERFRD</BugCode>
+    <BugSeverity>1</BugSeverity>
+    <BugMessage>Overflow when reading from buffer "data" (const char[5], 5 bytes large). Number of bytes read = 4294967295
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:1426 ***
+  Violation Cause; Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:1430 ***
+  Important; Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:1434 ***
+  Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1436 ***
+  Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1437 ***
+  Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1435 ***
+  Important; Important values: const char data[5]; Tracked variables: iov_out.iov_len == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1385 ***
+  Important; Important values: const char data[5]; Tracked variables: iov_out-&gt;iov_len == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1390 ***
+  Important; Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:1394 ***
+  Important; Important values: const char data[5]; Tracked variables: (writer.iov+writer.curvec).iov_len-writer.curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1300 ***
+  Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1301 ***
+  Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1302 ***
+  Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1303 ***
+  Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:1304 ***
+  Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:195 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:198 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:200 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:201 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:202 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:219 ***
+  Important values: const char data[5]
+*** pkg1/snappy-c-master/snappy.c:1306 ***
+  Important; Important values: const char data[5]; Tracked variables: (writer-&gt;iov+writer-&gt;curvec).iov_len-writer-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:272 ***
+  Important; Important values: const char data[5]; Tracked variables: (s-&gt;iov+s-&gt;curvec).iov_len-s-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:273 ***
+  Important values: const char data[5]; Tracked variables: iov-&gt;iov_len-s-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:274 ***
+  Important; Important values: const char data[5]; Tracked variables: iov-&gt;iov_len-s-&gt;curoff == 4294967295
+*** pkg1/snappy-c-master/snappy.c:275 ***
+  Important values: const char data[5]; Tracked variables: nlen == 4294967295
+*** pkg1/snappy-c-master/snappy.c:276 ****** Primary Bug Location
+  Violation Point; Important values: const char data[5]; Tracked variables: nlen == 4294967295
+</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/FlowViol[0]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="4">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>68</StartLine>
+        <EndLine>68</EndLine>
+        <Explanation>Violation Cause; Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>70</StartLine>
+        <EndLine>70</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="3" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>71</StartLine>
+        <EndLine>71</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="4" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>73</StartLine>
+        <EndLine>73</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="5" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>89</StartLine>
+        <EndLine>89</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="6" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>90</StartLine>
+        <EndLine>90</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="7" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>91</StartLine>
+        <EndLine>91</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="8" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>94</StartLine>
+        <EndLine>94</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="9" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>101</StartLine>
+        <EndLine>101</EndLine>
+        <Explanation>Important; Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="10" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>38</StartLine>
+        <EndLine>38</EndLine>
+        <Explanation>Important; Tracked variables: file</Explanation>
+      </Location>
+      <Location id="11" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>12</StartLine>
+        <EndLine>12</EndLine>
+        <Explanation>Violation Point; Tracked variables: file</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>BD-SECURITY</BugGroup>
+    <BugCode>BD-SECURITY-TDFNAMES</BugCode>
+    <BugSeverity>1</BugSeverity>
+    <BugMessage>Injection of parameter of entry point method ("file") to filename setting method
+
+Bug Path:
+
+*** pkg1/snappy-c-master/scmd.c:68 ***
+  Violation Cause; Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:70 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:71 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:73 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:89 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:90 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:91 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:94 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:101 ***
+  Important; Tracked variables: av[]
+*** pkg1/snappy-c-master/map.c:38 ***
+  Important; Tracked variables: file
+*** pkg1/snappy-c-master/map.c:12 ****** Primary Bug Location
+  Violation Point; Tracked variables: file
+</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/FlowViol[0]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="5">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>68</StartLine>
+        <EndLine>68</EndLine>
+        <Explanation>Violation Cause; Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>70</StartLine>
+        <EndLine>70</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="3" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>71</StartLine>
+        <EndLine>71</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="4" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>73</StartLine>
+        <EndLine>73</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="5" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>89</StartLine>
+        <EndLine>89</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="6" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>90</StartLine>
+        <EndLine>90</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="7" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>91</StartLine>
+        <EndLine>91</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="8" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>94</StartLine>
+        <EndLine>94</EndLine>
+        <Explanation>Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="9" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>101</StartLine>
+        <EndLine>101</EndLine>
+        <Explanation>Important; Tracked variables: av[]</Explanation>
+      </Location>
+      <Location id="10" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>38</StartLine>
+        <EndLine>38</EndLine>
+        <Explanation>Important; Tracked variables: file</Explanation>
+      </Location>
+      <Location id="11" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>12</StartLine>
+        <EndLine>12</EndLine>
+        <Explanation>Important; Tracked variables: file</Explanation>
+      </Location>
+      <Location id="12" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>13</StartLine>
+        <EndLine>13</EndLine>
+        <Explanation>Tracked variables: fd</Explanation>
+      </Location>
+      <Location id="13" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>16</StartLine>
+        <EndLine>16</EndLine>
+        <Explanation>Tracked variables: fd</Explanation>
+      </Location>
+      <Location id="14" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>17</StartLine>
+        <EndLine>17</EndLine>
+        <Explanation>Important; Tracked variables: fd</Explanation>
+      </Location>
+      <Location id="15" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>17</StartLine>
+        <EndLine>17</EndLine>
+        <Explanation>Important; Tracked variables: st</Explanation>
+      </Location>
+      <Location id="16" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>18</StartLine>
+        <EndLine>18</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="17" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>19</StartLine>
+        <EndLine>19</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="18" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="19" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>21</StartLine>
+        <EndLine>21</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="20" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>23</StartLine>
+        <EndLine>23</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="21" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>26</StartLine>
+        <EndLine>26</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="22" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>27</StartLine>
+        <EndLine>27</EndLine>
+        <Explanation>Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="23" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>29</StartLine>
+        <EndLine>29</EndLine>
+        <Explanation>Important; Tracked variables: st.st_size</Explanation>
+      </Location>
+      <Location id="24" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>30</StartLine>
+        <EndLine>30</EndLine>
+        <Explanation>Tracked variables: *size</Explanation>
+      </Location>
+      <Location id="25" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>38</StartLine>
+        <EndLine>38</EndLine>
+        <Explanation>Important; Tracked variables: *size</Explanation>
+      </Location>
+      <Location id="26" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>102</StartLine>
+        <EndLine>102</EndLine>
+        <Explanation>Tracked variables: size</Explanation>
+      </Location>
+      <Location id="27" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>107</StartLine>
+        <EndLine>107</EndLine>
+        <Explanation>Tracked variables: size</Explanation>
+      </Location>
+      <Location id="28" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>108</StartLine>
+        <EndLine>108</EndLine>
+        <Explanation>Tracked variables: size</Explanation>
+      </Location>
+      <Location id="29" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>109</StartLine>
+        <EndLine>109</EndLine>
+        <Explanation>Tracked variables: size</Explanation>
+      </Location>
+      <Location id="30" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>110</StartLine>
+        <EndLine>110</EndLine>
+        <Explanation>Tracked variables: size</Explanation>
+      </Location>
+      <Location id="31" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>113</StartLine>
+        <EndLine>113</EndLine>
+        <Explanation>Important; Tracked variables: size</Explanation>
+      </Location>
+      <Location id="32" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>530</StartLine>
+        <EndLine>530</EndLine>
+        <Explanation>Tracked variables: 32 + source_len</Explanation>
+      </Location>
+      <Location id="33" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>116</StartLine>
+        <EndLine>116</EndLine>
+        <Explanation>Important; Tracked variables: outlen</Explanation>
+      </Location>
+      <Location id="34" primary="true">
+        <SourceFile>pkg1/snappy-c-master/util.c</SourceFile>
+        <StartLine>7</StartLine>
+        <EndLine>7</EndLine>
+        <Explanation>Violation Point; Tracked variables: size</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>BD-SECURITY</BugGroup>
+    <BugCode>BD-SECURITY-INTOVERF</BugCode>
+    <BugSeverity>1</BugSeverity>
+    <BugMessage>Usage of possibly overflowed/underflowed value: size
+
+Bug Path:
+
+*** pkg1/snappy-c-master/scmd.c:68 ***
+  Violation Cause; Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:70 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:71 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:73 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:89 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:90 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:91 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:94 ***
+  Tracked variables: av[]
+*** pkg1/snappy-c-master/scmd.c:101 ***
+  Important; Tracked variables: av[]
+*** pkg1/snappy-c-master/map.c:38 ***
+  Important; Tracked variables: file
+*** pkg1/snappy-c-master/map.c:12 ***
+  Important; Tracked variables: file
+*** pkg1/snappy-c-master/map.c:13 ***
+  Tracked variables: fd
+*** pkg1/snappy-c-master/map.c:16 ***
+  Tracked variables: fd
+*** pkg1/snappy-c-master/map.c:17 ***
+  Important; Tracked variables: fd
+*** pkg1/snappy-c-master/map.c:17 ***
+  Important; Tracked variables: st
+*** pkg1/snappy-c-master/map.c:18 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:19 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:20 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:21 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:23 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:26 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:27 ***
+  Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:29 ***
+  Important; Tracked variables: st.st_size
+*** pkg1/snappy-c-master/map.c:30 ***
+  Tracked variables: *size
+*** pkg1/snappy-c-master/map.c:38 ***
+  Important; Tracked variables: *size
+*** pkg1/snappy-c-master/scmd.c:102 ***
+  Tracked variables: size
+*** pkg1/snappy-c-master/scmd.c:107 ***
+  Tracked variables: size
+*** pkg1/snappy-c-master/scmd.c:108 ***
+  Tracked variables: size
+*** pkg1/snappy-c-master/scmd.c:109 ***
+  Tracked variables: size
+*** pkg1/snappy-c-master/scmd.c:110 ***
+  Tracked variables: size
+*** pkg1/snappy-c-master/scmd.c:113 ***
+  Important; Tracked variables: size
+*** pkg1/snappy-c-master/snappy.c:530 ***
+  Tracked variables: 32 + source_len
+*** pkg1/snappy-c-master/scmd.c:116 ***
+  Important; Tracked variables: outlen
+*** pkg1/snappy-c-master/util.c:7 ****** Primary Bug Location
+  Violation Point; Tracked variables: size
+</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/FlowViol[0]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="6">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>34</StartLine>
+        <EndLine>34</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>SECURITY</BugGroup>
+    <BugCode>SECURITY-02</BugCode>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Function 'rand' is being used</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/StdViol[7]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="7">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>77</StartLine>
+        <EndLine>77</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>SECURITY</BugGroup>
+    <BugCode>SECURITY-02</BugCode>
+    <BugSeverity>2</BugSeverity>
+    <BugMessage>Function 'srand' is being used</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>report/report.xml</AssessmentReportFile>
+      <InstanceLocation>
+        <Xpath>/ResultsSession/CodingStandards/StdViols/StdViol[8]</Xpath>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugSummary>
+    <BugCategory group="BD-PB" code="BD-PB-OVERFRD" count="1" bytes="12158" />
+    <BugCategory group="BD-SECURITY" code="BD-SECURITY-INTOVERF" count="1" bytes="11424" />
+    <BugCategory group="BD-SECURITY" code="BD-SECURITY-TDFNAMES" count="1" bytes="4107" />
+    <BugCategory group="SECURITY" code="SECURITY-02" count="2" bytes="1407" />
+    <BugCategory group="SECURITY" code="SECURITY-12" count="1" bytes="729" />
+    <BugCategory group="SECURITY" code="SECURITY-13" count="2" bytes="1432" />
+  </BugSummary>
+</AnalyzerReport>

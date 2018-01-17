@@ -1,0 +1,5501 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<AnalyzerReport parser_fw="resultparser" build_fw_version="1.1.10" tool_version="6.1.1 20160510 (Red Hat 6.1.1-2) (GCC)" assess_fw_version="1.1.10" uuid="3e6a9265-b700-4165-8cad-65cc86a45d51" assessment_start_ts="1512079735.645653" assess_fw="c-assess" platform_name="fedora-24-64" package_version="master" tool_name="gcc-warn" package_root_dir="pkg1" build_fw="c-assess" parser_fw_version="3.1.4" package_name="snappy-c" build_root_dir="/home/builder/build">
+  <BugInstance id="0">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>14</StartLine>
+        <EndLine>14</EndLine>
+        <StartColumn>6</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘usage’ </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>0</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="1">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>26</StartLine>
+        <EndLine>26</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘match_suffix’ </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>3</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="2">
+    <Methods>
+      <Method id="1" primary="true">match_suffix</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>28</StartLine>
+        <EndLine>28</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>4</Start>
+          <End>7</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="3">
+    <Methods>
+      <Method id="1" primary="true">match_suffix</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>29</StartLine>
+        <EndLine>29</EndLine>
+        <StartColumn>13</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>8</Start>
+          <End>10</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="4">
+    <Methods>
+      <Method id="1" primary="true">match_suffix</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>32</StartLine>
+        <EndLine>32</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>11</Start>
+          <End>13</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="5">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>36</StartLine>
+        <EndLine>36</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘open_output’ </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>14</Start>
+          <End>17</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="6">
+    <Methods>
+      <Method id="1" primary="true">open_output</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>44</StartLine>
+        <EndLine>44</EndLine>
+        <StartColumn>13</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>18</Start>
+          <End>21</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="7">
+    <Methods>
+      <Method id="1" primary="true">open_output</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>46</StartLine>
+        <EndLine>46</EndLine>
+        <StartColumn>18</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>22</Start>
+          <End>24</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="8">
+    <Methods>
+      <Method id="1" primary="true">open_output</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>48</StartLine>
+        <EndLine>48</EndLine>
+        <StartColumn>19</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>25</Start>
+          <End>27</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="9">
+    <Methods>
+      <Method id="1" primary="true">open_output</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>49</StartLine>
+        <EndLine>49</EndLine>
+        <StartColumn>31</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>26</StartLine>
+        <EndLine>26</EndLine>
+        <StartColumn>5</StartColumn>
+        <Explanation>expected ‘char *’ but argument is of type ‘const char *’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdiscarded-qualifiers</BugCode>
+    <BugMessage>passing argument 2 of ‘match_suffix’ discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/scmd.c:49 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/scmd.c:26 ***
+  expected ‘char *’ but argument is of type ‘const char *’
+</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>28</Start>
+          <End>30</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="10">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>89</StartLine>
+        <EndLine>89</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>31</Start>
+          <End>37</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="11">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>95</StartLine>
+        <EndLine>95</EndLine>
+        <StartColumn>32</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>26</StartLine>
+        <EndLine>26</EndLine>
+        <StartColumn>5</StartColumn>
+        <Explanation>expected ‘char *’ but argument is of type ‘const char *’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdiscarded-qualifiers</BugCode>
+    <BugMessage>passing argument 2 of ‘match_suffix’ discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/scmd.c:95 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/scmd.c:26 ***
+  expected ‘char *’ but argument is of type ‘const char *’
+</BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>38</Start>
+          <End>40</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="12">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>107</StartLine>
+        <EndLine>107</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>41</Start>
+          <End>46</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="13">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>131</StartLine>
+        <EndLine>131</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>47</Start>
+          <End>49</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="14">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>137</StartLine>
+        <EndLine>137</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdiscarded-qualifiers</BugCode>
+    <BugMessage>assignment discards ‘const’ qualifier from pointer target type </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>50</Start>
+          <End>52</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="15">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>145</StartLine>
+        <EndLine>145</EndLine>
+        <StartColumn>29</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-compare</BugCode>
+    <BugMessage>comparison between signed and unsigned integer expressions </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>53</Start>
+          <End>55</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="16">
+    <Methods>
+      <Method id="1" primary="true">usage</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>14</StartLine>
+        <EndLine>14</EndLine>
+        <StartColumn>6</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=noreturn</BugCode>
+    <BugMessage>function might be candidate for attribute ‘noreturn’ </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>56</Start>
+          <End>59</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="17">
+    <Methods>
+      <Method id="1" primary="true">match_suffix</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/scmd.c</SourceFile>
+        <StartLine>26</StartLine>
+        <EndLine>26</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=pure</BugCode>
+    <BugMessage>function might be candidate for attribute ‘pure’ </BugMessage>
+    <BugTrace>
+      <BuildId>1</BuildId>
+      <AssessmentReportFile>assessment_report1.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>60</Start>
+          <End>63</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="18">
+    <Methods>
+      <Method id="1" primary="true">match_suffix</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>48</StartLine>
+        <EndLine>48</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wlong-long</BugCode>
+    <BugMessage>ISO C90 does not support ‘long long’ </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>1</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="19">
+    <Methods>
+      <Method id="1" primary="true">unaligned_copy64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>54</StartLine>
+        <EndLine>54</EndLine>
+        <StartColumn>37</StartColumn>
+        <Explanation>in definition of macro ‘put_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:54 ***
+  in definition of macro ‘put_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>2</Start>
+          <End>5</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="20">
+    <Methods>
+      <Method id="1" primary="true">unaligned_copy64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>54</StartLine>
+        <EndLine>54</EndLine>
+        <StartColumn>37</StartColumn>
+        <Explanation>in definition of macro ‘put_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:54 ***
+  in definition of macro ‘put_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>6</Start>
+          <End>26</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="21">
+    <Methods>
+      <Method id="1" primary="true">unaligned_copy64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>54</StartLine>
+        <EndLine>54</EndLine>
+        <StartColumn>37</StartColumn>
+        <Explanation>in definition of macro ‘put_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:54 ***
+  in definition of macro ‘put_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>27</Start>
+          <End>41</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="22">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>199</StartLine>
+        <EndLine>199</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>42</Start>
+          <End>57</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="23">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>201</StartLine>
+        <EndLine>201</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>58</Start>
+          <End>60</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="24">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>201</StartLine>
+        <EndLine>201</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>61</Start>
+          <End>63</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="25">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>202</StartLine>
+        <EndLine>202</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>64</Start>
+          <End>66</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="26">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>204</StartLine>
+        <EndLine>204</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>67</Start>
+          <End>69</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="27">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>204</StartLine>
+        <EndLine>204</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>70</Start>
+          <End>72</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="28">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>205</StartLine>
+        <EndLine>205</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>73</Start>
+          <End>75</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="29">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>205</StartLine>
+        <EndLine>205</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>76</Start>
+          <End>78</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="30">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>206</StartLine>
+        <EndLine>206</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>79</Start>
+          <End>81</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="31">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>208</StartLine>
+        <EndLine>208</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>82</Start>
+          <End>84</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="32">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>208</StartLine>
+        <EndLine>208</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>85</Start>
+          <End>87</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="33">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>209</StartLine>
+        <EndLine>209</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>88</Start>
+          <End>90</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="34">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>209</StartLine>
+        <EndLine>209</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>91</Start>
+          <End>93</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="35">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>210</StartLine>
+        <EndLine>210</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>94</Start>
+          <End>96</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="36">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>210</StartLine>
+        <EndLine>210</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>97</Start>
+          <End>99</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="37">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>211</StartLine>
+        <EndLine>211</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>100</Start>
+          <End>102</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="38">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>213</StartLine>
+        <EndLine>213</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>103</Start>
+          <End>105</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="39">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>213</StartLine>
+        <EndLine>213</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>106</Start>
+          <End>108</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="40">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>214</StartLine>
+        <EndLine>214</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>109</Start>
+          <End>111</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="41">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>214</StartLine>
+        <EndLine>214</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>112</Start>
+          <End>114</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="42">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>215</StartLine>
+        <EndLine>215</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>115</Start>
+          <End>117</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="43">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>215</StartLine>
+        <EndLine>215</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>118</Start>
+          <End>120</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="44">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>216</StartLine>
+        <EndLine>216</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>121</Start>
+          <End>123</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="45">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>216</StartLine>
+        <EndLine>216</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>124</Start>
+          <End>126</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="46">
+    <Methods>
+      <Method id="1" primary="true">varint_encode32</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>217</StartLine>
+        <EndLine>217</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned char’ from ‘u32 {aka unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>127</Start>
+          <End>129</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="47">
+    <Methods>
+      <Method id="1" primary="true">available</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>235</StartLine>
+        <EndLine>235</EndLine>
+        <StartColumn>10</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>130</Start>
+          <End>133</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="48">
+    <Methods>
+      <Method id="1" primary="true">peek</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>242</StartLine>
+        <EndLine>242</EndLine>
+        <StartColumn>17</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-compare</BugCode>
+    <BugMessage>comparison between signed and unsigned integer expressions </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>134</Start>
+          <End>137</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="49">
+    <Methods>
+      <Method id="1" primary="true">peek</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>243</StartLine>
+        <EndLine>243</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>138</Start>
+          <End>140</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="50">
+    <Methods>
+      <Method id="1" primary="true">peek</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>244</StartLine>
+        <EndLine>244</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wpointer-arith</BugCode>
+    <BugMessage>pointer of type ‘void *’ used in arithmetic </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>141</Start>
+          <End>143</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="51">
+    <Methods>
+      <Method id="1" primary="true">skip</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>254</StartLine>
+        <EndLine>254</EndLine>
+        <StartColumn>12</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>144</Start>
+          <End>147</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="52">
+    <Methods>
+      <Method id="1" primary="true">skip</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>254</StartLine>
+        <EndLine>254</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>148</Start>
+          <End>150</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="53">
+    <Methods>
+      <Method id="1" primary="true">skip</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>256</StartLine>
+        <EndLine>256</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-compare</BugCode>
+    <BugMessage>comparison between signed and unsigned integer expressions </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>151</Start>
+          <End>153</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="54">
+    <Methods>
+      <Method id="1" primary="true">append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>273</StartLine>
+        <EndLine>273</EndLine>
+        <StartColumn>28</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wpointer-arith</BugCode>
+    <BugMessage>pointer of type ‘void *’ used in arithmetic </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>154</Start>
+          <End>157</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="55">
+    <Methods>
+      <Method id="1" primary="true">append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>277</StartLine>
+        <EndLine>277</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>158</Start>
+          <End>160</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="56">
+    <Methods>
+      <Method id="1" primary="true">append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>278</StartLine>
+        <EndLine>278</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>161</Start>
+          <End>163</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="57">
+    <Methods>
+      <Method id="1" primary="true">append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>286</StartLine>
+        <EndLine>286</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>164</Start>
+          <End>166</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="58">
+    <Methods>
+      <Method id="1" primary="true">sink_peek</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>294</StartLine>
+        <EndLine>294</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wpointer-arith</BugCode>
+    <BugMessage>pointer of type ‘void *’ used in arithmetic </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>167</Start>
+          <End>170</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="59">
+    <Methods>
+      <Method id="1" primary="true">writer_append_from_self</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>437</StartLine>
+        <EndLine>437</EndLine>
+        <StartColumn>25</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka const unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>171</Start>
+          <End>174</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="60">
+    <Methods>
+      <Method id="1" primary="true">writer_append_from_self</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>437</StartLine>
+        <EndLine>437</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>175</Start>
+          <End>177</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="61">
+    <Methods>
+      <Method id="1" primary="true">writer_append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>465</StartLine>
+        <EndLine>465</EndLine>
+        <StartColumn>25</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka const unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>178</Start>
+          <End>181</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="62">
+    <Methods>
+      <Method id="1" primary="true">writer_append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>465</StartLine>
+        <EndLine>465</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>182</Start>
+          <End>184</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="63">
+    <Methods>
+      <Method id="1" primary="true">writer_try_fast_append</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>477</StartLine>
+        <EndLine>477</EndLine>
+        <StartColumn>25</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>185</Start>
+          <End>188</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="64">
+    <Methods>
+      <Method id="1" primary="true">hash</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>52</StartLine>
+        <EndLine>52</EndLine>
+        <StartColumn>29</StartColumn>
+        <Explanation>in definition of macro ‘get_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:52 ***
+  in definition of macro ‘get_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>189</Start>
+          <End>193</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="65">
+    <Methods>
+      <Method id="1" primary="true">emit_literal</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>549</StartLine>
+        <EndLine>549</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>194</Start>
+          <End>203</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="66">
+    <Methods>
+      <Method id="1" primary="true">emit_literal</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>574</StartLine>
+        <EndLine>574</EndLine>
+        <StartColumn>12</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>204</Start>
+          <End>206</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="67">
+    <Methods>
+      <Method id="1" primary="true">emit_literal</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>580</StartLine>
+        <EndLine>580</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>207</Start>
+          <End>209</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="68">
+    <Methods>
+      <Method id="1" primary="true">emit_literal</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>582</StartLine>
+        <EndLine>582</EndLine>
+        <StartColumn>22</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>210</Start>
+          <End>212</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="69">
+    <Methods>
+      <Method id="1" primary="true">emit_copy_less_than64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>596</StartLine>
+        <EndLine>596</EndLine>
+        <StartColumn>7</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>213</Start>
+          <End>216</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="70">
+    <Methods>
+      <Method id="1" primary="true">emit_copy_less_than64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>598</StartLine>
+        <EndLine>598</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>217</Start>
+          <End>219</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="71">
+    <Methods>
+      <Method id="1" primary="true">emit_copy_less_than64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>600</StartLine>
+        <EndLine>600</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘char’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>220</Start>
+          <End>222</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="72">
+    <Methods>
+      <Method id="1" primary="true">emit_copy_less_than64</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>601</StartLine>
+        <EndLine>601</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u16 {aka short unsigned int}’ from ‘int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>223</Start>
+          <End>225</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="73">
+    <Methods>
+      <Method id="1" primary="true">get_hash_table</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>690</StartLine>
+        <EndLine>690</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>226</Start>
+          <End>229</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="74">
+    <Methods>
+      <Method id="1" primary="true">get_hash_table</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>693</StartLine>
+        <EndLine>693</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘unsigned int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>230</Start>
+          <End>232</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="75">
+    <Methods>
+      <Method id="1" primary="true">find_match_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>83</StartLine>
+        <EndLine>83</EndLine>
+        <StartColumn>39</StartColumn>
+        <Explanation>in definition of macro ‘unlikely’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:83 ***
+  in definition of macro ‘unlikely’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>233</Start>
+          <End>237</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="76">
+    <Methods>
+      <Method id="1" primary="true">find_match_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>83</StartLine>
+        <EndLine>83</EndLine>
+        <StartColumn>39</StartColumn>
+        <Explanation>in definition of macro ‘unlikely’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:83 ***
+  in definition of macro ‘unlikely’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>238</Start>
+          <End>252</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="77">
+    <Methods>
+      <Method id="1" primary="true">find_match_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>52</StartLine>
+        <EndLine>52</EndLine>
+        <StartColumn>29</StartColumn>
+        <Explanation>in definition of macro ‘get_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:52 ***
+  in definition of macro ‘get_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>253</Start>
+          <End>267</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="78">
+    <Methods>
+      <Method id="1" primary="true">find_match_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>52</StartLine>
+        <EndLine>52</EndLine>
+        <StartColumn>29</StartColumn>
+        <Explanation>in definition of macro ‘get_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:52 ***
+  in definition of macro ‘get_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>268</Start>
+          <End>279</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="79">
+    <Methods>
+      <Method id="1" primary="true">get_eight_bytes_at</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>66</StartLine>
+        <EndLine>66</EndLine>
+        <StartColumn>46</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>52</StartLine>
+        <EndLine>52</EndLine>
+        <StartColumn>29</StartColumn>
+        <Explanation>in definition of macro ‘get_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:66 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:52 ***
+  in definition of macro ‘get_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>280</Start>
+          <End>292</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="80">
+    <Methods>
+      <Method id="1" primary="true">get_u32_at_offset</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>812</StartLine>
+        <EndLine>812</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘u64 {aka long long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>293</Start>
+          <End>305</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="81">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>854</StartLine>
+        <EndLine>854</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>306</Start>
+          <End>309</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="82">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>856</StartLine>
+        <EndLine>856</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>310</Start>
+          <End>312</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="83">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>900</StartLine>
+        <EndLine>900</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>313</Start>
+          <End>315</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="84">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>906</StartLine>
+        <EndLine>906</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>316</Start>
+          <End>318</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="85">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>908</StartLine>
+        <EndLine>908</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>319</Start>
+          <End>321</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="86">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>918</StartLine>
+        <EndLine>918</EndLine>
+        <StartColumn>19</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u16 {aka short unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>322</Start>
+          <End>324</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="87">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>82</StartLine>
+        <EndLine>82</EndLine>
+        <StartColumn>37</StartColumn>
+        <Explanation>in definition of macro ‘likely’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:82 ***
+  in definition of macro ‘likely’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>325</Start>
+          <End>328</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="88">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>82</StartLine>
+        <EndLine>82</EndLine>
+        <StartColumn>37</StartColumn>
+        <Explanation>in definition of macro ‘likely’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:82 ***
+  in definition of macro ‘likely’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>329</Start>
+          <End>340</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="89">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>928</StartLine>
+        <EndLine>928</EndLine>
+        <StartColumn>37</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>341</Start>
+          <End>352</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="90">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>940</StartLine>
+        <EndLine>940</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>353</Start>
+          <End>355</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="91">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>953</StartLine>
+        <EndLine>953</EndLine>
+        <StartColumn>18</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>356</Start>
+          <End>358</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="92">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>953</StartLine>
+        <EndLine>953</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>359</Start>
+          <End>361</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="93">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>960</StartLine>
+        <EndLine>960</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>362</Start>
+          <End>364</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="94">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>966</StartLine>
+        <EndLine>966</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>365</Start>
+          <End>367</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="95">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>969</StartLine>
+        <EndLine>969</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u16 {aka short unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>368</Start>
+          <End>370</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="96">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>970</StartLine>
+        <EndLine>970</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>371</Start>
+          <End>373</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="97">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>65</StartLine>
+        <EndLine>65</EndLine>
+        <StartColumn>44</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>52</StartLine>
+        <EndLine>52</EndLine>
+        <StartColumn>29</StartColumn>
+        <Explanation>in definition of macro ‘get_unaligned’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/snappy.c:65 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/compat.h:52 ***
+  in definition of macro ‘get_unaligned’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>374</Start>
+          <End>377</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="98">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>975</StartLine>
+        <EndLine>975</EndLine>
+        <StartColumn>23</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u16 {aka short unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>378</Start>
+          <End>386</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="99">
+    <Methods>
+      <Method id="1" primary="true">compress_fragment</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>989</StartLine>
+        <EndLine>989</EndLine>
+        <StartColumn>36</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>387</Start>
+          <End>389</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="100">
+    <Methods>
+      <Method id="1" primary="true">read_uncompressed_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1090</StartLine>
+        <EndLine>1090</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>390</Start>
+          <End>393</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="101">
+    <Methods>
+      <Method id="1" primary="true">read_uncompressed_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1094</StartLine>
+        <EndLine>1094</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>394</Start>
+          <End>396</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="102">
+    <Methods>
+      <Method id="1" primary="true">read_uncompressed_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1098</StartLine>
+        <EndLine>1098</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>397</Start>
+          <End>399</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="103">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1143</StartLine>
+        <EndLine>1143</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>400</Start>
+          <End>403</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="104">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1146</StartLine>
+        <EndLine>1146</EndLine>
+        <StartColumn>25</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>404</Start>
+          <End>406</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="105">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1147</StartLine>
+        <EndLine>1147</EndLine>
+        <StartColumn>43</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>407</Start>
+          <End>409</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="106">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>53</StartLine>
+        <EndLine>53</EndLine>
+        <StartColumn>41</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1157</StartLine>
+        <EndLine>1157</EndLine>
+        <StartColumn>23</StartColumn>
+        <Explanation>in expansion of macro ‘get_unaligned_le32’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/compat.h:53 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/snappy.c:1157 ***
+  in expansion of macro ‘get_unaligned_le32’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>410</Start>
+          <End>414</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="107">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1162</StartLine>
+        <EndLine>1162</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>415</Start>
+          <End>420</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="108">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1162</StartLine>
+        <EndLine>1162</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>421</Start>
+          <End>423</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="109">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1168</StartLine>
+        <EndLine>1168</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>424</Start>
+          <End>426</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="110">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1170</StartLine>
+        <EndLine>1170</EndLine>
+        <StartColumn>13</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>427</Start>
+          <End>429</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="111">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>53</StartLine>
+        <EndLine>53</EndLine>
+        <StartColumn>41</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1182</StartLine>
+        <EndLine>1182</EndLine>
+        <StartColumn>24</StartColumn>
+        <Explanation>in expansion of macro ‘get_unaligned_le32’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/compat.h:53 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/snappy.c:1182 ***
+  in expansion of macro ‘get_unaligned_le32’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>430</Start>
+          <End>434</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="112">
+    <Methods>
+      <Method id="1" primary="true">decompress_all_tags</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1193</StartLine>
+        <EndLine>1193</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>435</Start>
+          <End>440</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="113">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1214</StartLine>
+        <EndLine>1214</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>441</Start>
+          <End>444</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="114">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1224</StartLine>
+        <EndLine>1224</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>445</Start>
+          <End>447</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="115">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1230</StartLine>
+        <EndLine>1230</EndLine>
+        <StartColumn>13</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘long int’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>448</Start>
+          <End>450</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="116">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1230</StartLine>
+        <EndLine>1230</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>451</Start>
+          <End>453</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="117">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>85</StartLine>
+        <EndLine>85</EndLine>
+        <StartColumn>22</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1247</StartLine>
+        <EndLine>1247</EndLine>
+        <StartColumn>17</StartColumn>
+        <Explanation>in expansion of macro ‘min_t’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘size_t {aka long unsigned int}’ may alter its value 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/compat.h:85 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/snappy.c:1247 ***
+  in expansion of macro ‘min_t’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>454</Start>
+          <End>457</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="118">
+    <Methods>
+      <Method id="1" primary="true">refill_tag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1247</StartLine>
+        <EndLine>1247</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>458</Start>
+          <End>463</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="119">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1304</StartLine>
+        <EndLine>1304</EndLine>
+        <StartColumn>37</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘u32 {aka unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>464</Start>
+          <End>467</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="120">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1306</StartLine>
+        <EndLine>1306</EndLine>
+        <StartColumn>26</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>468</Start>
+          <End>470</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="121">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1307</StartLine>
+        <EndLine>1307</EndLine>
+        <StartColumn>10</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘long unsigned int’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>471</Start>
+          <End>473</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="122">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/compat.h</SourceFile>
+        <StartLine>85</StartLine>
+        <EndLine>85</EndLine>
+        <StartColumn>22</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1317</StartLine>
+        <EndLine>1317</EndLine>
+        <StartColumn>32</StartColumn>
+        <Explanation>in expansion of macro ‘min_t’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘int’ may change the sign of the result 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/compat.h:85 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/snappy.c:1317 ***
+  in expansion of macro ‘min_t’
+</BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>474</Start>
+          <End>477</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="123">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1317</StartLine>
+        <EndLine>1317</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>478</Start>
+          <End>483</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="124">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1323</StartLine>
+        <EndLine>1323</EndLine>
+        <StartColumn>22</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘unsigned int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>484</Start>
+          <End>486</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="125">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1332</StartLine>
+        <EndLine>1332</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>487</Start>
+          <End>489</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="126">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1347</StartLine>
+        <EndLine>1347</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>490</Start>
+          <End>492</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="127">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1362</StartLine>
+        <EndLine>1362</EndLine>
+        <StartColumn>25</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>493</Start>
+          <End>495</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="128">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1361</StartLine>
+        <EndLine>1361</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>496</Start>
+          <End>498</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="129">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1363</StartLine>
+        <EndLine>1363</EndLine>
+        <StartColumn>24</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>499</Start>
+          <End>501</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="130">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1364</StartLine>
+        <EndLine>1364</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘long unsigned int’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>502</Start>
+          <End>504</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="131">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1366</StartLine>
+        <EndLine>1366</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>505</Start>
+          <End>507</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="132">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1366</StartLine>
+        <EndLine>1366</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘unsigned int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>508</Start>
+          <End>510</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="133">
+    <Methods>
+      <Method id="1" primary="true">compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1367</StartLine>
+        <EndLine>1367</EndLine>
+        <StartColumn>16</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>511</Start>
+          <End>513</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="134">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1386</StartLine>
+        <EndLine>1386</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>514</Start>
+          <End>517</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="135">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1387</StartLine>
+        <EndLine>1387</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>518</Start>
+          <End>520</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="136">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1388</StartLine>
+        <EndLine>1388</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>521</Start>
+          <End>523</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="137">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1391</StartLine>
+        <EndLine>1391</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>524</Start>
+          <End>526</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="138">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1392</StartLine>
+        <EndLine>1392</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>527</Start>
+          <End>529</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="139">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1396</StartLine>
+        <EndLine>1396</EndLine>
+        <StartColumn>17</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘unsigned int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>530</Start>
+          <End>532</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="140">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1427</StartLine>
+        <EndLine>1427</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>533</Start>
+          <End>536</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="141">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1427</StartLine>
+        <EndLine>1427</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>537</Start>
+          <End>539</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="142">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1428</StartLine>
+        <EndLine>1428</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>540</Start>
+          <End>542</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="143">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1431</StartLine>
+        <EndLine>1431</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>543</Start>
+          <End>545</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="144">
+    <Methods>
+      <Method id="1" primary="true">snappy_compress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1432</StartLine>
+        <EndLine>1432</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>546</Start>
+          <End>548</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="145">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1445</StartLine>
+        <EndLine>1445</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>549</Start>
+          <End>552</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="146">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1446</StartLine>
+        <EndLine>1446</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>553</Start>
+          <End>555</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="147">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1447</StartLine>
+        <EndLine>1447</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>556</Start>
+          <End>558</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="148">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1450</StartLine>
+        <EndLine>1450</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>559</Start>
+          <End>561</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="149">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1451</StartLine>
+        <EndLine>1451</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>562</Start>
+          <End>564</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="150">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1471</StartLine>
+        <EndLine>1471</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>565</Start>
+          <End>568</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="151">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1471</StartLine>
+        <EndLine>1471</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wcast-qual</BugCode>
+    <BugMessage>cast discards ‘const’ qualifier from pointer target type </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>569</Start>
+          <End>571</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="152">
+    <Methods>
+      <Method id="1" primary="true">snappy_uncompress</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>1472</StartLine>
+        <EndLine>1472</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wc90-c99-compat</BugCode>
+    <BugMessage>ISO C90 forbids specifying subobject to initialize </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>572</Start>
+          <End>574</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="153">
+    <Methods>
+      <Method id="1" primary="true">snappy_max_compressed_length</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>528</StartLine>
+        <EndLine>528</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=const</BugCode>
+    <BugMessage>function might be candidate for attribute ‘const’ </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>575</Start>
+          <End>578</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="154">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>95</StartLine>
+        <EndLine>95</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "DCHECK_NE" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>579</Start>
+          <End>582</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="155">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>68</StartLine>
+        <EndLine>68</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "UNALIGNED_STORE16" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>583</Start>
+          <End>585</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="156">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>61</StartLine>
+        <EndLine>61</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "CHECK_LT" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>586</Start>
+          <End>588</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="157">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>56</StartLine>
+        <EndLine>56</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "CHECK" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>589</Start>
+          <End>591</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="158">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>58</StartLine>
+        <EndLine>58</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "CHECK_GE" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>592</Start>
+          <End>594</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="159">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>62</StartLine>
+        <EndLine>62</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "CHECK_GT" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>595</Start>
+          <End>597</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="160">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>60</StartLine>
+        <EndLine>60</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "CHECK_NE" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>598</Start>
+          <End>600</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="161">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/snappy.c</SourceFile>
+        <StartLine>64</StartLine>
+        <EndLine>64</EndLine>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-macros</BugCode>
+    <BugMessage>macro "UNALIGNED_LOAD16" is not used </BugMessage>
+    <BugTrace>
+      <BuildId>2</BuildId>
+      <AssessmentReportFile>assessment_report2.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>601</Start>
+          <End>603</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="162">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>16</StartLine>
+        <EndLine>16</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>1</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="163">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>17</StartLine>
+        <EndLine>17</EndLine>
+        <StartColumn>38</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘__off_t {aka long int}’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>2</Start>
+          <End>4</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="164">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>18</StartLine>
+        <EndLine>18</EndLine>
+        <StartColumn>15</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>5</Start>
+          <End>7</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="165">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>8</StartLine>
+        <EndLine>8</EndLine>
+        <StartColumn>28</StartColumn>
+      </Location>
+      <Location id="2" primary="false">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>19</StartLine>
+        <EndLine>19</EndLine>
+        <StartColumn>12</StartColumn>
+        <Explanation>in expansion of macro ‘roundup’</Explanation>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘long unsigned int’ from ‘__off_t {aka long int}’ may change the sign of the result 
+
+Bug Path:
+
+*** pkg1/snappy-c-master/map.c:8 ****** Primary Bug Location
+  
+*** pkg1/snappy-c-master/map.c:19 ***
+  in expansion of macro ‘roundup’
+</BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>8</Start>
+          <End>10</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="166">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>11</Start>
+          <End>16</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="167">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>23</StartLine>
+        <EndLine>23</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>17</Start>
+          <End>19</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="168">
+    <Methods>
+      <Method id="1" primary="true">mapfile_flag</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>29</StartLine>
+        <EndLine>29</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘__off_t {aka long int}’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>20</Start>
+          <End>22</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="169">
+    <Methods>
+      <Method id="1" primary="true">unmap_file</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/map.c</SourceFile>
+        <StartLine>43</StartLine>
+        <EndLine>43</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘long int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>3</BuildId>
+      <AssessmentReportFile>assessment_report3.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>23</Start>
+          <End>26</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="170">
+    <Methods>
+      <Method id="1" primary="true">compare</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/util.c</SourceFile>
+        <StartLine>28</StartLine>
+        <EndLine>28</EndLine>
+        <StartColumn>11</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>4</BuildId>
+      <AssessmentReportFile>assessment_report4.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>1</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="171">
+    <Methods>
+      <Method id="1" primary="true">basen</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/util.c</SourceFile>
+        <StartLine>15</StartLine>
+        <EndLine>15</EndLine>
+        <StartColumn>7</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=pure</BugCode>
+    <BugMessage>function might be candidate for attribute ‘pure’ </BugMessage>
+    <BugTrace>
+      <BuildId>4</BuildId>
+      <AssessmentReportFile>assessment_report4.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>2</Start>
+          <End>5</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="172">
+    <Methods>
+      <Method id="1" primary="true">compare</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/util.c</SourceFile>
+        <StartLine>23</StartLine>
+        <EndLine>23</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=pure</BugCode>
+    <BugMessage>function might be candidate for attribute ‘pure’ </BugMessage>
+    <BugTrace>
+      <BuildId>4</BuildId>
+      <AssessmentReportFile>assessment_report4.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>6</Start>
+          <End>9</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="173">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/verify.c</SourceFile>
+        <StartLine>27</StartLine>
+        <EndLine>27</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>5</BuildId>
+      <AssessmentReportFile>assessment_report5.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>1</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="174">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/verify.c</SourceFile>
+        <StartLine>10</StartLine>
+        <EndLine>10</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-parameter</BugCode>
+    <BugMessage>unused parameter ‘ac’ </BugMessage>
+    <BugTrace>
+      <BuildId>5</BuildId>
+      <AssessmentReportFile>assessment_report5.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>2</Start>
+          <End>4</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="175">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘sum_iov’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>0</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="176">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>31</StartLine>
+        <EndLine>31</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘rand_seq’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>1</Start>
+          <End>3</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="177">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>37</StartLine>
+        <EndLine>37</EndLine>
+        <StartColumn>7</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘iov_to_buf’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>4</Start>
+          <End>6</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="178">
+    <Methods>
+      <Method id="1" primary="true">iov_to_buf</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>40</StartLine>
+        <EndLine>40</EndLine>
+        <StartColumn>2</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>7</Start>
+          <End>10</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="179">
+    <Methods>
+      <Method id="1" primary="true">iov_to_buf</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>44</StartLine>
+        <EndLine>44</EndLine>
+        <StartColumn>12</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wpointer-arith</BugCode>
+    <BugMessage>pointer of type ‘void *’ used in arithmetic </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>11</Start>
+          <End>13</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="180">
+    <Methods>
+      <Method id="1" primary="true">iov_to_buf</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>45</StartLine>
+        <EndLine>45</EndLine>
+        <StartColumn>13</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>14</Start>
+          <End>16</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="181">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>50</StartLine>
+        <EndLine>50</EndLine>
+        <StartColumn>6</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘test_read’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>17</Start>
+          <End>20</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="182">
+    <Methods></Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>57</StartLine>
+        <EndLine>57</EndLine>
+        <StartColumn>6</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wmissing-prototypes</BugCode>
+    <BugMessage>no previous prototype for ‘print_mismatch’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>21</Start>
+          <End>23</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="183">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>92</StartLine>
+        <EndLine>92</EndLine>
+        <StartColumn>3</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>24</Start>
+          <End>27</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="184">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>100</StartLine>
+        <EndLine>100</EndLine>
+        <StartColumn>29</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘unsigned int’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>28</Start>
+          <End>30</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="185">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>103</StartLine>
+        <EndLine>103</EndLine>
+        <StartColumn>29</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>31</Start>
+          <End>33</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="186">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>120</StartLine>
+        <EndLine>120</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>34</Start>
+          <End>36</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="187">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>122</StartLine>
+        <EndLine>122</EndLine>
+        <StartColumn>35</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>37</Start>
+          <End>39</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="188">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>126</StartLine>
+        <EndLine>126</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>40</Start>
+          <End>42</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="189">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>130</StartLine>
+        <EndLine>130</EndLine>
+        <StartColumn>29</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsign-conversion</BugCode>
+    <BugMessage>conversion to ‘size_t {aka long unsigned int}’ from ‘int’ may change the sign of the result </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>43</Start>
+          <End>45</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="190">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>145</StartLine>
+        <EndLine>145</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>46</Start>
+          <End>48</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="191">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>151</StartLine>
+        <EndLine>151</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>49</Start>
+          <End>51</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="192">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>161</StartLine>
+        <EndLine>161</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>52</Start>
+          <End>54</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="193">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>167</StartLine>
+        <EndLine>167</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>55</Start>
+          <End>57</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="194">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>173</StartLine>
+        <EndLine>173</EndLine>
+        <StartColumn>4</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wdeclaration-after-statement</BugCode>
+    <BugMessage>ISO C90 forbids mixed declarations and code </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>58</Start>
+          <End>60</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="195">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>180</StartLine>
+        <EndLine>180</EndLine>
+        <StartColumn>67</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wformat=</BugCode>
+    <BugMessage>format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘unsigned int’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>61</Start>
+          <End>63</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="196">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>182</StartLine>
+        <EndLine>182</EndLine>
+        <StartColumn>31</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wconversion</BugCode>
+    <BugMessage>conversion to ‘int’ from ‘size_t {aka long unsigned int}’ may alter its value </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>64</Start>
+          <End>66</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="197">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>72</StartLine>
+        <EndLine>72</EndLine>
+        <StartColumn>14</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wunused-parameter</BugCode>
+    <BugMessage>unused parameter ‘ac’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>67</Start>
+          <End>69</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="198">
+    <Methods>
+      <Method id="1" primary="true">sum_iov</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>20</StartLine>
+        <EndLine>20</EndLine>
+        <StartColumn>8</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wsuggest-attribute=pure</BugCode>
+    <BugMessage>function might be candidate for attribute ‘pure’ </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>70</Start>
+          <End>73</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="199">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>72</StartLine>
+        <EndLine>72</EndLine>
+        <StartColumn>5</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wstack-usage=</BugCode>
+    <BugMessage>stack usage might be 160208 bytes </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>74</Start>
+          <End>77</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugInstance id="200">
+    <Methods>
+      <Method id="1" primary="true">main</Method>
+    </Methods>
+    <BugLocations>
+      <Location id="1" primary="true">
+        <SourceFile>pkg1/snappy-c-master/sgverify.c</SourceFile>
+        <StartLine>196</StartLine>
+        <EndLine>196</EndLine>
+        <StartColumn>1</StartColumn>
+      </Location>
+    </BugLocations>
+    <BugGroup>warning</BugGroup>
+    <BugCode>-Wframe-larger-than=</BugCode>
+    <BugMessage>the frame size of 160128 bytes is larger than 50000 bytes </BugMessage>
+    <BugTrace>
+      <BuildId>6</BuildId>
+      <AssessmentReportFile>assessment_report6.out</AssessmentReportFile>
+      <InstanceLocation>
+        <LineNum>
+          <Start>78</Start>
+          <End>80</End>
+        </LineNum>
+      </InstanceLocation>
+    </BugTrace>
+  </BugInstance>
+  <BugSummary>
+    <BugCategory group="warning" code="-Wc90-c99-compat" count="16" bytes="13238" />
+    <BugCategory group="warning" code="-Wcast-qual" count="16" bytes="19754" />
+    <BugCategory group="warning" code="-Wconversion" count="51" bytes="43766" />
+    <BugCategory group="warning" code="-Wdeclaration-after-statement" count="43" bytes="35447" />
+    <BugCategory group="warning" code="-Wdiscarded-qualifiers" count="3" bytes="3558" />
+    <BugCategory group="warning" code="-Wformat=" count="1" bytes="849" />
+    <BugCategory group="warning" code="-Wframe-larger-than=" count="1" bytes="822" />
+    <BugCategory group="warning" code="-Wlong-long" count="1" bytes="798" />
+    <BugCategory group="warning" code="-Wmissing-prototypes" count="8" bytes="6133" />
+    <BugCategory group="warning" code="-Wpointer-arith" count="4" bytes="3240" />
+    <BugCategory group="warning" code="-Wsign-compare" count="3" bytes="2447" />
+    <BugCategory group="warning" code="-Wsign-conversion" count="37" bytes="32792" />
+    <BugCategory group="warning" code="-Wstack-usage=" count="1" bytes="790" />
+    <BugCategory group="warning" code="-Wsuggest-attribute=const" count="1" bytes="847" />
+    <BugCategory group="warning" code="-Wsuggest-attribute=noreturn" count="1" bytes="823" />
+    <BugCategory group="warning" code="-Wsuggest-attribute=pure" count="4" bytes="3274" />
+    <BugCategory group="warning" code="-Wunused-macros" count="8" bytes="5567" />
+    <BugCategory group="warning" code="-Wunused-parameter" count="2" bytes="1570" />
+  </BugSummary>
+</AnalyzerReport>

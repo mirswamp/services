@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2017 Software Assurance Marketplace
+# Copyright 2012-2018 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -17,7 +17,6 @@ use File::Spec::Functions;
 use File::Basename qw(basename);
 use Log::Log4perl::Level;
 use Log::Log4perl;
-use POSIX qw(setsid);
 use Storable qw(nstore lock_nstore retrieve);
 
 use FindBin;
@@ -25,6 +24,7 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::vmu_Locking qw(swamplock swampunlock);
 use SWAMP::vmu_Support qw(
+	runScriptDetached
 	identifyScript
 	getSwampConfig
 	getLoggingConfigString
@@ -44,7 +44,7 @@ use SWAMP::vmu_AssessmentSupport qw(
 );
 
 my $startupdir = getcwd();
-my $asdaemon = 1;
+my $asdetached = 1;
 my $debug    = 0;
 my $drain;
 my $list;
@@ -55,12 +55,12 @@ GetOptions(
     'runid=s'      => \$execrunuid,
     'drain=i{0,1}' => \$drain,
     'list=i{0,1}'  => \$list,
-    'daemon!'      => \$asdaemon,
+    'detached!'    => \$asdetached,
     'debug'        => \$debug,
 );
 
 if ( defined($drain) || defined($list) ) {
-    $asdaemon = 0;    # Draining the queue overrides daemonizing self
+    $asdetached = 0;    # Draining the queue overrides detatching self
 }
 
 # This is the start of an assessment run so remove the tracelog file if extant
@@ -74,89 +74,60 @@ my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
 
-if ($asdaemon) {
-    chdir(q{/});
-    if (! open(STDIN, '<', File::Spec->devnull)) {
-        $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
-        exit;
-    }
-    my $pid = fork();
-    if (! defined($pid)) {
-        $log->error("fork failed: $OS_ERROR");
-        exit;
-    }
-    if ($pid) {
-        # parent
-        exit(0);
-    }
-    # child
-    if (setsid() == -1) {
-        $log->error("child - setsid failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDERR, ">&STDOUT")) {
-        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
-        exit;
-    }
-}
+runScriptDetached() if ($asdetached);
 chdir($startupdir);
 
 if (defined($list)) {
-    my $aref = loadQueue();
-    $log->info("Queue has " . scalar(@$aref) . " items in it");
-	my $index = 0;
-    foreach my $execrunuid (@$aref) {
-        print "$index) $execrunuid\n";
-		$index += 1;
-		last if ($list != 0 && $index >= $list);
-    }
+	listQueue();
     exit 0;
 }
 
+if (defined($drain)) {    
+	listQueue();
+	if (isSWAMPRunning()) {
+		drainSwamp();
+	}
+	else {
+        $log->info("SWAMP is Off at the moment and cannot be drained.");
+        print "SWAMP is Off at the moment and cannot be drained.", "\n";
+    }
+	exit 0;
+}
+
 if (isSWAMPRunning()) {
-	# Drain the queue
-    if (defined($drain)) {    
-        drainSwamp();
-    }
-    else {
-        switchExecRunAppenderLogFile($execrunuid);
-        $tracelog->trace("execrunuid: $execrunuid - calling doRun");
-        $log->info("Attempting to launch run $execrunuid");
-        my $status = doRun($execrunuid);
-		# HTCondor submit succeeded
-        if ($status == $LAUNCHPAD_SUCCESS) {
-            $tracelog->trace("execrunuid: $execrunuid - doRun succeeded");
-            $log->info("Run $execrunuid successfully launched.");
-			# set database status to success
-			
-            # Successful call to doRun() => try to drain the SWAMP.
-            $drain = 0;
-            drainSwamp();
-		}
-		# BOG file created on submit node
-		elsif ($status == $LAUNCHPAD_FORK_ERROR) {
-            $tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
-            $log->error("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
-			my $status_message = 'HTCondor Submit Failed - BOG Queued';
-			# this is terminal case so update collector and database
-			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
-			updateRunStatus($execrunuid, $status_message, 1);
-			# set database status to success
-		}
-		else {
-            $tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
-            $log->error("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
-			my $status_message = 'HTCondor Submit Aborted - UUID Queued';
-			updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
-			updateRunStatus($execrunuid, $status_message, 1);
-			# set database status to failure
-			saveRun($execrunuid);
-        }
-    }
+	switchExecRunAppenderLogFile($execrunuid);
+	$tracelog->trace("execrunuid: $execrunuid - calling doRun");
+	$log->info("Attempting to launch run $execrunuid");
+	my $status = doRun($execrunuid);
+	# HTCondor submit succeeded
+	if ($status == $LAUNCHPAD_SUCCESS) {
+		$tracelog->trace("execrunuid: $execrunuid - doRun succeeded");
+		$log->info("Run $execrunuid successfully launched.");
+		# set database status to success
+		
+		# Successful call to doRun() => try to drain the SWAMP.
+		$drain = 0;
+		drainSwamp();
+	}
+	# BOG file created on submit node
+	elsif ($status == $LAUNCHPAD_FORK_ERROR) {
+		$tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
+		$log->error("execrunuid: $execrunuid - doRun failed - status: $status - bog queued");
+		my $status_message = 'HTCondor Submit Failed - BOG Queued';
+		# this is terminal case so update collector and database
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+		updateRunStatus($execrunuid, $status_message, 1);
+		# set database status to success
+	}
+	else {
+		$tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
+		$log->error("execrunuid: $execrunuid - doRun failed - status: $status uuid queued");
+		my $status_message = 'HTCondor Submit Aborted - UUID Queued';
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+		updateRunStatus($execrunuid, $status_message, 1);
+		# set database status to failure
+		saveRun($execrunuid);
+	}
 }
 # SWAMP is administratively off, just add item to queue and be done.
 else { 
@@ -168,14 +139,24 @@ else {
         updateRunStatus($execrunuid, $status_message, 1);
         $log->info("SWAMP is Off at the moment. Run $execrunuid has been added to the queue.");
     }
-    if ( defined($drain) ) {
-        $log->error("SWAMP is Off at the moment and cannot be drained.");
-    }
 }
 exit 0;
 
+sub listQueue {
+    my $aref = loadQueue(0);
+    $log->info("Queue has " . scalar(@$aref) . " items in it");
+    print "Queue has " . scalar(@$aref) . " items in it", "\n";
+	my $index = 0;
+    foreach my $execrunuid (@$aref) {
+        print "$index) $execrunuid\n";
+		$index += 1;
+		last if (defined($list) && $list != 0 && $index >= $list);
+    }
+	print "Count: $index\n";
+}
+
 sub drainSwamp {
-    my $aref = loadQueue();
+    my $aref = loadQueue(1);
 	$log->info("drainSwamp count: ", scalar(@$aref), "\n", sub {use Data::Dumper; Dumper($aref);});
     foreach my $idx ( 0 .. $#{$aref} ) {
         if ( !defined( $aref->[$idx] ) ) {
@@ -216,7 +197,7 @@ sub drainSwamp {
 sub saveRun {
     my $erunid = shift;
     $log->info("Adding $erunid to the queue");
-    my $aref = loadQueue();
+    my $aref = loadQueue(1);
     push @{$aref}, $erunid;
     saveQueue($aref);
     return;
@@ -235,13 +216,13 @@ sub queueFilename {
     return catfile(getSwampDir(), 'log', 'runqueue');
 }
 
-sub loadQueue {
+sub loadQueue { my ($truncate) = @_ ;
     my $filename = queueFilename();
     my $ret = [];
     if ( swamplock($filename) ) {
 		# file is locked - safe to test it
         $ret = retrieve($filename) if (! -z $filename);
-        nstore( \my @arr, $filename );
+        nstore( \my @arr, $filename ) if ($truncate);
         swampunlock($filename);
     }
     return $ret;
