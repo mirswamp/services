@@ -30,12 +30,7 @@ use SWAMP::vmu_Support qw(
 	construct_vmhostname
 );
 use SWAMP::vmu_ViewerSupport qw(
-	$VIEWER_STATE_NO_RECORD
-	$VIEWER_STATE_LAUNCHING
-	$VIEWER_STATE_READY
 	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
-	$VIEWER_STATE_SHUTDOWN
 	saveViewerDatabase
 	updateClassAdViewerStatus
 );

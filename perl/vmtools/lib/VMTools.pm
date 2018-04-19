@@ -9,6 +9,7 @@ use 5.010;
 use utf8;
 use strict;
 use warnings;
+use FindBin qw($Bin);
 use parent qw(Exporter);
 
 BEGIN {
@@ -56,7 +57,8 @@ my $QEMUIMG      = '/usr/bin/qemu-img';
 my $MAKEFS       = '/usr/bin/virt-make-fs';
 my $GUESTFISH    = '/usr/bin/guestfish';
 my $SHRED        = '/usr/bin/shred';
-my $TEMPLATE_VM  = '/usr/local/etc/swamp/templ.xml';
+# my $TEMPLATE_VM  = '/usr/local/etc/swamp/templ.xml';
+my $TEMPLATE_VM  = "$Bin/templ.xml";
 my $SYSTEMPREFIX = q{};
 
 use constant 'ONEK' => 1024;

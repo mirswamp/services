@@ -70,7 +70,7 @@ sub logfilename {
     return catfile(getSwampDir(), 'log', $name . '.log');
 }
 
-sub patchDeltaQcow2ForInit { my ($execrunuid, $imagename, $vmhostname) = @_ ;
+sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
 	my $swampdir = getSwampDir();
 	my $runshcmd =
 		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/runsh.out 2>&1 &\\n\"";
@@ -229,7 +229,7 @@ if (! $imagename) {
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 	exit_prescript_with_error();
 }
-if (! patchDeltaQcow2ForInit($execrunuid, $imagename, $vmhostname)) {
+if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
 	$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $imagename $vmhostname");
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
 	exit_prescript_with_error();
@@ -248,7 +248,7 @@ updateExecutionResults($execrunuid, {
 	'vm_password'					=> $builderPassword,
 	'vm_image'						=> $imagename,
 	'tool_filename'					=> $bogref->{'toolpath'},
-	'run_date'						=> strftime("%Y-%m-%d %H:%M:%S", localtime(time())),
+	'run_date'						=> strftime("%Y-%m-%d %H:%M:%S", gmtime(time())),
 });
 
 listDirectoryContents();

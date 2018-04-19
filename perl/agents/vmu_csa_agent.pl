@@ -21,19 +21,19 @@ use Getopt::Long qw(GetOptions);
 use IPC::Open3 qw(open3);
 use Log::Log4perl::Level;
 use Log::Log4perl;
+use POSIX qw(:signal_h);
 
 use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
-use SWAMP::vmu_Locking qw(swamplock);
+use SWAMP::Locking qw(swamplock);
+	# switchExecRunAppenderLogFile
 use SWAMP::vmu_Support qw(
 	identifyScript
 	listDirectoryContents
 	systemcall
 	getSwampDir
-	getSwampConfig
 	getLoggingConfigString
-	switchExecRunAppenderLogFile
 	loadProperties
 	getJobDir
 	construct_vmhostname
@@ -42,6 +42,9 @@ use SWAMP::vmu_Support qw(
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
+	updateRunStatus
+	setLaunchFlag
+	setSubmittedToCondorFlag
 	isParasoftC
 	isParasoftJava
 	isGrammaTechCS
@@ -49,12 +52,7 @@ use SWAMP::vmu_AssessmentSupport qw(
 	isSynopsysC
 );
 use SWAMP::vmu_ViewerSupport qw(
-	$VIEWER_STATE_NO_RECORD
 	$VIEWER_STATE_LAUNCHING
-	$VIEWER_STATE_READY
-	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
-	$VIEWER_STATE_SHUTDOWN
 	updateClassAdViewerStatus
 );
 
@@ -89,46 +87,69 @@ $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 identifyScript(\@PRESERVEARGV);
 
 if (! defined($bogDir)) {
-    $log->error("$PROGRAM_NAME ($PID) - BOG directory is required");
+    $log->error("$PROGRAM_NAME ($PID) - BOG directory is required - exiting");
 	exit 0;
 }
 if (! chdir $bogDir) {
-    $log->error("$PROGRAM_NAME ($PID) - chdir to directory $bogDir failed");
+    $log->error("$PROGRAM_NAME ($PID) - chdir to directory $bogDir failed - exiting");
 	exit 0;
 }
 
-$log->info("$PROGRAM_NAME Starting ($PID)");
+$log->info("Starting ($PID)");
 if (defined($runnow)) {
+	$log->info("calling runImmediate on: $runnow ($PID)");
     runImmediate($runnow);
+	$log->info("runImmediate exiting ($PID)");
     exit 0;
 }
 
-# Now read all bog files in $bogDir
-$log->info("bogDir: $bogDir");
-while (1) {
-    # Read in list of .bog files.
+my $launchPadSleep = 1;
+my $child_done = 0;
+# set TERM signal handler for swamp service stop
+$SIG{TERM} = sub { my ($sig) = @_ ;
+	$log->info("$PID recieved TERM signal");
+	$child_done = 1;
+};
+# now unblock TERM signal in child
+sigprocmask(SIG_UNBLOCK, POSIX::SigSet->new(SIGTERM));
+
+$log->info("starting process loop on bogDir: $bogDir ($PID)");
+while (! $child_done) {
+	# Now read all arun and mrun bog files in $bogDir
     my $bogFiles = readBogFiles($bogDir);
 	my $nToProcess = scalar(@$bogFiles);
-    last if ($nToProcess <= 0);
-    $log->info("readBogFiles count: $nToProcess\n", sub {use Data::Dumper; Dumper($bogFiles);});
+	if ($nToProcess > 0) {
+    	$log->info("readBogFiles count: $nToProcess\n", sub {use Data::Dumper; Dumper($bogFiles);});
+	}
+	last if ($child_done);
+    sleep $launchPadSleep if ($nToProcess <= 0);
     foreach my $bogfile  (@$bogFiles) {
+		last if ($child_done);
+		my $event_start = time();
         my %bog;
         loadProperties($bogfile, \%bog);
-		# check to see if a job with the same exec run id is currently running, or has
-		# been run at some time in the past. this only applies to assessment runs.
 		my $execrunuid = $bog{'execrunid'};
-		switchExecRunAppenderLogFile($execrunuid);
-		$log->info( "Checking duplicate $execrunuid in queue");
-		if (isJobInQueue($execrunuid) || isJobInHistory($execrunuid)) {
-			# we can delete this bog file and skip the rest of the loop
-			unlink $bogfile;
-			$log->warn("Duplicate $execrunuid removed from queue");
+		if (! $execrunuid) {
+			$log->error("execrunid not found in: $bogfile");
+			$log->info("BOG:\n", sub {use Data::Dumper; Dumper(\%bog);});
 			next;
 		}
-        if (! defined($bog{'resultsfolder'})) {
-            $bog{'resultsfolder'} = '/swamp/working/results';
-        }
-		#
+		# switchExecRunAppenderLogFile($execrunuid);
+		if ($bog{'launch_counter'} > 1) {
+			my $dupstart = time();
+			$log->info( "Checking duplicate: $execrunuid bog: $bogfile in condor queue");
+			if (condorJobExists($execrunuid)) {
+				# we can delete this bog file and skip the rest of the loop
+				unlink $bogfile;
+				$log->warn("Duplicate: $execrunuid bog: $bogfile removed from filesystem");
+				my $duptime = time() - $dupstart;
+				$log->warn("Duplicate found: $execrunuid bog: $bogfile time: $duptime seconds");
+				next;
+			}
+			my $duptime = time() - $dupstart;
+			$log->info("Duplicate not found: $execrunuid bog: $bogfile time: $duptime seconds");
+			Log::Log4perl->get_logger('timetrace')->trace("condorJobExists $execrunuid elapsed: ", time() - $dupstart);
+		}
 		# assessment run priority is 0
 		# metric run priority is -10
 		my $job_priority = 0;
@@ -151,22 +172,31 @@ while (1) {
 		$tracelog->trace("execrunuid: $execrunuid starting assessment job: $submitfile");
 		my ($clusterid, $start_time) = startHTCondorJob(\%bog, $submitfile);
 		if ($clusterid != -1) {
+			# turn database launch_flag off
+			if (! setLaunchFlag($execrunuid, 0)) {
+				$log->error("$PROGRAM_NAME: $execrunuid - setLaunchFlag 0 failed");
+			}
 			# mark this jobdir with the clusterid
 			create_empty_file('ClusterId_' . $clusterid);
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Waiting in HTCondor Queue');
+			my $message = 'Waiting in HTCondor Queue';
+			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+			updateRunStatus($execrunuid, $message);
 			$tracelog->trace("execrunuid: $execrunuid start succeeded");
 			$log->info("$execrunuid clusterid: $clusterid");
 		}
 		else {
 			$log->warn('Unable to submit BOG: cannot start HTCondor job.');
 			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
+			updateRunStatus($execrunuid, $error_message);
 			$tracelog->trace("$execrunuid start failed");
 		}
 		# return to rundir
 		chdir $bogDir;
+		Log::Log4perl->get_logger('timetrace')->trace("csa_agent $execrunuid elapsed: ", time() - $event_start);
     }
 }
-$log->info("$PROGRAM_NAME Exiting ($PID)");
+$log->info("ending process loop on bogDir: $bogDir ($PID)");
+$log->info("exiting ($PID)");
 exit 0;
 
 sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
@@ -281,8 +311,7 @@ sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfil
 		print $fh "### SWAMP Specific Attributes\n";
 		print $fh "+SWAMP_vrun_execrunuid = \"$execrunuid\"\n";
 		print $fh "+SWAMP_userid = \"$bogref->{'userid'}\"\n";
-		my $projectid = (split '\.', $execrunuid)[1];
-		print $fh "+SWAMP_projectid = \"$projectid\"\n";
+		print $fh "+SWAMP_projectid = \"$bogref->{'projectid'}\"\n";
 		print $fh "+SWAMP_viewerinstanceid = \"$bogref->{'viewer_uuid'}\"\n";
 		print $fh "\n";
 
@@ -315,6 +344,9 @@ sub startHTCondorJob { my ($bogref, $submitfile) = @_ ;
         else {
             $start_time = time();
             $started = 1;
+			if (! setSubmittedToCondorFlag($bogref->{'execrunid'}, 1)) {
+				$log->warn("startHTCondorJob: ", $bogref->{'execrunid'}, " - setSubmittedToCondorFlag 1 failed");
+			}
             last;
         }
     }
@@ -337,7 +369,8 @@ sub startHTCondorJob { my ($bogref, $submitfile) = @_ ;
 }
 
 sub logfilename {
-    my $name = basename($0, ('.pl'));
+    # my $name = basename($0, ('.pl'));
+	my $name = 'vmu_LaunchPad';
     return catfile(getSwampDir(), 'log', $name . '.log');
 }
 
@@ -349,6 +382,7 @@ sub readBogFiles { my ($path) = @_ ;
             $log->error("Unable to closedir $path $OS_ERROR");
         }
         foreach my $file (@bogfiles) {
+			# skip over vrun bog files
             next if ($file =~ m/vrun_/sxim); # Do not include vrun BOG files in this loop.
 			push @$bogFiles, $file;
         }
@@ -389,78 +423,47 @@ sub runImmediate { my ($bogfile) = @_ ;
 	return $ret;
 }
 
-# Search the Condor history to see if a job with the same exec run id has
-# been run before. This is for assessment runs only.
-sub isJobInHistory {
-    my $uuid = shift;
-    my $res = 0;
-    my $cmd = qq(condor_history -constraint 'SWAMP_arun_execrunuid == "$uuid"' -format "%s\n" SWAMP_arun_execrunuid);
-
-    my $childpid = open3(\*HIS_IN, \*HIS_OUT, \*HIS_ERR, $cmd);
-    if (!close(HIS_IN)) {
-    $log->warn("unable to close condor_history input handle");
+sub isJobInHistory { my ($execrunuid) = @_ ;
+    my $cmd  = qq(condor_history);
+       $cmd .= qq( -constraint ');
+       $cmd .= qq(SWAMP_arun_execrunuid == "$execrunuid");
+       $cmd .= qq( || SWAMP_mrun_execrunuid == "$execrunuid");
+       $cmd .= qq( || SWAMP_vrun_execrunuid == "$execrunuid");
+       $cmd .= qq(');
+       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
+       $cmd .= qq( -limit 1);
+    my ($output, $status) = systemcall($cmd);
+    if ($status) {
+        $log->error("isJobInHistory condor_history failed - $status output: $output");
+        return 0;
     }
-    my @outlines = <HIS_OUT>;
-    my @errlines = <HIS_ERR>;
-
-    if (!close(HIS_OUT)) {
-    $log->warn("unable to close condor_history output handle");
+    if ($output =~ m/^$execrunuid$/) {
+        $log->info("$execrunuid found from condor_history");
+        return 1;
     }
-    if (!close(HIS_ERR)) {
-    $log->warn("unable to close condor_hisotry error  handle");
-    }
-    waitpid($childpid, 1);
-
-    my $errnum = @errlines;
-    if ($errnum > 0) {
-        $log->warn("error in condor_history execution\n" . @errlines);
-        return $res;
-    }
-
-    my $num = @outlines;
-    # there is no header line in the output when we use the -format flag, so
-    # any output at all indicates that we have found the uuid.
-    if ($num > 0) {
-        $log->info( "found job $uuid in Condor history");
-        $res = 1;
-    }
-
-    return $res;
+    return 0;
 }
 
-# check the Condor queue to see if the job is currently running.
-# this works for both assessment runs and for vruns.
-sub isJobInQueue {
-    my $uuid = shift;
-    my $res = 0;
-    my $cmd = qq(condor_q -format "%s\n" SWAMP_arun_execrunuid -format "%s\n" SWAMP_vrun_execrunuid -format "%s\n" SWAMP_mrun_execrunuid);
-
-    my $childpid = open3(\*HIS_IN, \*HIS_OUT, \*HIS_ERR, $cmd);
-    if (!close(HIS_IN)) {
-    $log->warn("problem closing condor_q input handle");
+sub isJobInQueue { my ($execrunuid) = @_ ;
+    my $cmd  = qq(condor_q);
+       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
+    my ($output, $status) = systemcall($cmd);
+    if ($status) {
+        $log->error("isJobInQueue condor_q failed - $status output: $output");
+        return 0;
     }
-    my @outlines = <HIS_OUT>;
-    my @errlines = <HIS_ERR>;
-    if (!close(HIS_OUT)) {
-    $log->warn("problem closing condor_q output handle");
+    if ($output =~ m/$execrunuid/) {
+        $log->info("$execrunuid found from condor_q");
+        return 1;
     }
-    if (!close(HIS_ERR)) {
-    $log->warn("problem closing condor_q error handle");
-    }
-    waitpid($childpid, 1);
-
-    my $num = @errlines;
-    if ($num > 0) {
-        $log->warn("error in condor_q execution\n" . @errlines);
-        return $res;
-    }
-
-    foreach my $id (@outlines) {
-        if ($id =~ /$uuid/isxm) {
-            $log->info("found job $uuid in Condor queue");
-            $res = 1;
-            last;
-        }
-    }
-    return $res;
+    return 0;
 }
+
+sub condorJobExists { my ($execrunuid) = @_ ;
+    return isJobInQueue($execrunuid) || isJobInHistory($execrunuid);
+}
+

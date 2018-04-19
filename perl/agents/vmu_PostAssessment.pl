@@ -18,6 +18,7 @@ use XML::XPath;
 use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
+use SWAMP::ScarfXmlReader;
 use SWAMP::vmu_Support qw(
 	getStandardParameters
 	identifyScript
@@ -25,6 +26,7 @@ use SWAMP::vmu_Support qw(
 	getLoggingConfigString
 	getSwampConfig
 	isSwampInABox
+	isMetricRun
 	buildExecRunAppenderLogFileName
 	systemcall
 	loadProperties
@@ -35,11 +37,14 @@ use SWAMP::vmu_Support qw(
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
 	updateRunStatus
-	saveResult
+	saveMetricResult
+	saveAssessmentResult
+	setCompleteFlag
 	isJavaPackage
 	isCPackage
 	isPythonPackage
 	isRubyPackage
+	isClocTool
 	isSonatypeTool
 	isSynopsysC
 );
@@ -197,6 +202,35 @@ sub copy_results { my ($outputfolder, $resultsfolder) = @_ ;
 	$log->info("copying: $ahc_results_archive to: ", $resultsfolder);
 	copy($ahc_results_archive, $resultsfolder);
 	return (1, $ahc_results_file_name, catfile($resultsfolder, $ahc_results_archive_name));
+}
+
+sub metricSummaryFunction { my ($href, $execrunuid_ref) = @_ ;
+	my $metric_results = { 
+		'execrunid' => $$execrunuid_ref
+	};
+    my $metricSummaries = $href->{'MetricSummaries'};
+    foreach my $metricSummary (@$metricSummaries) {
+        my $type = $metricSummary->{'Type'};
+        my $sum = $metricSummary->{'Sum'};
+        $metric_results->{$type} = $sum;
+    }
+	saveMetricResult($metric_results);
+}
+
+sub parse_metric_loc { my ($execrunuid, $assessment_results_file) = @_ ;
+    if (! $assessment_results_file) {
+		$log->error("Error - assessment_results_file not specified - unable to obtain lines of code metrics");
+		return;
+	}
+	if (! -r $assessment_results_file) {
+		$log->error("Error - assessment_results_file: $assessment_results_file not found - unable to obtain lines of code metrics");
+		return;
+	}
+    my $reader = new SWAMP::ScarfXmlReader($assessment_results_file);
+    $reader->SetEncoding('UTF-8');
+    $reader->SetMetricSummaryCallback(\&metricSummaryFunction);
+	$reader->SetCallbackData(\$execrunuid);
+    $reader->Parse();
 }
 
 sub coverity_lines_of_code { my ($package_archive_file) = @_ ;
@@ -432,7 +466,7 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 
 sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum) = @_ ;
 	$log->info("saving pathname: $assessment_results_file");
-	my %results = (
+	my $assessment_results = {
 			'execrunid'			=> $execrunuid,
 			'weaknesses'		=> $weaknesses,
 			'pathname'			=> $assessment_results_file,
@@ -443,9 +477,9 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 			'source512sum'		=> checksumFile($package_archive_file),
 			'status_out'		=> $status_out,
 			'locSum'			=> $locSum,
-			);
-	my $status = saveResult(\%results);
-	$log->info("saveResult returns: $status called with: ", sub {use Data::Dumper; Dumper(\%results);});
+			};
+	my $status = saveAssessmentResult($assessment_results);
+	$log->info("saveAssessmentResult returns: $status called with: ", sub {use Data::Dumper; Dumper($assessment_results);});
 	return $status;
 }
 
@@ -557,9 +591,15 @@ chmod(0755, $resultsfolder);
 
 ($status, my $package_archive_file, my $logfile) =
 	preserve_assessment_data($vmdomainname, $inputfolder, $outputfolder, $resultsfolder);
+my $locSum = -1;
 if (! $status) {
 	$message = 'Failed to preserve assessment data';
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+}
+else {
+	if (isSynopsysC(\%bog)) {
+		$locSum = coverity_lines_of_code($package_archive_file);
+	}
 }
 
 ($status, my $have_results, my $assessment_results_file) =
@@ -568,9 +608,12 @@ if (! $status) {
 	$message = 'Failed to preserve assessment results';
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
-my $locSum;
-if (isSynopsysC(\%bog)) {
-	$locSum = coverity_lines_of_code($package_archive_file);
+elsif ($have_results) {
+	if (isMetricRun($execrunuid)) {
+		if (isClocTool(\%bog)) {
+			parse_metric_loc($execrunuid, $assessment_results_file);
+		}
+	}
 }
 
 $message = 'Saving Results';
@@ -584,7 +627,9 @@ if (! $results_in_db) {
 # FIXME - how should HTCondor be instructed to retry this job?
 if (! $framework_said_pass || ! $have_results || ! $results_in_db) {
 	$message = 'Finished with Errors';
-	$message .= ' - Retry' if ($retry);
+	if ($retry) {
+		$message .= ' - Retry' 
+	}
 	$log->error("Assessment: $execrunuid $message");
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
@@ -595,6 +640,9 @@ else {
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
 }
+if (! setCompleteFlag($execrunuid, 1)) {
+	$log->warn("Assessment: $execrunuid - setCompleteFlag 1 failed");
+}
 
 if ($bog{'notify_when_complete_flag'}) {
 	my $swamp_api_web_server = $config->get('swamp_api_web_server');
@@ -602,8 +650,8 @@ if ($bog{'notify_when_complete_flag'}) {
 		$log->error("assessment notification failed - no swamp_api_web_server found in swamp.conf");
 	}
 	else {
-		my $notify_route = "/execution_records/$execrunuid/notify";
-		my $post_url = 'https://' . $swamp_api_web_server . $notify_route;
+		my $notify_route = "execution_records/$execrunuid/notify";
+		my $post_url = $swamp_api_web_server . '/' . $notify_route;
 		my $command = "curl --silent --insecure -H 'Accept: application/json' --header \"Content-Length:0\" -X POST $post_url";
 		my ($output, $status) = systemcall($command);
 		if ($status || $output) {
@@ -615,7 +663,7 @@ if ($bog{'notify_when_complete_flag'}) {
 	}
 }
 else {
-	$log->info("Email notification is not turned on for: $execrunuid", sub {use Data::Dumper; Dumper(\%bog);});
+	$log->debug("Email notification is not turned on for: $execrunuid", sub {use Data::Dumper; Dumper(\%bog);});
 }
 
 $log->info("PostAssessment: $execrunuid Exit");

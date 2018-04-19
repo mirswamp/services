@@ -31,11 +31,10 @@ use SWAMP::vmu_Support qw(
 	deleteJobDir
 );
 use SWAMP::vmu_ViewerSupport qw(
-	$VIEWER_STATE_NO_RECORD
+	$VIEWER_STATE_ERROR
 	$VIEWER_STATE_LAUNCHING
 	$VIEWER_STATE_READY
 	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
 	$VIEWER_STATE_SHUTDOWN
 	updateClassAdViewerStatus
 );
@@ -173,8 +172,7 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 					$message = "VM Started and Failed - currently unknown - ";
 				}   
 				$message .= "$date_start $date_now ($seconds)";
-				my $state = $VIEWER_STATE_NO_RECORD;
-				updateClassAdViewerStatus($execrunuid, $state, $message, $bogref);
+				updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_ERROR, $message, $bogref);
 				$poll_count = 0;
 			}
 		}
@@ -243,13 +241,14 @@ updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, $message, \%bog);
 # signal delete jobdir on sumbit node
 my $status = deleteJobDir($execrunuid);
 if ($status) {
+	$message = "Viewer shutdown complete";
 	$log->info("MonitorViewer - job directory for: $execrunuid successfully deleted");
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, "Viewer shutdown complete", \%bog);
 }
 else {
+	$message = "Viewer shutdown incomplete";
 	$log->error("MonitorViewer - job directory for: $execrunuid deletion failed");
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_JOBDIR_FAILED, "Viewer shutdown incomplete", \%bog);
 }
+updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, $message, \%bog);
 
 $log->info("MonitorViewer: $execrunuid Exit");
 exit(0);

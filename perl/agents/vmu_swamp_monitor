@@ -23,12 +23,14 @@ use POSIX qw(WNOHANG waitpid);    # for nonblocking read
 use FindBin qw($Bin);
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
-use SWAMP::vmu_Locking qw(swamplock);
+use SWAMP::Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	identifyScript
 	runScriptDetached
+	create_empty_file
+	getSwampDir
   	loadProperties
   	getLoggingConfigString
-  	getSwampConfig
   	start_process
   	stop_process
 );
@@ -37,47 +39,54 @@ if (! swamplock($PROGRAM_NAME)) {
 	exit 0;
 }
 
-use sigtrap 'handler', \&trap_handler, 'normal-signals';
-use sigtrap 'handler', \&hup_handler,  'HUP';
-
 my $debug   = 0;
 my $config;
 my $asdetached = 1;
 my $startupdir = getcwd();
 my $basedir = abs_path("$FindBin::Bin/..");
+my $pidfile;
 
 my @PRESERVEARGV = @ARGV;
 GetOptions(
-    'debug'      => \$debug,
-    'config|C=s' => \$config,
-    'detached!'     => \$asdetached,
+    'debug'			=> \$debug,
+	'pidfile=s'		=> \$pidfile,
+    'config|C=s'	=> \$config,
+    'detached!'		=> \$asdetached,
 );
 
 Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 
+identifyScript(\@PRESERVEARGV);
 runScriptDetached() if ($asdetached);
+# change the default catch-all log file permissions so all scripts can write to it.
+# runScriptDetached can specify a different file name than this default used below
+my $catch_all_log = catfile(getSwampDir(), 'log', 'swamperrors.log');
+if (! -f $catch_all_log) {
+	if (! create_empty_file($catch_all_log)) {
+		# this is not fatal
+		$log->warn("Warning - cannot create: $catch_all_log");
+	}
+}
+if (-f $catch_all_log) {
+	my $count = chmod 0666, $catch_all_log;
+	if ($count != 1) {
+		# again - not fatal
+		$log->warn("Warning - cannot set permissions to 0666 on: $catch_all_log");
+	}
+}
+
+# write pid to pidfile from init script
+if ($pidfile && open(my $fh, '>', $pidfile)) {
+	print $fh $PID, "\n";
+	close($fh);
+}
+else {
+	$log->error("Error - $PROGRAM_NAME ($PID) - failed to write pidfile: ", $pidfile || '', " - exiting");
+	exit(0);
+}
 chdir($startupdir);
-
-#** @var %children a map of child process ids indexed by the same alias name used with `%processes`
-my %children;
-
-#** @var %process a map of process command lines indexed by an alias name. Taken from the config file.
-my %processes;
-my %maxRetries;
-my %maxFreq;
-my %startTime;
-
-local $SIG{'CHLD'} = sub {
-    # don't change $! and $? outside handler
-    local $OS_ERROR    = $OS_ERROR;
-    local $CHILD_ERROR = $CHILD_ERROR;
-    my $pid = 1;
-    while ( $pid > 0 ) {
-        $pid = waitpid( -1, WNOHANG );
-    }
-};
 
 sub hup_handler {
     $log->info("HUP: reread config file");
@@ -88,11 +97,44 @@ sub hup_handler {
 }
 
 sub trap_handler {
-    $log->info("Shutting down");
+    $log->info("Caught signal @_ - reaping children and shutting down");
     reapChildren();
-    $log->info("Done reaping");
-    croak "Caught signal @_, shutting down";
+    $log->info("Done reaping - exiting");
+	exit(0);
 }
+
+use sigtrap 'handler', \&trap_handler, 'normal-signals';
+use sigtrap 'handler', \&hup_handler,  'HUP';
+
+# map of child process ids indexed by the same alias name used with `%processes`
+my %children;
+#%process a map of process command lines indexed by an alias name. Taken from the config file.
+my %processes;
+my %maxRetries;
+my %maxFreq;
+my %startTime;
+
+my $done = 0;
+
+local $SIG{'CHLD'} = sub { my ($sig) = @_ ;
+    # don't change $! and $? outside handler
+	# process exit status for errors from child
+    local $OS_ERROR    = $OS_ERROR;
+    local $CHILD_ERROR = $CHILD_ERROR;
+    my $pid = 1;
+    while ( $pid > 0 ) {
+        $pid = waitpid( -1, WNOHANG );
+		if ($pid > 0) {
+			my ($rc, $sig, $core) = ($CHILD_ERROR >> 8, $CHILD_ERROR & 127, $CHILD_ERROR & 128);
+			$log->info("CHLD handler - received $sig for: $pid rc: $rc sig: $sig core: $core");
+			if ($rc == 2) {
+    			my $proc = $children{$pid};
+    			$log->error("Fatal Error - $pid $proc [$processes{$proc}] - monitor will exit");
+				$done = 1;
+			}
+		}
+    }
+};
 
 Log::Log4perl->get_logger('runtrace')->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
 $log->info("$PROGRAM_NAME: config file: $config");
@@ -101,17 +143,20 @@ initMonitor();
 
 initProcesses();
 
-my $done = 0;
 while (! $done) {
     my $slept = sleep 60;
-    my $pid;
     foreach my $child ( keys %children ) {
-        $pid = waitpid( $child, WNOHANG );
+        my $pid = waitpid( $child, WNOHANG );
         if ( $pid == -1 ) {
-            restart_child( $child, $CHILD_ERROR );
+			if (! $done) {
+				$log->info("Sleep loop restart child: $child");
+            	restart_child($child);
+			}
         }
     }
 }
+reapChildren();
+$log->info("$PROGRAM_NAME ($PID) leaving sleep loop - exiting");
 exit 0;
 
 sub reapChildren {
@@ -171,7 +216,6 @@ sub initMonitor {
     return;
 }
 
-#my $idx = 0;
 sub launchProcess { my ($procmap, $childmap, $key) = @_ ;
     my $childID = start_process($procmap->{$key});
     $startTime{$key} = time;
@@ -179,9 +223,9 @@ sub launchProcess { my ($procmap, $childmap, $key) = @_ ;
     return $childID;
 }
 
-sub restart_child { my ($pid, $err)  = @_ ;
+sub restart_child { my ($pid)  = @_ ;
     my $proc = $children{$pid};
-    $log->info("$pid has died, <error:$err> restarting $proc [$processes{$proc}]");
+    $log->info("$pid has died, restarting $proc [$processes{$proc}]");
     delete $children{$pid};
 
     # If the time since the last start of this process is less than the max startup frequency,
@@ -192,7 +236,7 @@ sub restart_child { my ($pid, $err)  = @_ ;
             $maxRetries{$proc}--;
         }
         else {
-            $log->error("$pid has died too many times.");
+            $log->error("$proc [$processes{$proc}] has died too many times.");
             $okToStart = 0;
         }
     }

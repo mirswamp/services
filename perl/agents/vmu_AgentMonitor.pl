@@ -25,11 +25,12 @@ use URI::Escape qw(uri_escape);
 use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
-use SWAMP::vmu_Locking qw(swamplock);
+use SWAMP::Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
 	runScriptDetached
 	identifyScript
   	getSwampDir
+	$global_swamp_config
   	getSwampConfig
   	getLoggingConfigString
 	switchExecRunAppenderLogFile
@@ -45,15 +46,7 @@ use SWAMP::vmu_Support qw(
     $LAUNCHPAD_FATAL_ERROR
 );
 use SWAMP::vmu_ViewerSupport qw(
-	$VIEWER_STATE_NO_RECORD
 	$VIEWER_STATE_LAUNCHING
-	$VIEWER_STATE_READY
-	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
-	$VIEWER_STATE_SHUTDOWN
-	$VIEWER_STATE_TERMINATING
-	$VIEWER_STATE_TERMINATED
-	$VIEWER_STATE_TERMINATE_FAILED
 	getViewerStateFromClassAd
 	updateClassAdViewerStatus
 );
@@ -88,16 +81,20 @@ identifyScript(\@PRESERVEARGV);
 runScriptDetached() if ($asdetached);
 chdir($startupdir);
 
-my $config = getSwampConfig($configfile);
+$global_swamp_config ||= getSwampConfig($configfile);
 if (! defined($port)) {
-    $port = $config->get('agentMonitorJobPort');
+    $port = $global_swamp_config->get('agentMonitorPort');
 	$port = int($port) ;
 }
 if (! defined($serverhost)) {
-    $serverhost = $config->get('agentMonitorHost');
+    $serverhost = $global_swamp_config->get('agentMonitorHost');
 }
 
 my $daemon = RPC::XML::Server->new('host' => $serverhost, 'port' => $port);
+if (! ref($daemon)) {
+	$log->error("Error - $PROGRAM_NAME $PID no daemon: $daemon - exiting");
+	exit(2);
+}
 
 # Add methods to our server
 
@@ -119,10 +116,10 @@ $daemon->add_method(
     }
 );
 
-my @signals = qw/TERM HUP INT/;
-my %map = ('signal' => \@signals);
+# start server loop - exit on TERM
 $log->info("$PROGRAM_NAME ($PID) entering listen loop at $serverhost on port: $port");
-my $res = $daemon->server_loop(%map);
+my $res = $daemon->server_loop('signal' => ['TERM']);
+$log->info("$PROGRAM_NAME ($PID) leaving listen loop - exiting");
 exit 0;
 
 sub logfilename {
@@ -184,54 +181,14 @@ sub _deleteJobDirMain { my ($server, $options) = @_ ;
 
 sub _launchViewer { my ($server, $options) = @_ ;
 	$tracelog->trace("_launchViewer options: ", sub {use Data::Dumper; Dumper($options);});
-	my $stopping_poll_count = 24;
-	my $stopping_poll_sleep_time = 5;
-	my $state;
-	# get current viewer instance state
-	for (my $i = 0; $i < $stopping_poll_count; $i++) {
-		my $viewerState = getViewerStateFromClassAd($options->{'projectid'}, $options->{'viewer'});
-		# timeout or error condition 
-		if (($i >= ($stopping_poll_count - 1)) || ! defined($viewerState->{'state'}) || defined($viewerState->{'error'})) {
-			$log->error("_launchViewer not launching viewer - getViewerStateFromClassAd returns: ", sub {use Data::Dumper; Dumper($viewerState);});
-			if ($i >= ($stopping_poll_count - 1)) {
-				$log->error("_launchViewer timed out waiting for valid state after: ", $stopping_poll_sleep_time * $stopping_poll_count, " seconds");
-			}
-			$tracelog->trace("_launchViewer count: $i state: ", sub {use Data::Dumper; Dumper($viewerState);});
-			return 0;
-		}
-		my $state = $viewerState->{'state'};
-		# viewer prior terminate failed - it is still running so return success ?????
-		if ($state == $VIEWER_STATE_TERMINATE_FAILED) {
-        	$log->info("_launchViewer not launching viewer - prior terminate failed launchPadStart options: ", sub { use Data::Dumper; Dumper($options); });
-        	$tracelog->trace('_launchViewer - prior terminate failed'); 
-        	return 1;
-		}
-		# viewer is already launching or ready so return success
-		if ($state == $VIEWER_STATE_LAUNCHING || $state == $VIEWER_STATE_READY) {
-        	$log->info("_launchViewer not launching viewer - pending launchPadStart options: ", sub { use Data::Dumper; Dumper($options); });
-        	$tracelog->trace('_launchViewer - pending'); 
-        	return 1;
-		}
-		# viewer is shutdown, terminated or does not exist so launch
-		if ($state == $VIEWER_STATE_SHUTDOWN || $state == $VIEWER_STATE_NO_RECORD || $state == $VIEWER_STATE_TERMINATED) {
-			last;
-		}
-		# viewer is stopping, or terminating so sleep waiting for it to shutdown
-		if ($state == $VIEWER_STATE_STOPPING || $state == $VIEWER_STATE_TERMINATING) {
-        	$log->info("_launchViewer waiting for shutdown viewerState: ", sub { use Data::Dumper; Dumper($viewerState); });
-			sleep $stopping_poll_sleep_time;
-		}
-	}
-	# OK to launch new viewer instance
 	my $key = $options->{'projectid'} . '_' . $options->{'viewer'};
 	$key =~ s/\s//sxmg;
 	$options->{'execrunid'} = 'vrun' . '_' . $key;
-	$options->{'intent'} = 'VRUN'; # New field.
 	$options->{'apikey'} = getUUID();
 	# This is now the URL for the VM instead of projectid.
 	# It needs to persist for THIS VM, but be unique next time.
 	$options->{'urluuid'} = qq{proxy-}.uri_escape(getUUID()); 
-	$options->{'platform'} = $config->get('master.viewer');
+	$options->{'platform'} = $global_swamp_config->get('master.viewer');
 	$options->{'vmhostname'} = 'vswamp';
 	$log->info("_launchViewer: invoking launchPadStart options: ", sub {use Data::Dumper; Dumper($options);});
 	updateClassAdViewerStatus($options->{'execrunid'}, $VIEWER_STATE_LAUNCHING, 'Launching viewer', $options);

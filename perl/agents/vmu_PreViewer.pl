@@ -38,12 +38,7 @@ use SWAMP::vmu_Support qw(
 	create_empty_file
 );
 use SWAMP::vmu_ViewerSupport qw(
-	$VIEWER_STATE_NO_RECORD
 	$VIEWER_STATE_LAUNCHING
-	$VIEWER_STATE_READY
-	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
-	$VIEWER_STATE_SHUTDOWN
 	createrunscript 
 	copyvruninputs 
 	updateClassAdViewerStatus
@@ -67,7 +62,7 @@ sub logfilename {
     return catfile(getSwampDir(), 'log', $name . '.log');
 }
 
-sub patchDeltaQcow2ForInit { my ($execrunuid, $imagename, $vmhostname) = @_ ;
+sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
 	my $swampdir = getSwampDir();
 	my $runshcmd =
 		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/nohup.out 2>&1 &\\n\"";
@@ -212,8 +207,8 @@ if (! $imagename) {
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
 	exit_prescript_with_error();
 }
-if (! patchDeltaQcow2ForInit($execrunuid, $imagename, $vmhostname)) {
-	$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $imagename $vmhostname");
+if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
+	$log->error("patchDeltaQcow2ForInit failed for: $imagename $vmhostname");
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
 	exit_prescript_with_error();
 }

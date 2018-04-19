@@ -13,15 +13,16 @@ use Date::Parse qw(str2time);
 use Log::Log4perl;
 use Archive::Tar;
 use File::Basename qw(basename);
-use File::Copy qw(move cp);
+use File::Copy qw(move copy);
 use File::Spec::Functions;
 use POSIX qw(strftime);
-use JSON qw(from_json);
 
 use SWAMP::vmu_Support qw(
+	from_json_wrapper
     trim
     systemcall
     getSwampDir
+	$global_swamp_config
     getSwampConfig
     saveProperties
 	checksumFile
@@ -30,6 +31,10 @@ use SWAMP::vmu_Support qw(
 	database_disconnect
 	displaynameToMastername
 	masternameToPlatform
+	isSwampInABox
+	isAssessmentRun
+	isMetricRun
+	isViewerRun
 	$LAUNCHPAD_SUCCESS
 	$LAUNCHPAD_BOG_ERROR
 	$LAUNCHPAD_FILESYSTEM_ERROR
@@ -37,7 +42,7 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_FORK_ERROR
 	$LAUNCHPAD_FATAL_ERROR
 );
-use SWAMP::vmu_PackageTypes qw(
+use SWAMP::PackageTypes qw(
     $C_CPP_PKG_STRING
     $JAVA7SRC_PKG_STRING
     $JAVA7BYTECODE_PKG_STRING
@@ -71,12 +76,19 @@ BEGIN {
       updateRunStatus
       updateAssessmentStatus
       updateClassAdAssessmentStatus
-      saveResult
+      saveAssessmentResult
+	  saveMetricResult
+	  getLaunchExecrunuids
+	  incrementLaunchCounter
+	  setLaunchFlag
+	  setCompleteFlag
+	  setSubmittedToCondorFlag
       doRun
       updateExecutionResults
       copyAssessmentInputs
       createAssessmentConfigs
       needsFloodlightAccessTool
+	  isClocTool
 	  isSonatypeTool
       isRubyTool
       isFlake8Tool
@@ -105,7 +117,7 @@ BEGIN {
     );
 }
 
-my $global_swamp_config;
+# my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 
@@ -163,6 +175,7 @@ my $bogtranslator = {
 		'maven_version'		=> 'maven_version', 			
 		'android_maven_plugin'		=> 'android_maven_plugin', 		
 		'package_language'	=> 'package_language', 		
+		'exclude_paths'		=> 'exclude_paths',
 	},
 };
 
@@ -205,7 +218,7 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 				$bog_query_result = undef;
 			}
         }
-        $sth->finish();
+		$sth->finish();
         database_disconnect($dbh);
 	}
 	else {
@@ -269,6 +282,7 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 	
 	# job and user information
 	$bog->{'execrunid'} = $execrunuid;
+	$bog->{'launch_counter'} = $bog_query_result->{'launch_counter'};
 	$bog->{'projectid'} = $bog_query_result->{'project_uuid'};
 	$bog->{'userid'} = $bog_query_result->{'user_uuid'};
 	$bog->{'user_cnf'} = $bog_query_result->{'user_cnf'};
@@ -307,6 +321,125 @@ sub _computeBOG { my ($execrunuid) = @_ ;
     return $bog;
 }
     
+sub incrementLaunchCounter { my ($execrunuid, $current) = @_ ;
+	my $success = 0;
+	return 1 if (isViewerRun($execrunuid));
+	if (my $dbh = database_connect()) {
+		my $database;
+		if (isAssessmentRun($execrunuid)) {
+			$database = 'assessment';	
+		}
+		elsif (isMetricRun($execrunuid)) {
+			$database = 'metric';
+		}
+		my $query = qq{CALL ${database}.increment_launch_counter (?, \@r);};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, $execrunuid);
+		$sth->execute();
+		my $result;
+		if (! $sth->err) {
+			$result = $dbh->selectrow_array('SELECT @r');
+		}
+		else {
+			$log->error("incrementLaunchCounter $database - error: ", $sth->errstr);
+		}
+		database_disconnect($dbh);
+		if (! $result || ($result < 0)) {
+			$log->error("incrementLaunchCounter $database - error: ", defined($result) ? $result : 'undefined');
+		}
+		elsif ($result != ($current + 1)) {
+			$log->error("incrementLaunchCounter $database - current: $current result: $result");
+		}
+		else {
+			$success = 1;
+		}
+	}
+	else {
+		$log->error("incrementLaunchCounter - database connection failed");
+	}
+	return $success;
+}
+
+sub _setDBRunQueueFlag { my ($execrunuid, $flag_name, $flag_value) = @_ ;
+	return 1 if (isViewerRun($execrunuid));
+	my $success = 0;
+	if (my $dbh = database_connect()) {
+		my ($database, $table);
+		if (isAssessmentRun($execrunuid)) {
+			$database = 'assessment';
+			$table = 'execution_record';
+		}
+		elsif (isMetricRun($execrunuid)) {
+			$database = 'metric';
+			$table = 'metric_run';
+		}
+		my $query = qq{UPDATE ${database}.${table} SET $flag_name = ? WHERE ${table}_uuid = ?};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, $flag_value ? 1 : 0);
+		$sth->bind_param(2, $execrunuid);
+		$sth->execute();
+		if ($sth->err) {
+			$log->error("_setDBRunQueueFlag $database $table $flag_name $flag_value - error: ", $sth->errstr);
+		}
+		else {
+			$success = 1;
+		}
+		database_disconnect($dbh);
+	}
+	else {
+		$log->error("_setDBRunQueueFlag - database connection failed");
+	}
+	return $success;
+}
+
+sub setLaunchFlag { my ($execrunuid, $launch) = @_ ;
+	my $result = _setDBRunQueueFlag($execrunuid, 'launch_flag', $launch);
+	return $result;
+}
+
+sub setCompleteFlag { my ($execrunuid, $complete) = @_ ;
+	my $result = _setDBRunQueueFlag($execrunuid, 'complete_flag', $complete);
+	return $result;
+}
+
+sub setSubmittedToCondorFlag { my ($execrunuid, $submitted) = @_ ;
+	my $result = _setDBRunQueueFlag($execrunuid, 'submitted_to_condor_flag', $submitted);
+	return $result;
+}
+
+# FIXME read this value from swamp.conf
+my $LAUNCH_COUNTER_THRESHOLD = 15;
+sub getLaunchExecrunuids { my ($launch_counter_begin, $launch_counter_end) = @_ ;
+	my $execrunuids;
+	if (my $dbh = database_connect()) {
+		my $query = q{SELECT execution_record_uuid FROM assessment.execution_record WHERE launch_flag = 1};
+		my $sth = $dbh->prepare($query);
+		if (defined($launch_counter_begin) || defined($launch_counter_end)) {
+			$launch_counter_begin = 0 if (! defined($launch_counter_begin));
+			$launch_counter_end = $LAUNCH_COUNTER_THRESHOLD if (! defined($launch_counter_end));
+			$query .= q{ AND launch_counter >= ? AND launch_counter <= ?};
+			$sth = $dbh->prepare($query);
+			$sth->bind_param(1, $launch_counter_begin);
+			$sth->bind_param(2, $launch_counter_end);
+		}
+		if ($sth->err) {
+			$log->error('getLaunchExecrunuids error ', $launch_counter_begin || '', $launch_counter_end ? " $launch_counter_end" : '', ": ", $sth->errstr);
+		}
+		else {
+			$execrunuids = $dbh->selectcol_arrayref($sth);
+			if ($dbh->err) {
+				$log->error("getLaunchExecrunuids - select failed: ", $dbh->errstr);
+				$execrunuids = undef;
+			}
+		}
+		database_disconnect($dbh);
+	}
+	else {
+		$log->error("getLaunchExecrunuids - database connection failed");
+	}
+	return $execrunuids;
+}
+
 sub doRun { my ($execrunuid) = @_ ;
     $tracelog->trace("doRun called with execrunuid: $execrunuid");
     my $options = _computeBOG($execrunuid);
@@ -326,7 +459,7 @@ sub doRun { my ($execrunuid) = @_ ;
 sub updateExecutionResults { my ($execrunid, $newrecord, $finalStatus) = @_ ;
 	if (my $dbh = database_connect()) {
     	if ($finalStatus) {
-        	$newrecord->{'completion_date'} = strftime("%Y-%m-%d %H:%M:%S", localtime(time()));
+        	$newrecord->{'completion_date'} = strftime("%Y-%m-%d %H:%M:%S", gmtime(time()));
     	}
 		my $query = q{CALL assessment.update_execution_run_status(?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
@@ -361,13 +494,53 @@ sub updateRunStatus { my ($execrunid, $status, $finalStatus) = @_ ;
     updateExecutionResults($execrunid, {'status' => $status}, $finalStatus);
 }
 
-sub saveResult { my ($mapref) = @_ ;
-    if (!defined($mapref->{'pathname'})) {
-        $log->error('saveResult - error: hash is missing pathname');
+sub saveMetricResult { my ($metric_results) = @_ ;
+    if (!defined($metric_results->{'execrunid'})) {
+        $log->error('saveMetricResult - error: hash is missing execrunid');
+		return;
+    }
+    if (!defined($metric_results->{'code-lines'})) {
+        $log->error('saveMetricResult - error: hash is missing code-lines');
+		return;
+    }
+    if (!defined($metric_results->{'comment-lines'})) {
+        $log->error('saveMetricResult - error: hash is missing comment-lines');
+		return;
+    }
+    if (!defined($metric_results->{'blank-lines'})) {
+        $log->error('saveMetricResult - error: hash is missing blank-lines');
+		return;
+    }
+    if (!defined($metric_results->{'total-lines'})) {
+        $log->error('saveMetricResult - error: hash is missing total-lines');
+		return;
+    }
+	if (my $dbh = database_connect()) {
+		my $query = qq{UPDATE metric.metric_run SET pkg_code_lines = ?, pkg_comment_lines = ?, pkg_blank_lines = ?, pkg_total_lines = ? WHERE metric_run_uuid = ?};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, $metric_results->{'code-lines'});
+		$sth->bind_param(2, $metric_results->{'comment-lines'});
+		$sth->bind_param(3, $metric_results->{'blank-lines'});
+		$sth->bind_param(4, $metric_results->{'total-lines'});
+		$sth->bind_param(5, $metric_results->{'execrunid'});
+		$sth->execute();
+		if ($sth->err) {
+			$log->error("saveMetricResult - error: ", $sth->errstr);
+		}
+		database_disconnect($dbh);
+	}
+	else {
+		$log->error("saveMetricRun - database connection failed");
+	}
+}
+
+sub saveAssessmentResult { my ($assessment_results) = @_ ;
+    if (!defined($assessment_results->{'pathname'})) {
+        $log->error('saveAssessmentResult - error: hash is missing pathname');
         return {'error', 'hash is missing pathname'};
     }
-    if (!defined($mapref->{'execrunid'})) {
-        $log->error('saveResult - error: hash is missing execrunid');
+    if (!defined($assessment_results->{'execrunid'})) {
+        $log->error('saveAssessmentResult - error: hash is missing execrunid');
         return {'error', 'hash is missing execrunid'};
     }
 	if (my $dbh = database_connect()) {
@@ -384,32 +557,32 @@ sub saveResult { my ($mapref) = @_ ;
 		# return_string
 		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
-		$sth->bind_param(1, $mapref->{'execrunid'});
-		$sth->bind_param(2, $mapref->{'pathname'});
-		$sth->bind_param(3, $mapref->{'sha512sum'});
-		$sth->bind_param(4, $mapref->{'sourcepathname'});
-		$sth->bind_param(5, $mapref->{'source512sum'});
-		$sth->bind_param(6, $mapref->{'logpathname'});
-		$sth->bind_param(7, $mapref->{'log512sum'});
-		$sth->bind_param(8, $mapref->{'weaknesses'});
-		$sth->bind_param(9, $mapref->{'locSum'});
-		$sth->bind_param(10, $mapref->{'status_out'});
+		$sth->bind_param(1, $assessment_results->{'execrunid'});
+		$sth->bind_param(2, $assessment_results->{'pathname'});
+		$sth->bind_param(3, $assessment_results->{'sha512sum'});
+		$sth->bind_param(4, $assessment_results->{'sourcepathname'});
+		$sth->bind_param(5, $assessment_results->{'source512sum'});
+		$sth->bind_param(6, $assessment_results->{'logpathname'});
+		$sth->bind_param(7, $assessment_results->{'log512sum'});
+		$sth->bind_param(8, $assessment_results->{'weaknesses'});
+		$sth->bind_param(9, $assessment_results->{'locSum'});
+		$sth->bind_param(10, $assessment_results->{'status_out'});
 		$sth->execute();
 		my $result;
 		if (! $sth->err) {
 			$result = $dbh->selectrow_array('SELECT @r');
 		}
 		else {
-			$log->error("saveResult - error: ", $sth->errstr);
+			$log->error("saveAssessmentResult - error: ", $sth->errstr);
 		}
 		database_disconnect($dbh);
 		if (! $result || ($result ne 'SUCCESS')) {
-			$log->error("saveResult - error: $result");
+			$log->error("saveAssessmentResult - error: $result");
 			return 0;
 		}
 	}
 	else {
-        $log->error("saveResult - database connection failed");
+        $log->error("saveAssessmentResult - database connection failed");
 		return 0;
 	}
     return 1;
@@ -500,13 +673,13 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
     my $basedir = getSwampDir();
     # copy services.conf to the input destination directory
 	my $servicesconf = catfile($basedir, 'etc', 'services.conf');
-    if (! cp($servicesconf, $dest)) {
+    if (! copy($servicesconf, $dest)) {
         $log->error($bogref->{'execrunid'}, "Cannot copy $servicesconf to $dest $OS_ERROR");
         return 0;
     }
 	
     # Copy the package tarball into VM input folder from the SAN.
-    if (! cp($bogref->{'packagepath'}, $dest)) {
+    if (! copy($bogref->{'packagepath'}, $dest)) {
         $log->error($bogref->{'execrunid'}, "Cannot read packagepath $bogref->{'packagepath'} $OS_ERROR");
         return 0;
     }
@@ -647,6 +820,9 @@ sub isOWASPDCTool { my ($bogref) = @_ ;
 	return ($bogref->{'toolname'} eq 'OWASP Dependency Check');
 }
 
+sub isClocTool { my ($bogref) = @_ ;
+	return ($bogref->{'toolname'} eq 'cloc');
+}
 sub isSonatypeTool { my ($bogref) = @_ ;
 	return ($bogref->{'toolname'} eq 'Sonatype Application Health Check');
 }
@@ -878,6 +1054,9 @@ sub _createPackageConf { my ($bogref, $dest) = @_ ;
         $packageConfig{'package-language'} = $packagelanguage;
     }
 
+	# 1 new field for ruby assess and web packages assess 03.05.2018 CSA-2369, CSA-2889
+	$packageConfig{'package-exclude-paths'} = _getBOGValue($bogref, 'exclude_paths');
+
     foreach my $key ( keys %packageConfig ) {
         if ( !defined( $packageConfig{$key} ) ) {
             delete $packageConfig{$key};
@@ -910,13 +1089,9 @@ sub _createUserConf { my ($bogref, $dest) = @_ ;
 			$log->warn("$bogref->{'execrunid'} No user_cnf - cannot create sonatype-data.conf");
 			return 0;
 		}
-		my $json;
-		eval {
-			$json = from_json($bogref->{'user_cnf'});
-		};
-		if ($@) {
+		my $json = from_json_wrapper($bogref->{'user_cnf'});
+		if (! defined($json)) {
 			$log->warn("$bogref->{'execrunid'} Failed to parse json string: $bogref->{'user_cnf'} error: $@");
-			$json = undef;
 			return 0;
 		}
 		my $userConfig = {};
@@ -969,7 +1144,8 @@ sub _mergeDependencies { my ($file) = @_ ;
 }
 
 sub _addUserDepends { my ($bogref, $destfile) = @_ ;
-    if (!defined($bogref->{'packagedependencylist'}) || $bogref->{'packagedependencylist'} eq q{null}) {
+    my $dep = trim($bogref->{'packagedependencylist'});
+	if (! $dep || ($dep eq q{null})) {
         $log->info("addUserDepends - No packagedependencylist in BOG");
         return;
     }
@@ -1023,7 +1199,11 @@ sub updateClassAdAssessmentStatus { my ($execrunuid, $vmhostname, $user_uuid, $p
     $global_swamp_config ||= getSwampConfig();
     my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
     $log->info("Status: $status");
-    my ($output, $stat) = systemcall("condor_advertise -pool $HTCONDOR_COLLECTOR_HOST UPDATE_AD_GENERIC - <<'EOF'
+	my $poolarg = q();
+	if (! isSwampInABox($global_swamp_config)) {
+		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
+	}
+    my ($output, $stat) = systemcall("condor_advertise $poolarg UPDATE_AD_GENERIC - <<'EOF'
 MyType=\"Generic\"
 Name=\"$execrunuid\"
 SWAMP_vmu_assessment_vmhostname=\"$vmhostname\"

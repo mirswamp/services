@@ -1,4 +1,4 @@
-#!/usr/bin/env perl 
+#!/usr/bin/env perl
 
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
@@ -13,7 +13,7 @@ use strict;
 use Cwd qw(getcwd abs_path);
 use English '-no_match_vars';
 use File::Basename qw(basename fileparse);
-use File::Copy qw(cp);
+use File::Copy qw(copy);
 use File::Path qw(make_path);
 use File::Spec::Functions;
 use Getopt::Long qw(GetOptions);
@@ -26,13 +26,14 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::CodeDX qw(uploadanalysisrun);
 use SWAMP::ThreadFix qw(threadfix_uploadanalysisrun);
-use SWAMP::vmu_PackageTypes qw($GENERIC_PKG $JAVABYTECODE_PKG);
-use SWAMP::vmu_FrameworkUtils qw(generatereport savereport);
+use SWAMP::PackageTypes qw($GENERIC_PKG $JAVABYTECODE_PKG);
+use SWAMP::FrameworkUtils qw(generateErrorJson saveErrorJson);
 use SWAMP::vmu_Support qw(
 	runScriptDetached
 	identifyScript
 	systemcall
 	getLoggingConfigString 
+	$global_swamp_config
 	getSwampConfig 
 	getSwampDir
 	makezip
@@ -41,45 +42,29 @@ use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
 	$VIEWER_STATE_LAUNCHING
 	$VIEWER_STATE_READY
-	$VIEWER_STATE_STOPPING
-	$VIEWER_STATE_JOBDIR_FAILED
-	$VIEWER_STATE_SHUTDOWN
-	$VIEWER_STATE_TERMINATING
-	$VIEWER_STATE_TERMINATED
-	$VIEWER_STATE_TERMINATE_FAILED
+	$VIEWER_STATE_ERROR
+	needToLaunch
 	getViewerStateFromClassAd
+	updateClassAdViewerStatus
 	launchViewer
 );
-
-use constant 'OK'      => 	1;
-use constant 'NOTOK'   =>	0;
-use constant 'ERROR'   =>  -1;
-use constant 'TIMEOUT' =>	2;
 
 my $startupdir = getcwd();
 my $asdetached   = 1;
 my $debug      = 0;
 
-#** @var $inputdir The absolute path location where raw results can currently be found.
 my $inputdir;
-
-#** @var $outputdir optional folder into which results will be written. Currently this is only for the Native viewer
 my $outputdir;
 
-#** @var $viewer_name The textual name of the view to invoke. Native, CodeDX, or ThreadFix.
+my $user_uuid;
 my $viewer_name;
-my $invocation_cmd;
-my $sign_in_cmd;
-my $add_user_cmd;
-my $add_result_cmd;
-my $viewer_path;
-my $viewer_checksum;
 my $viewer_db_path;
 my $viewer_db_checksum;
 my $viewer_uuid;
 my @file_path;
 my $source_archive;
-my $project_name;    # SWAMP project affiliation
+my $project_uuid;    # SWAMP project affiliation
+my $configfile;
 
 
 my $package_name;    # SWAMP package affiliation == CodeDX project, ThreadFix application
@@ -95,24 +80,18 @@ my $package_type = $GENERIC_PKG;    # Assume its some sort of source code.
 
 my @PRESERVEARGV = @ARGV;
 GetOptions(
+	'user_uuid=s'			=> \$user_uuid,
     'viewer_name=s'         => \$viewer_name,
-    'invocation_cmd=s'      => \$invocation_cmd,
-    'sign_in_cmd=s'         => \$sign_in_cmd,
-    'add_user_cmd=s'        => \$add_user_cmd,
-    'add_result_cmd=s'      => \$add_result_cmd,
-    'viewer_path=s'         => \$viewer_path,
-    'viewer_checksum=s'     => \$viewer_checksum,
     'viewer_db_path=s'      => \$viewer_db_path,
 	'viewer_db_checksum=s'  => \$viewer_db_checksum,
     'viewer_uuid=s'         => \$viewer_uuid,
     'indir=s'               => \$inputdir,
     'file_path=s'           => \@file_path,
     'source_archive_path=s' => \$source_archive,
-    #'tool_name=s'           => \$tool_name,
     'outdir=s'              => \$outputdir,
     'package=s'             => \$package_name,
     'package_type=s'        => \$package_type,
-    'project=s'             => \$project_name,
+    'project=s'             => \$project_uuid,
     'detached!'               => \$asdetached,
     'debug'                 => \$debug,
 	#Header info in NativeViewer
@@ -124,6 +103,7 @@ GetOptions(
 	'platform_version=s'	=> \$platform_version,
 	'start_date=s'			=> \$start_date,
 	'end_date=s'			=> \$end_date,
+	'config=s'				=> \$configfile,
 );
 
 # This is the start of a viewer run so remove the tracelog file if extant
@@ -158,118 +138,106 @@ else {
 }
 exit $exitCode;
 
-sub doViewerVM {
-	my $config = getSwampConfig();
-    my $retCode = NOTOK;
+sub uploadResults { my ($viewerState, $execrunuid) = @_ ;
 	my $sleep_time = 10;
+	# poll for viewer ready before results are uploaded
+	my $state = $viewerState->{'state'};
+    for (my $i = 0; $i < 60; $i++) {
+		if ($state == $VIEWER_STATE_READY) {
+            $log->info("uploadResults - viewer is ready - project_uuid: $project_uuid viewer_name: $viewer_name");
+			last;
+		}
+		return 0 if ($state != $VIEWER_STATE_LAUNCHING && $state != $VIEWER_STATE_NO_RECORD);
+        sleep $sleep_time;
+        $viewerState = getViewerStateFromClassAd($project_uuid, $viewer_name);
+        if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
+            $log->error("uploadResults - Error checking for viewer - project_uuid: $project_uuid viewer_name: $viewer_name");
+            return 0;
+        }
+		$state = $viewerState->{'state'};
+    }
+    if ($state != $VIEWER_STATE_READY) {
+		$log->error('Error launch timed out after ', 60 * $sleep_time, " seconds - project_uuid: $project_uuid viewer_name: $viewer_name");
+		return 0;
+	}
+	if (($viewer_name ne 'ThreadFix') && $package_type && ($package_type ne $JAVABYTECODE_PKG)) {
+		push @file_path, $source_archive;
+	}
+	my $result = 0;
+	if ($viewer_name eq 'CodeDX') {
+		$log->info("Calling uploadanalysysrun $package_name ", sub {join ', ', map(abs_path($_), @file_path);});
+		$result = uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
+	}
+	elsif ($viewer_name eq 'ThreadFix') {
+		$log->info("Calling threadfix_uploadanalysysrun $package_name ", sub {join ', ', map(abs_path($_), @file_path);});
+		$result = threadfix_uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
+	}
+	if ($result) {
+		$log->info("uploaded results - package_name: $package_name viewer_name: $viewer_name");
+	}
+	else {
+		$log->error("Unable to upload results - package_name: $package_name viewer_name: $viewer_name");
+	}
+	return $result;
+}
 
-    my $viewerState = getViewerStateFromClassAd($project_name, $viewer_name);
+sub doViewerVM {
+	$global_swamp_config ||= getSwampConfig($configfile);
+    my $viewerState = getViewerStateFromClassAd($project_uuid, $viewer_name);
 	if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
-		$log->error("Error checking for viewer - project_name: $project_name viewer_name: $viewer_name");
-		return ERROR;
+		$log->error("doViewerVM - Error checking for viewer - project_uuid: $project_uuid viewer_name: $viewer_name");
+		return 1;
 	}
 
     my $removeZip = 0;
     if ($source_archive && $source_archive !~ /\.zip$/sxm) {
-		$log->info("original source_archive: $source_archive");
+		$log->info('original source_archive: ', abs_path($source_archive));
         $source_archive = makezip(abs_path($source_archive));
-		$log->info("makezip source_archive: $source_archive");
+		$log->info('makezip source_archive: ', abs_path($source_archive));
         # If the name was changed to zip form, remove the zip when finished
         if ( $source_archive =~ /\.zip$/sxm ) {
             $removeZip = 1;
         }
     }
 
-	# if viewer is not ready or launching then launch it
+	# if viewer state indicates need to launch then launch new viewer vm 
 	my $state = $viewerState->{'state'};
-	if ($state != $VIEWER_STATE_READY && $state != $VIEWER_STATE_LAUNCHING) {
-		my %launchMap = (
-			'resultsfolder' => $config->get('resultsFolder'),
-			'projectid'     => $project_name,
+	my $execrunuid = 'vrun_' . $project_uuid . '_' . $viewer_name;
+	my $options = {};
+	my $launch_result = 1;
+	if (needToLaunch($state)) {
+		$options = {
+			'resultsfolder' => $global_swamp_config->get('resultsFolder'),
+			'projectid'     => $project_uuid,
 			'viewer'        => $viewer_name,
 			'viewer_uuid'   => $viewer_uuid,
-		);
+			'userid'        => $user_uuid,
+		};
 		# It is OK to not have a viewer_db_path, it just means this is a NEW VRun VM.
 		if (defined($viewer_db_path) && $viewer_db_path ne q{NULL}) {
-			$launchMap{'db_path'} = $viewer_db_path;
+			$options->{'db_path'} = $viewer_db_path;
 		}
-		$log->info("Calling launchViewer via RPC project_name: $project_name viewer_name: $viewer_name");
-		$retCode = launchViewer(\%launchMap);
-        if ($retCode != OK) {
-            $log->error("launchViewer failed - project_name: $project_name viewer_name: $viewer_name return: $retCode");
-			unlink $source_archive if ($removeZip);
-			return $retCode;
-        }
-	}
-
-	# poll for viewer ready
-    for (my $i = 0; $i < 60; $i++) {
-		if ($state == $VIEWER_STATE_READY) {
-            $log->info("viewer is ready - project_name: $project_name viewer_name: $viewer_name");
-			last;
-		}
-		if (($state == $VIEWER_STATE_TERMINATING) || ($state == $VIEWER_STATE_TERMINATED)){
-            $log->info("viewer is terminated by user - project_name: $project_name viewer_name: $viewer_name");
-			# terminate could still fail here
-			return 0;
-		}
-		if ($state == $VIEWER_STATE_TERMINATE_FAILED) {
-            $log->info("viewer user terminate failed - project_name: $project_name viewer_name: $viewer_name");
-			return ERROR;
-		}
-        sleep $sleep_time;
-        $viewerState = getViewerStateFromClassAd($project_name, $viewer_name);
-        if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
-            $log->error("Error checking for viewer - project_name: $project_name viewer_name: $viewer_name");
-			unlink $source_archive if ($removeZip);
-            return ERROR;
-        }
-		$state = $viewerState->{'state'};
-    }
-    if ($state != $VIEWER_STATE_READY) {
-		$log->error('Error launch timed out after ', 60 * $sleep_time, " seconds - project_name: $project_name viewer_name: $viewer_name");
-		unlink $source_archive if ($removeZip);
-		return TIMEOUT;
-	}
-	if ($package_name) {
-		if ($viewer_name ne 'ThreadFix' && $package_type && $package_type ne $JAVABYTECODE_PKG) {
-			push @file_path, $source_archive;
-		}
-		if ($viewer_name eq 'CodeDX') {
-			$log->info("Calling uploadanalysysrun $package_name ", sub { use Data::Dumper; Dumper(\@file_path); });
-			$retCode = uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
-		}
-		elsif ($viewer_name eq 'ThreadFix') {
-			$log->info("Calling threadfix_uploadanalysysrun $package_name ", sub { use Data::Dumper; Dumper(\@file_path); });
-			$retCode = threadfix_uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
-		}
-		if ($retCode == OK) {
-			$log->info("uploaded results - package_name: $package_name viewer_name: $viewer_name");
-		}
-		else {
-			$log->error("Unable to upload results - package_name: $package_name viewer_name: $viewer_name return: $retCode");
+		$log->info("Calling launchViewer via RPC project_uuid: $project_uuid viewer_name: $viewer_name");
+		$launch_result = launchViewer($options);
+		if (! $launch_result) {
+			$log->error("launchViewer failed - project_uuid: $project_uuid viewer_name: $viewer_name");
+			updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_ERROR, 'Launch viewer error', $options);
 		}
 	}
-    if ($retCode == OK) {
-        $retCode = 0;
-    }
-    elsif ($retCode == NOTOK) {
-        $retCode = 1;
-    }
+	my $upload_result = 1;
+	if ($launch_result && $package_name) {
+		$log->info("Calling uploadResults for: $package_name");
+		$upload_result = uploadResults($viewerState, $execrunuid);
+	}
 	unlink $source_archive if ($removeZip);
-    return $retCode;
+    return 0 if ($launch_result && $upload_result);
+    return 1;
 }
 
 #print the vmu_launchviewr.pl command line arguments
 sub printPara {
     $log->info("Start logging the variables...");
     $log->info("$viewer_name");
-    $log->info("$invocation_cmd");
-    $log->info("$sign_in_cmd");
-    $log->info("$add_user_cmd");
-    $log->info("$add_result_cmd");
-    $log->info("$viewer_path");
-    $log->info("$viewer_checksum");
     $log->info("$viewer_db_path");
     $log->info("$viewer_db_checksum");
     $log->info("$viewer_uuid");
@@ -280,9 +248,7 @@ sub printPara {
 		$log->info("$_");
 	}
     $log->info("$source_archive");
-    $log->info("$tool_name");
-    $log->info("$package_name");
-    $log->info("$project_name");
+    $log->info("$project_uuid");
     $log->info("$asdetached");
 	$log->info("$debug");
 	$log->info("$package_name");
@@ -297,31 +263,31 @@ sub printPara {
     return;
 }
 
-
 sub doNativeError { my ($file, $outputdir) = @_ ;
 	$log->info("doNativeError - processing error result: $file");
 	my $config = getSwampConfig();
 	my $retCode = 0;
+	my $JSONname  = q{failedreport.json};
 	my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
 	make_path($outputdir);
-	if ( cp( $file, $outputdir )) {
+	if ( copy( $file, $outputdir )) {
 		$log->info("Copied $file to $outputdir ret=[${htmlfile}${ext}]");
 		my $topdir = 'out';
-		$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
-		my $report = generatereport(catfile($outputdir, $htmlfile . $ext), $topdir);
-		my $savereport = catfile($outputdir, 'assessmentreport.html');
-		$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
+		my $reportTime = ctime();
 		# save the header information and pass them into the saverepost()
-		my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date);
-		savereport($report, $savereport, $config->get('reporturl'),\@header);
-		my ($output, $status) = systemcall("/bin/chmod 644 $savereport");
-		if ($status) {
-			$log->error("Failed to chmod output: $output status: $status");
-		}
+		my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date, $reportTime);
+		$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
+		my $report = generateErrorJson(catfile($outputdir, $htmlfile . $ext), $topdir, @header);
+		my $savereport = catfile($outputdir, $JSONname);
+		$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
+		my$saveResult = saveErrorJson($report, $savereport);
+	    if ($saveResult == 0) {
+            $log->error("Failed to save the error report json to: $savereport");
+        }
 		# Do not remove this print statement
 		# This is the result returned to the calling program via the shell
-		$log->info("doNativeError returns: assessmentreport.html");
-		print "assessmentreport.html\n";
+		$log->info("doNativeError returns: $JSONname");
+		print "${JSONname}\n";
 	}
 	else {
 		$log->error("Cannot copy $file to $outputdir $OS_ERROR");
@@ -338,20 +304,30 @@ sub doNativeHTML { my ($file, $outputdir) = @_ ;
 	chdir $outputdir;
 	# basename of HTML archive
 	my $base = basename($file);
-	if (! -r $base) {
+	# test for HTML archive and index.html that is served to web browser
+	if ((! -r $base) || (! -r 'index.html')) {
 		$log->info("Copying $file to $outputdir");
 		# archive not found in outputdir so copy it in
-		if (! cp($file, $outputdir)) {
+		if (! copy($file, $outputdir)) {
 			$log->error("Cannot copy $file to $outputdir $OS_ERROR");
 			print "ERROR Cannot copy $file to $outputdir $OS_ERROR\n";
 			$retCode = 3;
 		}
 		# if copy succeeded unzip archive
 		else {
-			my ($output, $status) = systemcall("unzip $base");
+			# -DD unzip and set all timestamps to current time
+			# -K retain SUID/SGID/Tacky
+			my ($output, $status) = systemcall("unzip -DD -K $base");
 			if ($status) {
 				$log->error("Cannot unzip $file to $outputdir - error: $output");
 				$retCode = 3;
+			}
+			else {
+				my ($output, $status) = systemcall("chgrp -R --reference=$outputdir $outputdir/*");
+				if ($status) {
+					$log->error("Cannot chgrp -R contents of $outputdir - error: $output");
+					$retCode = 3;
+				}
 			}
 		}
 	}
@@ -360,7 +336,7 @@ sub doNativeHTML { my ($file, $outputdir) = @_ ;
 	}
 	# archive successfully unzipped
 	if (! $retCode) {
-		if (! -r "index.html") {
+		if (! -r 'index.html') {
 			$log->error("Cannot find index.html in $outputdir");
 			$retCode = 3;
 		}
@@ -380,7 +356,7 @@ sub doNativeSCARF { my ($file, $tool_name) = @_ ;
 	# constructs the arguments for the JSON parsing call
 	my $JSONname   = q{nativereport.json};
 	my $JSONPath = catfile($outputdir,$JSONname);
-	my $tool_name = checkToolStringSpace($tool_name);
+	$tool_name = checkToolStringSpace($tool_name);
 	my $toolListPath = catfile(getSwampDir(), 'etc', 'Scarf_ToolList.json');
 	my $parsingScript = catfile(getSwampDir(), 'bin', 'vmu_Scarf_CParsing');
 	my $reportTime = ctime();

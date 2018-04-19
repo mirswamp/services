@@ -15,6 +15,7 @@
 
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <libxml/xmlreader.h>
@@ -328,20 +329,17 @@ char *trim(char *str)
 {
     char *end;
     while ( isspace(*str) ) {
-	str++;
+		str++;
     }
-    if ( *str == 0 ) {
-    	char *newStr = malloc(1);
-	*newStr = '\0';
-	return newStr;
+    end = str + strlen(str);
+    while ( end > str && isspace(*(end - 1)) ) {
+		end--;
     }
-    end = str + strlen(str) - 1;
-    while ( end > str && isspace(*end) ) {
-	end--;
-    }
-    *(end+1) = '\0';
-    char *newStr = malloc(strlen(str) + 1);
-    strcpy(newStr, str);
+	int strLen = end - str;
+    char *newStr = malloc(strLen + 1);
+    memcpy(newStr, str, strLen);
+	newStr[strLen] = '\0';
+
     return newStr;
 }
 

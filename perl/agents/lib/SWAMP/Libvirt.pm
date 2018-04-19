@@ -11,8 +11,10 @@ use 5.010;
 use English '-no_match_vars';
 use Log::Log4perl;
 use Log::Log4perl::Level;
-use JSON qw(from_json);
-use SWAMP::vmu_Support qw(systemcall);
+use SWAMP::vmu_Support qw(
+	from_json_wrapper
+	systemcall
+);
 use XML::Parser;
 
 use parent qw(Exporter);
@@ -138,8 +140,8 @@ sub _queryNslookup {
 sub _queryLibvirtStatusFile {
     my ($vmhostname, $status_file_name) = @_;
     my ($status_file_contents, $exit_code) = systemcall(qq{cat $status_file_name});
-    my $data_ref = from_json($status_file_contents);
-
+    my $data_ref = from_json_wrapper($status_file_contents);
+	return (q{}, 0) if (! $data_ref);
     for my $vm (@{$data_ref}) {
         if ($vm->{'hostname'} eq $vmhostname) {
             return ($vm->{'ip-address'}, 1);

@@ -20,6 +20,7 @@ use RPC::XML;
 use RPC::XML::Client;
 use DBI;
 use Capture::Tiny qw(:all);
+use JSON qw(from_json);
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -28,11 +29,14 @@ BEGIN {
     @EXPORT_OK = qw(
 	  runScriptDetached
 	  getStandardParameters
+	  setHTCondorEnvironment
 	  identifyScript
 	  listDirectoryContents
+	  from_json_wrapper
 	  trim
       systemcall
 	  getSwampDir
+	  $global_swamp_config
       getSwampConfig
 	  isSwampInABox
       getLoggingConfigString
@@ -55,7 +59,6 @@ BEGIN {
 	  launchPadStart
 	  launchPadKill
 	  deleteJobDir
-	  createBOGfileName
 	  construct_vmhostname
 	  construct_vmdomainname
 	  create_empty_file
@@ -79,6 +82,8 @@ BEGIN {
     );
 }
 
+our $global_swamp_config;
+
 our $LAUNCHPAD_SUCCESS			= 0;
 our $LAUNCHPAD_BOG_ERROR		= 1;
 our $LAUNCHPAD_FILESYSTEM_ERROR	= 2;
@@ -90,11 +95,9 @@ our $RUNTYPE_ARUN	= 1;
 our $RUNTYPE_VRUN	= 2;
 our $RUNTYPE_MRUN	= 3;
 
-my $DEFAULT_CONFIG = getSwampDir() . '/etc/swamp.conf';
-# my $MASTER_IMAGE_PATH = '/var/lib/libvirt/images/';
+my $DEFAULT_CONFIG = catfile(getSwampDir(), 'etc', 'swamp.conf');
 my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
 
-my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 
@@ -102,14 +105,22 @@ sub getSwampDir {
 	return "/opt/swamp";
 }
 
-sub runScriptDetached {
-    chdir(q{/});
+sub runScriptDetached { my ($logfile) = @_ ;
+    if (! chdir(q{/})) {
+		$log->error("chdir to / failed: $OS_ERROR");
+		exit;
+	}
     if (! open(STDIN, '<', File::Spec->devnull)) {
         $log->error("prefork - open STDIN to /dev/null failed: $OS_ERROR");
         exit;
     }
-    if (! open(STDOUT, '>', File::Spec->devnull)) {
-        $log->error("prefork - open STDOUT to /dev/null failed: $OS_ERROR");
+	$logfile = catfile(getSwampDir(), 'log', 'swamperrors.log') if (! defined($logfile));;
+    if (! open(STDOUT, '>>', $logfile)) {
+        $log->error("prefork - open STDOUT to $logfile failed: $OS_ERROR");
+        exit;
+    }
+    if (! open(STDERR, ">&STDOUT")) {
+        $log->error("child - dup(open) STDERR to STDOUT failed:$OS_ERROR");
         exit;
     }
     my $pid = fork();
@@ -124,10 +135,6 @@ sub runScriptDetached {
     # child
     if (setsid() == -1) {
         $log->error("child - setsid failed: $OS_ERROR");
-        exit;
-    }
-    if (! open(STDERR, ">&STDOUT")) {
-        $log->error("child - open STDERR to STDOUT failed:$OS_ERROR");
         exit;
     }
 }
@@ -148,12 +155,35 @@ sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
 	return($owner, $uiddomain, $procid, $debug);
 }
 
+sub setHTCondorEnvironment {
+	$global_swamp_config ||= getSwampConfig();
+	my $htcondor_root = $global_swamp_config->get('htcondor_root');
+	if ($htcondor_root) {
+		my $oldpath = $ENV{'PATH'};
+		$ENV{'PATH'} = catdir($htcondor_root, 'bin') . ':' . catdir($htcondor_root, 'sbin');
+		$ENV{'PATH'} .= ':' . $oldpath if ($oldpath);
+		$ENV{'CONDOR_CONFIG'} = catdir($htcondor_root, 'etc', 'condor_config');
+		my $oldpythonpath = $ENV{'PYTHONPATH'};
+		$ENV{'PYTHONPATH'} = catdir($htcondor_root, 'lib', 'python');
+		$ENV{'PYTHONPATH'} .= ':' . $oldpythonpath if ($oldpythonpath);
+	}
+}
+
 sub identifyScript { my ($argv) = @_ ;
 	my $cwd = getcwd();
-	$log->info("$PROGRAM_NAME ($PID) argv: <", (join ' ', @$argv), ">");
-	$log->info("uid: $REAL_USER_ID euid: $EFFECTIVE_USER_ID gid: $REAL_GROUP_ID egid: $EFFECTIVE_GROUP_ID");
-	$log->info("cwd: $cwd");
-	$log->info("executable: $EXECUTABLE_NAME");
+	my $identity_string = "\n\t$PROGRAM_NAME ($PID)";
+	$identity_string   .= "\n\targv: <" . (join ' ', @$argv) . ">";
+	$identity_string   .= "\n\tuid: $REAL_USER_ID";
+	$identity_string   .= "\teuid: $EFFECTIVE_USER_ID";
+	$identity_string   .= "\tgid: $REAL_GROUP_ID";
+	$identity_string   .= "\tegid: $EFFECTIVE_GROUP_ID";
+	$identity_string   .= "\n\tcwd: $cwd";
+	$identity_string   .= "\n\texecutable: $EXECUTABLE_NAME";
+	$identity_string   .= "\n\tPATH: " . ($ENV{'PATH'} || 'undefined');
+	$identity_string   .= "\n\tCONDOR_CONFIG: " . ($ENV{'CONDOR_CONFIG'} || 'undefined');
+	$identity_string   .= "\n\tPYTHONPATH: " . ($ENV{'PYTHONPATH'} || 'undefined');
+	$identity_string   .= "\n";
+	$log->info($identity_string);
 }
 
 sub listDirectoryContents { my ($dir) = @_ ;
@@ -203,9 +233,23 @@ sub runType { my ($execrunuid) = @_ ;
 	return $RUNTYPE_ARUN;
 }
 
+sub from_json_wrapper { my ($json_string) = @_ ;
+	my $json;
+	eval {
+		$json = from_json($json_string);
+	};
+	if ($@) {
+		$log->warn('from_json_wrapper - string: ', defined($json_string) ? $json_string : 'undef', " error: $@");
+		return undef;
+	}
+	return $json;
+}
+
 sub trim { my ($string) = @_ ;
-    $string =~ s/^\s+//sxm;
-    $string =~ s/\s+$//sxm;
+	if (defined($string)) {
+    	$string =~ s/^\s+//sxm;
+    	$string =~ s/\s+$//sxm;
+	}
     return $string;
 }
 
@@ -255,7 +299,7 @@ sub getHTCondorJobId { my ($execrunuid) = @_ ;
 	if ($condor_manager && $submit_node) {
 		$cmd .= qq( -name $submit_node -pool $condor_manager);
 	}
-	$cmd .= qq( -constraint \'regexp(\"$execrunuid\", SWAMP_arun_execrunuid) || regexp(\"$execrunuid\", SWAMP_mrun_execrunuid) || regexp(\"$execrunuid\", SWAMP_vrun_execrunuid)\' -af Cmd SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid);
+	$cmd .= qq( -constraint \'regexp(\"$execrunuid\", SWAMP_arun_execrunuid) || regexp(\"$execrunuid\", SWAMP_mrun_execrunuid) || regexp(\"$execrunuid\", SWAMP_vrun_execrunuid)\' -af Cmd SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid SWAMP_viewerinstanceid);
 	my ($output, $status) = systemcall($cmd);
 	if ($status) {
 		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $status $output");
@@ -266,7 +310,7 @@ sub getHTCondorJobId { my ($execrunuid) = @_ ;
 		return;
 	}
 	chomp $output;
-	my ($type_clusterid_procid, $arun_execrunuid, $mrun_execrunuid, $vrun_execrunuid) = split ' ', $output;
+	my ($type_clusterid_procid, $arun_execrunuid, $mrun_execrunuid, $vrun_execrunuid, $viewer_instanceuid) = split ' ', $output;
 	my ($type, $clusterid, $procid) = split '-', $type_clusterid_procid;
 	$type =~ s/swamp/run/;
 	my $jobid = $clusterid . '.' . $procid;
@@ -280,7 +324,7 @@ sub getHTCondorJobId { my ($execrunuid) = @_ ;
 	elsif ($type eq 'vrun') {
 		$returned_execrunuid = $vrun_execrunuid;
 	}
-	return ($jobid, $type, $returned_execrunuid);
+	return ($jobid, $type, $returned_execrunuid, $viewer_instanceuid);
 }
 
 sub HTCondorJobStatus { my ($jobid) = @_ ;
@@ -335,10 +379,6 @@ sub create_empty_file { my ($filename) = @_ ;
 		return 1;
 	}
 	return 0;
-}
-
-sub createBOGfileName { my ($execrunid) = @_ ;
-    return "${execrunid}.bog";
 }
 
 sub getUUID {
@@ -548,8 +588,8 @@ sub _findConfig {
     elsif ($DEFAULT_CONFIG && -r $DEFAULT_CONFIG) {
         return $DEFAULT_CONFIG;
     }
-    elsif (-r getSwampDir() . '/etc/swamp.conf') {
-        return getSwampDir() . '/etc/swamp.conf';
+    elsif (-r catfile(getSwampDir(), 'etc', 'swamp.conf')) {
+        return catfile(getSwampDir(), 'etc', 'swamp.conf');
     }
     elsif (-r '../../deployment/swamp/config/swamp.conf') {
         return '../../deployment/swamp/config/swamp.conf';
@@ -578,8 +618,8 @@ sub _findLog4perlConfig {
     if ( -r 'log4perl.conf' ) {
         return 'log4perl.conf';
     }
-    elsif ( -r '/opt/swamp/etc/log4perl.conf' ) {
-        return '/opt/swamp/etc/log4perl.conf';
+    elsif ( -r catfile(getSwampDir(), 'etc', 'log4perl.conf') ) {
+        return catfile(getSwampDir(), 'etc', 'log4perl.conf');
     }
     elsif ( -r '../../deployment/swamp/config/log4perl.conf' ) {
         return '../../deployment/swamp/config/log4perl.conf';
@@ -645,24 +685,6 @@ sub systemcall { my ($command, $silent) = @_;
     return ($stdout, $exit);
 }
 
-sub oldsystemcall { my ($command, $silent) = @_;
-    my $handler = $SIG{'CHLD'};
-    local $SIG{'CHLD'} = 'DEFAULT';
-    my ($output, $status) = ($_ = qx{$command 2>&1}, $CHILD_ERROR >> 8);
-    local $SIG{'CHLD'} = $handler;
-    if ($status) {
-		if (! $silent) {
-        	my $msg = "$command failed with status $status";
-        	if (defined($output)) {
-            	$msg .= " output: ($output)";
-        	}
-			$log->error("systemcall - error: $msg");
-		}
-    }
-	$output = '' if (! defined($output));
-    return ($output, $status);
-}
-
 sub masternameToPlatform { my ($qcow_name) = @_ ;
 	if (! $qcow_name) {
 		$log->error("No qcow file name specified");
@@ -717,27 +739,6 @@ sub displaynameToMastername { my ($platform) = @_ ;
     return $imagename;
 }
 
-sub _handleRHEL6 { my ($opts) = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmhostname   = $opts->{'vmhostname'};
-    my $ostype   = 'unknown';
-    if ( $osimage =~ /rhel.*-6..-32/mxs ) {
-        $ostype = 'RHEL6.4 32 bit';
-    }
-    elsif ( $osimage =~ /rhel.*-6..-64/mxs || $osimage =~ /centos/mxs ) {
-        $ostype = 'RHEL6.4 64 bit';
-    }
-    print $script "write /etc/sysconfig/network \"HOSTNAME=$vmhostname\\nNETWORKING=yes\\n\"\n";
-    print $script
-"write /etc/sysconfig/network-scripts/ifcfg-eth0 \"DHCP_HOSTNAME=$vmhostname\\nBOOTPROTO=dhcp\\nONBOOT=yes\\nDEVICE=eth0\\nTYPE=Ethernet\\n\"\n";
-    print $script "rm-rf /etc/udev/rules.d/70-persistent-net.rules\n";
-    print $script "write /etc/rc3.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc3.d/S99runsh\n";
-    return $ostype;
-}
-
 sub _handleDebian { my ($opts) = @_;
     my $osimage  = $opts->{'osimage'};
     my $script   = $opts->{'script'};
@@ -764,28 +765,103 @@ sub _handleUbuntu { my ($opts) = @_;
     #Ubuntu hostname should not have FQDN
     print $script "write /etc/hostname \"${vmhostname}\\n\"\n";
     print $script "write /etc/rc.local $runshcmd\n";
-    print $script "chmod 0777 /etc/rc.local\n";
+    print $script "chmod 0755 /etc/rc.local\n";
     return $ostype;
 }
 
-sub _handleScientific { my ($opts) = @_;
+sub _handleEL {
+    my ($opts)     = @_;
     my $osimage  = $opts->{'osimage'};
     my $script   = $opts->{'script'};
     my $runshcmd = $opts->{'runcmd'};
     my $vmhostname   = $opts->{'vmhostname'};
-    my $ostype   = 'Scientific';
-    if ( $osimage =~ /scientific-5/mxs ) {
-        $ostype = 'Scientific 5.9';
+    my $ostype   = 'unknown';
+    my $osname   = 'unknown';
+    my $osver    = 'unknown';
+    my $osmaj    = 'unknown';
+    my $osmin    = 'unknown';
+    my $osbits   = 'unknown';
+
+    if ( ! ( $osimage =~ /([a-z]+)-([0-9.]+)-([36][24])/ ) ) {
+	printf("Can't parse '%s' for os info\n", $osimage);
+	consoleMsg("Can't parse '%s' for os info\n", $osimage);
+	return $ostype;
     }
-    elsif ( $osimage =~ /scientific-6/mxs ) {
-        $ostype = 'Scientific 6.4';
+
+    $osname = $1;
+    $osver = $2;
+    $osbits = $3;
+
+    $osmaj = $osver;
+    $osmaj =~ s/\.([0-9]+)//;
+    $osmin = $1;
+
+    if ($osname eq 'rhel') {
+	$ostype = 'RHEL';
     }
+    elsif ($osname eq 'centos') {
+	$ostype = 'CentOS';
+    }
+    elsif ($osname eq 'scientific') {
+	$ostype = 'Scientific';
+    }
+
+    $ostype .= " " . $osmaj;
+
+    if ($osbits == 64) {
+	$ostype .= " 64 bit"
+    }
+    elsif ($osbits == 32) {
+	$ostype .= " 32 bit"
+    }
+
     print $script "write /etc/sysconfig/network \"HOSTNAME=$vmhostname\\nNETWORKING=yes\\n\"\n";
-    print $script
-"write /etc/sysconfig/network-scripts/ifcfg-eth0 \"DHCP_HOSTNAME=$vmhostname\\nBOOTPROTO=dhcp\\nONBOOT=yes\\nDEVICE=eth0\\nTYPE=Ethernet\\n\"\n";
+
+    ## Setup the networking 
+    my $conf = <<"EOF";
+DHCP_HOSTNAME=$vmhostname
+BOOTPROTO=dhcp
+ONBOOT=yes
+DEVICE=eth0
+TYPE=Ethernet
+EOF
+
+    if (($osmaj == 6 && $osmin < 7) || ($osmaj >= 7)) {
+	$conf .= <<"EOF"
+NM_CONTROLLED=no
+EOF
+    }
+
+    if ($osmaj >= 7) {
+	$conf .= <<"EOF"
+HWADDR=`cat /sys/class/net/eth0/address`
+EOF
+    }
+
+    ## transmogrify and write out
+    $conf =~ s/\n/\\n/g ; 
+    $conf =~ s/"/\\"/g ; 
+
+    my $syscon_net_eth0 = "/etc/sysconfig/network-scripts/ifcfg-eth0";
+
+    print $script "write $syscon_net_eth0 \"$conf\"\n";
+
     print $script "rm-rf /etc/udev/rules.d/70-persistent-net.rules\n";
-    print $script "write /etc/rc3.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc3.d/S99runsh\n";
+
+    if ( $osmaj >= 7 ) {
+	print $script "write /etc/hostname \"${vmhostname}\\n\"\n";
+    }
+
+    my $rcfile;
+    if ($osmaj >= 7) {
+	$rcfile = "/etc/rc.d/rc.local";
+    }
+    else {
+	$rcfile = "/etc/rc3.d/S99runsh";
+    }
+
+    print $script "write $rcfile $runshcmd\n";
+    print $script "chmod 0755 $rcfile\n";
 
     return $ostype;
 }
@@ -798,7 +874,7 @@ sub _handleFedora { my ($opts) = @_;
     my $ostype   = 'Fedora';
     print $script "write /etc/hostname \"${vmhostname}.vm.cosalab.org\\n\"\n";
     print $script "write /etc/rc.d/rc.local $runshcmd\n";
-    print $script "chmod 0777 /etc/rc.d/rc.local\n";
+    print $script "chmod 0755 /etc/rc.d/rc.local\n";
 
     return $ostype;
 }
@@ -808,12 +884,12 @@ sub _handleWindows {
 }
 
 my %os_init = (
-    'rhel'			=> \&_handleRHEL6,
-    'centos'     	=> \&_handleRHEL6,
+    'rhel'			=> \&_handleEL,
+    'centos'     	=> \&_handleEL,
     'ubuntu'     	=> \&_handleUbuntu,
     'debian'     	=> \&_handleDebian,
     'fedora'     	=> \&_handleFedora,
-    'scientific' 	=> \&_handleScientific,
+    'scientific' 	=> \&_handleEL,
     'windows-7'  	=> \&_handleWindows,
 );
 
@@ -842,8 +918,8 @@ my $launchpadClient;
 
 sub _configureLaunchPadClient {
 	$global_swamp_config ||= getSwampConfig();
-	my $host = $global_swamp_config->get('agentMonitorHost');
-	my $port = $global_swamp_config->get('agentMonitorPort');
+	my $host = $global_swamp_config->get('launchPadHost');
+	my $port = $global_swamp_config->get('launchPadPort');
     my $uri = "http://$host:$port";
     undef $launchpadClient;
     return $uri;
@@ -862,9 +938,10 @@ sub launchPadStart { my ($options)    = @_ ;
 		$log->error("launchPadStart failed - error: ", sub { use Data::Dumper; Dumper($result->{'error'}); });
 		return $LAUNCHPAD_FATAL_ERROR;
 	}
-	my $status = $LAUNCHPAD_FATAL_ERROR;
-	$status = $result->{'value'} if (defined($result->{'value'}));
-	return $status;
+	if (defined($result->{'value'})) {
+		return $result->{'value'};
+	}
+	return $LAUNCHPAD_FATAL_ERROR;
 }
 
 #########################
@@ -895,7 +972,7 @@ my $agentClient;
 sub _configureAgentClient {
 	$global_swamp_config ||= getSwampConfig();
 	my $host = $global_swamp_config->get('agentMonitorHost');
-	my $port = $global_swamp_config->get('agentMonitorJobPort');
+	my $port = $global_swamp_config->get('agentMonitorPort');
     my $uri = "http://$host:$port";
     undef $agentClient;
     return $uri;
@@ -905,13 +982,13 @@ sub _configureAgentClient {
 #	Database Connectivity	#
 #############################
 
-sub database_connect {
+sub database_connect { my ($user, $password) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
 	my $dsnHost = $global_swamp_config->get('dbPerlDsnHost');
 	my $dsnPort = $global_swamp_config->get('dbPerlDsnPort');
 	my $dsn = "DBI:mysql:host=$dsnHost;port=$dsnPort";
-	my $user = $global_swamp_config->get('dbPerlUser');
-	my $password = $global_swamp_config->get('dbPerlPass');
+	$user ||= $global_swamp_config->get('dbPerlUser');
+	$password ||= $global_swamp_config->get('dbPerlPass');
 	my $dbh = DBI->connect($dsn, $user, $password, {PrintError => 0, RaiseError => 0});
 	if ($DBI::err) {
 		$log->error("database_connect failed: $DBI::err error: ", $DBI::errstr);
@@ -920,6 +997,8 @@ sub database_connect {
 }
 
 sub database_disconnect { my ($dbh) = @_ ;
+	# my ($package, $filename, $line) = caller();
+	# print "database_disconnect: $package $filename $line\n";
 	$dbh->disconnect();
 }
 

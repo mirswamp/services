@@ -9,13 +9,13 @@ use 5.014;
 use utf8;
 use strict;
 use warnings;
-use JSON qw(to_json from_json);
+use JSON qw(to_json);
 use Log::Log4perl;
 use POSIX qw(strftime);
 use SWAMP::vmu_Support qw(
+	from_json_wrapper
 	systemcall
 	isSwampInABox
-	getSwampConfig
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	needsFloodlightAccessTool
@@ -48,7 +48,8 @@ sub fetch_switches { my ($floodlight_url) = @_ ;
     	$log->error("Unable to acquire list of floodlight switches from $address: $status [$output]");
 		return $status;
 	}
-	my $switches = from_json($output);
+	my $switches = from_json_wrapper($output);
+	$status = 1 if (! defined($switches));
 	return ($status, $switches);
 }
 
@@ -60,7 +61,8 @@ sub fetch_flows { my ($floodlight_url) = @_ ;
     	$log->error("Unable to acquire list of floodlight flows from $address: $status [$output]");
 		return $status;
 	}
-    my $flows = from_json($output);
+    my $flows = from_json_wrapper($output);
+	$status = 1 if (! defined($flows));
 	return ($status, $flows);
 }
 
@@ -78,8 +80,8 @@ sub all_off { my ($floodlight_url, $floodlight_flowprefix) = @_ ;
 	my ($status, $ref) = fetch_flows($floodlight_url);
 	return 0 if ($status);
     my $nRemoved = 0;
-    foreach my $key ( keys $ref ) {
-        foreach my $rulename ( keys $ref->{$key} ) {
+    foreach my $key ( keys %{$ref} ) {
+        foreach my $rulename ( keys %{$ref->{$key}} ) {
             if ($rulename =~ /^$floodlight_flowprefix/sxm) {
 				($status, my $output) = flow_off_by_rulename($floodlight_url, $rulename);
                 if (! $status) {

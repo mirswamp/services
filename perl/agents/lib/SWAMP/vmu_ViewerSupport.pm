@@ -11,10 +11,12 @@ use RPC::XML;
 use RPC::XML::Client;
 use Log::Log4perl;
 use File::Path qw(make_path);
-use File::Copy qw(cp);
+use File::Copy qw(copy);
 use SWAMP::vmu_Support qw(
+	isSwampInABox
 	systemcall 
 	getSwampDir 
+	$global_swamp_config
 	getSwampConfig 
 	checksumFile 
 	rpccall
@@ -31,11 +33,12 @@ BEGIN {
 		$VIEWER_STATE_LAUNCHING
 		$VIEWER_STATE_READY
 		$VIEWER_STATE_STOPPING
-		$VIEWER_STATE_JOBDIR_FAILED
 		$VIEWER_STATE_SHUTDOWN
+		$VIEWER_STATE_ERROR
 		$VIEWER_STATE_TERMINATING
 		$VIEWER_STATE_TERMINATED
 		$VIEWER_STATE_TERMINATE_FAILED
+		needToLaunch
 		createrunscript
 		copyvruninputs
 		saveViewerDatabase
@@ -45,7 +48,7 @@ BEGIN {
     );
 }
 
-my $global_swamp_config;
+# my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 
@@ -53,15 +56,28 @@ my $tracelog = Log::Log4perl->get_logger('runtrace');
 #	HTCondor ClassAd	#
 #########################
 
+# terminal states
 our $VIEWER_STATE_NO_RECORD			= 0;
-our $VIEWER_STATE_LAUNCHING 		= 1;
 our $VIEWER_STATE_READY				= 2;
-our $VIEWER_STATE_STOPPING			= -1;
-our $VIEWER_STATE_JOBDIR_FAILED		= -2;
 our $VIEWER_STATE_SHUTDOWN			= -3;
-our $VIEWER_STATE_TERMINATING		= -4;
-our $VIEWER_STATE_TERMINATED		= -5;
-our $VIEWER_STATE_TERMINATE_FAILED	= -6;
+our $VIEWER_STATE_ERROR				= -5;
+our $VIEWER_STATE_TERMINATED		= -7;
+our $VIEWER_STATE_TERMINATE_FAILED	= -8;
+
+# progress states
+our $VIEWER_STATE_LAUNCHING 		= 1;
+our $VIEWER_STATE_STOPPING			= -1;
+our $VIEWER_STATE_TERMINATING		= -6;
+
+sub needToLaunch { my ($state) = @_ ;
+	# need to launch viewer vm if state is terminal and not ready
+	return 0 if ($state == $VIEWER_STATE_READY);
+	return 0 if ($state == $VIEWER_STATE_LAUNCHING || 
+		$state == $VIEWER_STATE_STOPPING ||
+		$state == $VIEWER_STATE_TERMINATING
+	);
+	return 1;
+}
 
 sub updateClassAdViewerStatus { my ($execrunuid, $state, $status, $options) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
@@ -76,7 +92,11 @@ sub updateClassAdViewerStatus { my ($execrunuid, $state, $status, $options) = @_
 	my $projectid = $options->{'projectid'} || 'null';
 	my $viewer_instance_uuid = $options->{'viewer_uuid'} || 'null';
 	my $viewer_url_uuid = $options->{'urluuid'} || 'null';
-    my ($output, $stat) = systemcall("condor_advertise -pool $HTCONDOR_COLLECTOR_HOST UPDATE_AD_GENERIC - <<'EOF'
+	my $poolarg = q();
+	if (! isSwampInABox($global_swamp_config)) {
+		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
+	}
+    my ($output, $stat) = systemcall("condor_advertise $poolarg UPDATE_AD_GENERIC - <<'EOF'
 MyType=\"Generic\"
 Name=\"$execrunuid\"
 SWAMP_vmu_viewer_vmhostname=\"$vmhostname\"
@@ -96,10 +116,14 @@ EOF
 	}
 }
 
-sub getViewerStateFromClassAd { my ($project_name, $viewer_name) = @_ ;
+sub getViewerStateFromClassAd { my ($project_uuid, $viewer_name) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
     my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
-    my $command = qq{condor_status -pool $HTCONDOR_COLLECTOR_HOST -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_user_uuid SWAMP_vmu_viewer_projectid SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
+	my $poolarg = q();
+	if (! isSwampInABox($global_swamp_config)) {
+		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
+	}
+    my $command = qq{condor_status $poolarg -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_user_uuid SWAMP_vmu_viewer_projectid SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
     my ($output, $status) = systemcall($command);
     if ($status) { 
         my $error_message = "condor_status $HTCONDOR_COLLECTOR_HOST failed - status: $status output: $output";
@@ -109,7 +133,7 @@ sub getViewerStateFromClassAd { my ($project_name, $viewer_name) = @_ ;
     if (! $output) {
         return {'state' => $VIEWER_STATE_NO_RECORD};
     }
-	$log->debug("project_name: $project_name viewer_name: $viewer_name output: $output");
+	$log->debug("project_uuid: $project_uuid viewer_name: $viewer_name output: $output");
 	my @lines = split "\n", $output;
 	foreach my $line (@lines) {
     	my @parts = split ',', $line;
@@ -117,7 +141,7 @@ sub getViewerStateFromClassAd { my ($project_name, $viewer_name) = @_ ;
     	s/^\s+//g for @parts;
     	s/\s+$//g for @parts;
     	my ($execrunuid, $state, $vstatus, $viewer, $vmip, $apikey, $user_uuid, $projectid, $viewer_instance_uuid, $viewer_url_uuid) = @parts;
-    	if (($projectid eq $project_name) && ($viewer eq $viewer_name)) {
+    	if (($projectid eq $project_uuid) && ($viewer eq $viewer_name)) {
 			if ($vstatus eq 'Viewer is up') {
         		return {
             		'state'     => $state,
@@ -151,6 +175,7 @@ sub _set_var { my ($name, $value, $file) = @_ ;
 #	swamp-shutdown-service
 
 sub createrunscript { my ($bogref, $dest) = @_ ;
+	$global_swamp_config ||= getSwampConfig();
     my $ret    = 1;
 
     my $basedir = getSwampDir();
@@ -164,7 +189,7 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 		$vrunsh = "$basedir/thirdparty/threadfix/swamp/vrun.sh";
 	}
 	my $inputvrunsh = "${dest}/run.sh";
-	my $checktimeout_frequency = getSwampConfig()->get('vruntimeout_frequency') // '10';
+	my $checktimeout_frequency = $global_swamp_config->get('vruntimeout_frequency') // '10';
 	$ret = 0 if (! _set_var('CHECKTIMEOUT_FREQUENCY', $checktimeout_frequency, $inputvrunsh));
 	$ret = 0 if (! _set_var('PROJECT', $bogref->{'urluuid'}, $inputvrunsh));
 	if ($bogref->{'viewer'} eq 'ThreadFix') {
@@ -183,9 +208,9 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 	my $checktimeout = "$basedir/thirdparty/common/vrunchecktimeout";
 	my $inputchecktimeout = "${dest}/checktimeout";
 	$ret = 0 if (! _set_var('VIEWER', $bogref->{'viewer'}, $inputchecktimeout));
-	my $checktimeout_duration = getSwampConfig()->get('vruntimeout_duration') // '28800';
+	my $checktimeout_duration = $global_swamp_config->get('vruntimeout_duration') // '28800';
 	$ret = 0 if (! _set_var('CHECKTIMEOUT_DURATION', $checktimeout_duration, $inputchecktimeout));
-	my $checktimeout_lastlog = getSwampConfig()->get('vruntimeout_lastlog') // '3600';
+	my $checktimeout_lastlog = $global_swamp_config->get('vruntimeout_lastlog') // '3600';
 	$ret = 0 if (! _set_var('CHECKTIMEOUT_LASTLOG', $checktimeout_lastlog, $inputchecktimeout));
     ($output, $status) = systemcall("cat $checktimeout >> $inputchecktimeout");
 	if ($status) {
@@ -195,14 +220,14 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 
 	# copy checktimeout.pl to vm input directory
 	my $file = "$basedir/thirdparty/common/checktimeout.pl";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	
 	# copy swamp-shutdown-service to vm input directory
 	$file = "$basedir/thirdparty/common/swamp-shutdown-service";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
@@ -231,31 +256,31 @@ sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
 	my $basedir = getSwampDir();
 	# copy codedx.war to vm input directory
 	my $file = "$basedir/thirdparty/codedx/vendor/codedx.war";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy empty codedx database sql script to vm input directory
 	$file = "$basedir/thirdparty/codedx/swamp/emptydb-codedx.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy empty mysql database sql script to vm input directory
 	$file = "$basedir/thirdparty/codedx/swamp/emptydb-mysql-codedx.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy flushprivs.sql to vm input directory
 	$file = "$basedir/thirdparty/common/flushprivs.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy resetdb-codedx.sql to vm input directory
 	$file = "$basedir/thirdparty/codedx/swamp/resetdb-codedx.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
@@ -273,7 +298,7 @@ sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
 	
 	# copy logback.xml to vm input directory
 	$file = "$basedir/thirdparty/codedx/swamp/logback.xml";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
@@ -281,7 +306,7 @@ sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
 	# set swa.admin.system-key in codedx.props
 	my $codedxprops = "$basedir/thirdparty/codedx/swamp/codedx.props";
 	my $inputcodedxprops = "${dest}/codedx.props";
-	if (! cp($codedxprops, $inputcodedxprops)) {
+	if (! copy($codedxprops, $inputcodedxprops)) {
 		$log->error("Cannot copy $codedxprops to $inputcodedxprops $OS_ERROR");
 		$ret = 0;
 	}
@@ -293,7 +318,7 @@ sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
 			$log->error("file: $bogref->{'db_path'} not found");
 		}
 		else {
-        	if (cp($bogref->{'db_path'}, $dest)) {
+        	if (copy($bogref->{'db_path'}, $dest)) {
 				$log->info("$bogref->{'db_path'} to $dest");
         	}
 			else {
@@ -320,31 +345,31 @@ sub _copyvruninputs_threadfix { my ($bogref, $dest) = @_ ;
 	my $basedir = getSwampDir();
 	# copy threadfix.war to vm input directory
 	my $file = "$basedir/thirdparty/threadfix/vendor/threadfix.war";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy empty threadfix database sql script to vm input directory
 	$file = "$basedir/thirdparty/threadfix/swamp/emptydb-threadfix.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy empty mysql database sql script to vm input directory
 	$file = "$basedir/thirdparty/threadfix/swamp/emptydb-mysql-threadfix.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy flushprivs.sql to vm input directory
 	$file = "$basedir/thirdparty/common/flushprivs.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	# copy resetdb-threadfix.sql to vm input directory
 	$file = "$basedir/thirdparty/threadfix/swamp/resetdb-threadfix.sql";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
@@ -362,7 +387,7 @@ sub _copyvruninputs_threadfix { my ($bogref, $dest) = @_ ;
 	
 	# copy threadfix.jdbc.properties to vm input directory
 	$file = "$basedir/thirdparty/threadfix/swamp/threadfix.jdbc.properties";
-	if (! cp($file, $dest)) {
+	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
@@ -406,7 +431,7 @@ my $agentClient;
 sub _configureAgentClient {
 	$global_swamp_config ||= getSwampConfig();
 	my $host = $global_swamp_config->get('agentMonitorHost');
-	my $port = $global_swamp_config->get('agentMonitorJobPort');
+	my $port = $global_swamp_config->get('agentMonitorPort');
     my $uri = "http://$host:$port";
     undef $agentClient;
     return $uri;
@@ -442,7 +467,7 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder, $saverunname) 
 
 	if ($saverunname) {
 		my $saverunfile = "$outputfolder/$saverunname";
-    	if (-r $saverunfile && ! cp($saverunfile, "$basedir/log/${vmhostname}_${saverunname}")) {
+    	if (-r $saverunfile && ! copy($saverunfile, "$basedir/log/${vmhostname}_${saverunname}")) {
         	$log->error("Cannot copy $saverunfile to $$basedir/log/${vmhostname}_${saverunname} : $OS_ERROR");
     	}
 	}
@@ -452,7 +477,7 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder, $saverunname) 
 	}
     my $sharedfolder = $bogref->{'resultsfolder'} . '/' . $bogref->{'viewer_uuid'};
     make_path($sharedfolder);
-    if (! cp($savedbfile, $sharedfolder)) {
+    if (! copy($savedbfile, $sharedfolder)) {
         $log->error("Cannot copy $savedbfile to $sharedfolder : $OS_ERROR");
         return 0;
     }

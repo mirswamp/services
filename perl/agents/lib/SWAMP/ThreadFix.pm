@@ -12,7 +12,6 @@ use English '-no_match_vars';
 use URI::Escape qw(uri_escape);
 use Log::Log4perl;
 use Log::Log4perl::Level;
-use JSON qw(from_json);
 use SWAMP::vmu_Support qw(systemcall);
 
 use parent qw(Exporter);
@@ -35,7 +34,8 @@ sub _create_team { my ($host, $project, $apikey, $teamname) = @_ ;
     	return;
     }
     my $teamid;
-    my $object_result = from_json($output);
+    my $object_result = from_json_wrapper($output);
+	return if (! defined($object_result));
     if ($object_result->{'success'}) {
 		$teamid = $object_result->{'object'}->{'id'};
 		$log->trace("_create_team Lookup for: $project $apikey $teamname teamid: $teamid");
@@ -48,7 +48,8 @@ sub _create_team { my ($host, $project, $apikey, $teamname) = @_ ;
 	    $log->trace("_create_team New Team failed for: $project $apikey $teamname output: <$output>");
     	    return;
     	}
-    	$object_result = from_json($output);
+    	$object_result = from_json_wrapper($output);
+		return if (! defined($object_result));
     	if ($object_result->{'success'}) {
 	    $teamid = $object_result->{'object'}->{'id'};
     	}
@@ -69,7 +70,8 @@ sub _create_application { my ($host, $project, $apikey, $uri_package, $teamname,
 		return;
 	}
 	my $applicationid;
-	my $object_result = from_json($output);
+	my $object_result = from_json_wrapper($output);
+	return if (! defined($object_result));
 	if ($object_result->{'success'}) {
 		$applicationid = $object_result->{'object'}->{'id'};
 		$log->trace("_create_application Lookup for: $project $apikey $uri_package $teamname $teamid applicationid: $applicationid");
@@ -82,7 +84,8 @@ sub _create_application { my ($host, $project, $apikey, $uri_package, $teamname,
 			$log->trace("_create_application Create Application failed for: $project $apikey $uri_package $teamname $teamid output: <$output>");
     		return;
     	}
-    	$object_result = from_json($output);
+    	$object_result = from_json_wrapper($output);
+		return if (! defined($object_result));
     	if ($object_result->{'success'}) {
 			my $applicationteamid = $object_result->{'object'}->{'organization'}->{'id'};
 			if ($applicationteamid == $teamid) {
