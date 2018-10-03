@@ -29,6 +29,7 @@ use SWAMP::vmu_Support qw(
 	loadProperties 
 	getLoggingConfigString 
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	buildExecRunAppenderLogFileName
 	systemcall 
@@ -36,6 +37,8 @@ use SWAMP::vmu_Support qw(
 	insertIntoInit
 	construct_vmhostname
 	create_empty_file
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_LAUNCHING
@@ -44,14 +47,14 @@ use SWAMP::vmu_ViewerSupport qw(
 	updateClassAdViewerStatus
 );
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -161,10 +164,10 @@ sub exit_prescript_with_error {
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit_prescript_with_error();
@@ -180,6 +183,8 @@ $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 listDirectoryContents();
+
+my $event_start = timetrace_event($execrunuid, 'viewer', 'prescript start');
 
 my $inputfolder = q{input};
 mkdir($inputfolder);
@@ -213,9 +218,8 @@ if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
 	exit_prescript_with_error();
 }
 
-my $eventsfolder = q{events};
-mkdir($eventsfolder);
-create_empty_file(catfile($eventsfolder, 'JobVMEvents.log'));
+create_empty_file('JobVMEvents.log');
+create_empty_file('vmip.txt');
 $log->info("Starting virtual machine for: $execrunuid $imagename $vmhostname");
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, "Starting VM", $bogref);
 
@@ -229,8 +233,9 @@ else {
 	# Child
 	$debug ||= '';
 	my $script = catfile(getSwampDir(), 'bin', 'vmu_MonitorViewer.pl');
-	exec("/opt/perl5/perls/perl-5.18.1/bin/perl $script $execrunuid $owner $uiddomain $clusterid $procid $debug");
+	exec("/opt/perl5/perls/perl-5.18.1/bin/perl $script $execrunuid $owner $uiddomain $clusterid $procid $numjobstarts $debug");
 }
 
 $log->info("PreViewer: $execrunuid Exit");
+timetrace_elapsed($execrunuid, 'viewer', 'prescript', $event_start);
 exit(0);

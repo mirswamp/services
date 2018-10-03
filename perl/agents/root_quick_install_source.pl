@@ -136,7 +136,7 @@ usage() if ($haveargs && ! $foundargs);
 my @binfiles = glob("vmu_*.pl");
 my @launchfiles = glob("vmu_*_launcher");
 my @libfiles = glob("lib/SWAMP/*.pm");
-my @otherfiles = qw(vmu_swamp_monitor);
+my @otherfiles = qw(arun.sh vmu_swamp_monitor);
 
 my $bin_dst = '/opt/swamp/bin';
 my $lib_dst = '/opt/swamp/perl5/SWAMP';
@@ -145,6 +145,8 @@ my $lib_dst = '/opt/swamp/perl5/SWAMP';
 handle_files($bin_dst, [@binfiles, @launchfiles, @otherfiles]);
 # lib files
 handle_files($lib_dst, [@libfiles]);
+# viewer files
+handle_file('../../../deployment/SecureDecisions/vrun.sh', '/opt/swamp/thirdparty/codedx/swamp/vrun.sh');
 # swamp service
 handle_file('../../../deployment/swamp/scripts/swampd-common', '/etc/init.d/swamp');
 # condor submit

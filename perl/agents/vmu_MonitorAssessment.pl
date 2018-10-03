@@ -23,6 +23,7 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getSwampDir
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	buildExecRunAppenderLogFileName
 	getLoggingConfigString
@@ -30,24 +31,26 @@ use SWAMP::vmu_Support qw(
 	loadProperties
 	construct_vmhostname
 	construct_vmdomainname
-	deleteJobDir
+	getVMIPAddress
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateExecutionResults
 	updateClassAdAssessmentStatus
 );
-use SWAMP::Libvirt qw(getVMIPAddress);
 use SWAMP::FloodlightAccess qw(
 	openFloodlightAccess
 	closeFloodlightAccess
 );
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
-my $events_file = catfile('events', 'JobVMEvents.log');
+my $events_file = 'JobVMEvents.log';
+my $vmip_file = 'vmip.txt';
 my $MAX_OPEN_ATTEMPTS = 5;
 my $RESET_WAIT_DURATION = 60 * 15; # seconds
 my $RESET_MAX_ATTEMPTS = 1;
@@ -55,16 +58,17 @@ my $done_int = 0;
 my $done_term = 0;
 
 my %status_seen = ();
+my $INITIAL_STATUS	= 'RUNSHSTART';
 my $FINAL_STATUS	= 'ENDASSESSMENT';
 
 my %status_messages = (
-	'RUNSHSTART'		=> 'Starting assessment run script',
+	$INITIAL_STATUS		=> 'Starting assessment run script',
 	'BEGINASSESSMENT'	=> 'Performing assessment',
 	$FINAL_STATUS		=> 'Shutting down the VM',
 );
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -111,16 +115,7 @@ sub get_next_status { my ($file, $final_status_seen) = @_ ;
 	return ($open_attempts, '');
 }
 
-sub dump_vm_xml { my ($vmdomainname) = @_ ;
-	my $vmxml = $vmdomainname . '_dump.xml';
-	$log->info("virsh dumpxml $vmdomainname > $vmxml");
-	my ($output, $status) = systemcall("sudo virsh dumpxml $vmdomainname > $vmxml");
-	if ($status) {
-		$log->error("virsh dumpxml $vmdomainname failed: <$output>");
-	}
-}
-			
-sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname) = @_ ;
+sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix) = @_ ;
 	my $time_start = time();
 	my $sleep_time = 5; # seconds
 	my $update_interval = 60 * 10; # seconds
@@ -143,15 +138,12 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 		}
 		# any current status
 		if ($mstatus && exists($status_messages{$mstatus})) {
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $status_messages{$mstatus});
+			my $job_status_message = $status_messages{$mstatus} . $job_status_message_suffix;
+			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 			if ($mstatus eq $FINAL_STATUS) {
 				$final_status_seen = 1;
 				# void the vm_password field in the database to turn off ssh access button
 				updateExecutionResults($execrunuid, {'vm_password' => ''});
-			}
-			# dump vmdomainname xml on first status
-			if (! $any_status_seen) {
-				dump_vm_xml($vmdomainname);
 			}
 			$any_status_seen = 1;
 			$poll_count = 0;
@@ -160,7 +152,8 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 		# no current status - have prior status
 		elsif ($last_status) {
 			if ($poll_count >= ($update_interval / $sleep_time)) {
-				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $status_messages{$last_status});
+				my $job_status_message = $status_messages{$last_status} . $job_status_message_suffix;
+				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 				$poll_count = 0;
 			}
 		}
@@ -178,12 +171,12 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 				my $seconds = $time_now - $time_start;
 				my $date_now = strftime("%Y-%m-%d %H:%M:%S", localtime($time_now));
 				my $date_start = strftime("%Y-%m-%d %H:%M:%S", localtime($time_start));
-				my $message = "VM Failed - ";
+				my $job_status_message = "VM Failed - ";
 				if ($any_status_seen) {
-					$message = "VM Started and Failed - ";
+					$job_status_message = "VM Started and Failed - ";
 				}
-				$message .= "$date_start $date_now ($seconds)";
-				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+				$job_status_message .= "$date_start $date_now ($seconds)" . $job_status_message_suffix;
+				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 				$poll_count = 0;
 			}
 			# check for reset condition and attempt to reset
@@ -225,14 +218,54 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 	updateExecutionResults($execrunuid, {'vm_password' => ''});
 }
 
+sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix) = @_ ;
+	my $event_start = timetrace_event($execrunuid, 'assessment', 'wait initial start');
+	my $vmip_lookup_assessment_delay = $global_swamp_config->get('vmip_lookup_assessment_delay') || 600;
+	# open vmip file and read vm ip address
+	my $mstatus;
+	for (my $i = 0; $i < $vmip_lookup_assessment_delay; $i++) {
+		return if ($done_term);
+		(my $open_attempts, $mstatus) = get_next_status($events_file, 0);
+		# check for termination
+		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
+			$log->error("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
+			timetrace_elapsed($execrunuid, 'assessment', 'wait initial max', $event_start);
+			return;
+		}
+		last if ($mstatus eq $INITIAL_STATUS);
+		sleep 1;
+	}
+	if ($mstatus ne $INITIAL_STATUS) {
+		$log->error("$events_file initial status not found");
+		timetrace_elapsed($execrunuid, 'assessment', 'wait initial not seen', $event_start);
+		return;
+	}
+	# open Floodlight flow rule for licensed tools
+	my $message = 'Obtaining VM IP Address' . $job_status_message_suffix;
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	timetrace_elapsed($execrunuid, 'assessment', 'wait initial', $event_start);
+	$event_start = timetrace_event($execrunuid, 'assessment', 'get vmip start');
+	my $vmip = getVMIPAddress($vmhostname);
+	(my $license_result, $vmip) = openFloodlightAccess($global_swamp_config, $bogref, $vmhostname, $vmip);
+	if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
+		$log->info("Obtained vmip: $vmip" . $job_status_message_suffix);
+	}
+	else {
+		$log->error("Failed to obtain vmip: $vmip" . $job_status_message_suffix);
+	}
+	updateExecutionResults($execrunuid, {'vm_ip_address' => "$vmip"});
+	timetrace_elapsed($execrunuid, 'assessment', 'get vmip', $event_start);
+	return $license_result;
+}
+
 ########
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
@@ -266,51 +299,32 @@ $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 
+my $event_start = timetrace_event($execrunuid, 'assessment', 'monitor start');
+
 my %bog;
 my $bogfile = $execrunuid . '.bog';
 loadProperties($bogfile, \%bog);
 my $user_uuid = $bog{'userid'} || 'null';
 my $projectid = $bog{'projectid'} || 'null';
 
-# open Floodlight flow rule for licensed tools
-my $message = 'Obtaining VM IP Address';
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-my $vmip_lookup_delay = $config->get('vmip_lookup_delay') || 10;
-sleep $vmip_lookup_delay;
-my $vmip = getVMIPAddress($config, $vmhostname);
-(my $license_result, $vmip) = openFloodlightAccess($config, \%bog, $vmhostname, $vmip);
-if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
-	$message = 'Obtained vmip';
-	$log->info($message . ": $vmip");
+my $job_status_message_suffix = '';
+if ($numjobstarts > 0) {
+	my $htcondor_assessment_max_retries = $global_swamp_config->get('htcondor_assessment_max_retries') || 3;
+	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
 }
-else {
-	$message = 'Failed to obtain vmip';
-	$log->error($message . ": $vmip");
-}
-updateExecutionResults($execrunuid, {'status' => $message, 'vm_ip_address' => "$vmip"});
+
+# look for INITIAL_STATUS and then obtain vm ip address and open floodlight flow rule
+my $license_result = obtain_vmip($execrunuid, \%bog, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix);
 
 # -1 vm returns status but not final
 #  0 vm returns no status
 #  1 vm returns final status
-my $status = monitor($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname);
+my $status = monitor($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix);
 $log->info("MonitorAssessment: loop returns status: $status");
 
 # close Floodlight flow rule for licensed tools
-closeFloodlightAccess($config, \%bog, $license_result);
-
-# signal delete jobdir on sumbit node iff some status returned from vm
-if ($status) {
-	$status = deleteJobDir($execrunuid);
-	if ($status) {
-		$log->info("MonitorAssessment: - job directory for: $execrunuid successfully deleted");
-	}
-	else {
-		$log->error("MonitorAssessment - job directory for: $execrunuid deletion failed");
-	}
-}
-else {
-	$log->info("MonitorAssessment: - job directory for: $execrunuid deletion skipped");
-}
+closeFloodlightAccess($global_swamp_config, \%bog, $license_result);
 
 $log->info("MonitorAssessment: $execrunuid Exit");
+timetrace_elapsed($execrunuid, 'assessment', 'monitor', $event_start);
 exit(0);

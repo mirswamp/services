@@ -16,6 +16,7 @@ use SWAMP::vmu_Support qw(
 	from_json_wrapper
 	systemcall
 	isSwampInABox
+	getVMIPAddress
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	needsFloodlightAccessTool
@@ -26,7 +27,6 @@ use SWAMP::vmu_AssessmentSupport qw(
 	isSynopsysTool
 	isOWASPDCTool
 );
-use SWAMP::Libvirt qw(getVMIPAddress);
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -91,19 +91,6 @@ sub all_off { my ($floodlight_url, $floodlight_flowprefix) = @_ ;
         }
     }
     return $nRemoved;
-}
-
-sub getvmmacaddr { my ($vmdomainname) = @_ ;
-	my ($vmmac, $status) = systemcall(qq{virsh dumpxml $vmdomainname | grep 'mac address'});
-	if ($status) {
-		$log->error("Unable to get MAC address of $vmdomainname $status [$vmmac]");
-		return q{};
-	}
-	if ($vmmac =~ m/((?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})/isxm) {
-		$vmmac = $1;
-	}
-	$log->info("MAC address of $vmdomainname [$vmmac]");
-	return $vmmac;
 }
 
 sub build_rulename { my ($floodlight_flowprefix, $time, $vmhostname, $idx, $port) = @_ ;
@@ -228,7 +215,7 @@ sub openFloodlightAccess { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
 
         if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
             # second chance to get vmip on previous error
-            $vmip = getVMIPAddress($config, $vmhostname);
+            $vmip = getVMIPAddress($vmhostname);
             if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
                 $log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
                 return (undef, $vmip);
@@ -261,7 +248,7 @@ sub openFloodlightAccess { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
         my $vmnetdomain = $config->get('vmnetdomain');
         $log->trace("VM: $nameserver $vmnetdomain ");
 
-        $vmip = getVMIPAddress($config, $vmhostname);
+        $vmip = getVMIPAddress($vmhostname);
         if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
             $log->error("Unable to obtain vmip for $vmhostname - error: $vmip");
             return (undef, $vmip);

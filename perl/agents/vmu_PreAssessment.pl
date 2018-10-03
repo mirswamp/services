@@ -31,6 +31,7 @@ use SWAMP::vmu_Support qw(
 	loadProperties
 	getLoggingConfigString
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	buildExecRunAppenderLogFileName
 	systemcall
@@ -38,6 +39,8 @@ use SWAMP::vmu_Support qw(
 	displaynameToMastername
 	construct_vmhostname
 	create_empty_file
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	identifyAssessment
@@ -49,9 +52,9 @@ use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
 );
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
 my $builderUser;
@@ -59,7 +62,7 @@ my $builderPassword;
 my $hostname = hostname();
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -180,10 +183,10 @@ sub exit_prescript_with_error {
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit_prescript_with_error();
@@ -200,12 +203,20 @@ $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 listDirectoryContents();
 
+my $event_start = timetrace_event($execrunuid, 'assessment', 'prescript start');
+
 my $inputfolder = q{input};
 mkdir($inputfolder);
 my $outputfolder = q{output};
 mkdir($outputfolder);
 
-my $error_message = 'Unable to Start VM';
+my $job_status_message_suffix = '';
+if ($numjobstarts > 0) {
+	my $htcondor_assessment_max_retries = $global_swamp_config->get('htcondor_assessment_max_retries') || 3;
+	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
+}
+
+my $error_message = 'Unable to Start VM' . $job_status_message_suffix;
 my $bogref = extractBogFile($execrunuid, $outputfolder);
 if (! $bogref) {
 	$log->error("extractBogFile failed for: $execrunuid");
@@ -235,13 +246,13 @@ if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
 	exit_prescript_with_error();
 }
 
-my $eventsfolder = q{events};
-mkdir($eventsfolder);
-create_empty_file(catfile($eventsfolder, 'JobVMEvents.log'));
+create_empty_file('JobVMEvents.log');
+create_empty_file('vmip.txt');
 $log->info("Starting virtual machine for: $execrunuid $imagename $vmhostname");
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Starting virtual machine');
+my $message = 'Starting virtual machine' . $job_status_message_suffix;
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 updateExecutionResults($execrunuid, {
-	'status'						=> 'Starting virtual machine',
+	'status'						=> $message,
 	'execute_node_architecture_id'	=> $hostname,
 	'vm_hostname'					=> $vmhostname,
 	'vm_username'					=> $builderUser,
@@ -261,8 +272,9 @@ else {
 	# Child
 	$debug ||= '';
 	my $script = catfile(getSwampDir(), 'bin', 'vmu_MonitorAssessment.pl');
-	exec("/opt/perl5/perls/perl-5.18.1/bin/perl $script $execrunuid $owner $uiddomain $clusterid $procid $debug");
+	exec("/opt/perl5/perls/perl-5.18.1/bin/perl $script $execrunuid $owner $uiddomain $clusterid $procid $numjobstarts $debug");
 }
 
 $log->info("PreAssessment: $execrunuid Exit");
+timetrace_elapsed($execrunuid, 'assessment', 'prescript', $event_start);
 exit(0);

@@ -189,7 +189,6 @@ $log->info("$PROGRAM_NAME ($PID) leaving listen loop - exiting");
 exit 0;
 
 sub _launchpadKill { my ($server, $execrunuid, $jobid) = @_ ;
-	my $event_start = time();
 	my $complete_flag = 1; # terminated
 	my $retval = $LAUNCHPAD_SUCCESS;
 	# switchExecRunAppenderLogFile($execrunuid);
@@ -208,12 +207,10 @@ sub _launchpadKill { my ($server, $execrunuid, $jobid) = @_ ;
 	if (! setCompleteFlag($execrunuid, $complete_flag)) {
 		$log->warn("_launchpadKill: $execrunuid - setCompleteFlag $complete_flag failed");
 	}
-	Log::Log4perl->get_logger('timetrace')->trace("_launchpadKill $execrunuid elapsed: ", time() - $event_start);
 	return $retval;
 }
 
 sub _launchpadStart { my ($server, $bogref) = @_ ;
-	my $event_start = time();
 	my $status = $LAUNCHPAD_SUCCESS;
     my $execrunuid = $bogref->{'execrunid'};
 	# switchExecRunAppenderLogFile($execrunuid);
@@ -244,7 +241,6 @@ sub _launchpadStart { my ($server, $bogref) = @_ ;
 	}
 	# unblock TERM
 	sigprocmask(SIG_UNBLOCK, $sigtermmask);
-	Log::Log4perl->get_logger('timetrace')->trace("_launchpadStart $execrunuid elapsed: ", time() - $event_start);
     return $status;
 }
 

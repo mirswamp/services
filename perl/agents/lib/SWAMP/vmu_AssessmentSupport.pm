@@ -152,6 +152,7 @@ my $bogtranslator = {
 	},
 	'packages'	=> {
 		'package_name' 		=> 'packagename', 			
+		'package_version'	=> 'packageversion',
 		'build_target' 		=> 'packagebuild_target',		
 		'build_system' 		=> 'packagebuild_system',		
 		'build_dir' 		=> 'packagebuild_dir',		
@@ -554,8 +555,9 @@ sub saveAssessmentResult { my ($assessment_results) = @_ ;
 		# weakness_cnt_in
 		# lines_of_code_in
 		# status_out_in
+		# status_out_error_msg_in
 		# return_string
-		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
+		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
 		$sth->bind_param(1, $assessment_results->{'execrunid'});
 		$sth->bind_param(2, $assessment_results->{'pathname'});
@@ -567,6 +569,7 @@ sub saveAssessmentResult { my ($assessment_results) = @_ ;
 		$sth->bind_param(8, $assessment_results->{'weaknesses'});
 		$sth->bind_param(9, $assessment_results->{'locSum'});
 		$sth->bind_param(10, $assessment_results->{'status_out'});
+		$sth->bind_param(11, $assessment_results->{'status_out_error_msg'});
 		$sth->execute();
 		my $result;
 		if (! $sth->err) {
@@ -946,22 +949,22 @@ sub createAssessmentConfigs { my ($bogref, $dest, $user, $password) = @_ ;
         'SWAMP_USERID' => '9999',
         'SWAMP_PASSWORD'=> $password}
     )) {
-        $log->warn("$bogref->{'execrunid'} Cannot save run-params.conf");
+        $log->warn($bogref->{'execrunid'}, " Cannot save run-params.conf");
     }
     my $runprops = {'goal' => $goal};
     $global_swamp_config ||= getSwampConfig();
     my $internet_inaccessible = $global_swamp_config->get('SWAMP-in-a-Box.internet-inaccessible') || 'false';
     $runprops->{'internet-inaccessible'} = $internet_inaccessible;
     if (! saveProperties( "$dest/run.conf", $runprops)) {
-        $log->warn("$bogref->{'execrunid'} Cannot save run.conf");
+        $log->warn($bogref->{'execrunid'}, " Cannot save run.conf");
         return 0;
     }
     if (! _createPackageConf($bogref, $dest)) {
-        $log->warn("$bogref->{'execrunid'} Cannot create package.conf");
+        $log->warn($bogref->{'execrunid'}, " Cannot create package.conf");
         return 0;
     }
     if (! _createUserConf($bogref, $dest)) {
-        $log->warn("$bogref->{'execrunid'} Cannot create user configuration file");
+        $log->warn($bogref->{'execrunid'}, " Cannot create user configuration file");
         return 0;
     }
     return 1;
@@ -1063,23 +1066,10 @@ sub _createPackageConf { my ($bogref, $dest) = @_ ;
         }
     }
 
-    $packageConfig{'package-archive'} = basename($bogref->{'packagepath'});
-    $packageConfig{'package-dir'}     = trim($bogref->{'packagesourcepath'});
-    my $packagename = $packageConfig{'package-archive'};
-
-    # Remove well known extensions
-    $packagename =~ s/.tar.gz$//sxm;
-    $packagename =~ s/.tgz$//sxm;
-    $packagename =~ s/.tar.bz2$//sxm;
-    $packagename =~ s/.zip$//sxm;
-    my @packageStuff = split /-/sxm, $packagename;
-    if (scalar(@packageStuff) <= 1) {
-        $packageConfig{'package-version'} = 'unknown';
-    }
-    else {
-        $packageConfig{'package-version'} = pop @packageStuff;
-    }
-    $packageConfig{'package-short-name'} = join( q{-}, @packageStuff );
+    $packageConfig{'package-archive'} = basename(_getBOGValue($bogref, 'packagepath'));
+    $packageConfig{'package-dir'}     = trim(_getBOGValue($bogref, 'packagesourcepath'));
+    $packageConfig{'package-short-name'} = _getBOGValue($bogref, 'packagename');
+    $packageConfig{'package-version'} = _getBOGValue($bogref, 'packageversion') || 'unknown';
     return saveProperties("$dest/package.conf", \%packageConfig);
 }
 

@@ -36,9 +36,15 @@ use SWAMP::vmu_Support qw(
 	getLoggingConfigString
 	loadProperties
 	getJobDir
+    condorJobExists
+	cleanRunDir
 	construct_vmhostname
 	create_empty_file
 	isMetricRun
+	timetrace_event
+	timetrace_elapsed
+	getSwampConfig
+	$global_swamp_config
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
@@ -61,6 +67,7 @@ my $host;
 my $debug = 0;
 my $bogDir;
 my $runnow;
+my $HTCONDOR_POSTSCRIPT_FAILED = 44;
 
 my @PRESERVEARGV = @ARGV;
 GetOptions(
@@ -122,10 +129,12 @@ while (! $child_done) {
     	$log->info("readBogFiles count: $nToProcess\n", sub {use Data::Dumper; Dumper($bogFiles);});
 	}
 	last if ($child_done);
-    sleep $launchPadSleep if ($nToProcess <= 0);
+	if ($nToProcess <= 0) {
+		cleanRunDir();
+    	sleep $launchPadSleep;
+	}
     foreach my $bogfile  (@$bogFiles) {
 		last if ($child_done);
-		my $event_start = time();
         my %bog;
         loadProperties($bogfile, \%bog);
 		my $execrunuid = $bog{'execrunid'};
@@ -148,7 +157,6 @@ while (! $child_done) {
 			}
 			my $duptime = time() - $dupstart;
 			$log->info("Duplicate not found: $execrunuid bog: $bogfile time: $duptime seconds");
-			Log::Log4perl->get_logger('timetrace')->trace("condorJobExists $execrunuid elapsed: ", time() - $dupstart);
 		}
 		# assessment run priority is 0
 		# metric run priority is -10
@@ -192,7 +200,6 @@ while (! $child_done) {
 		}
 		# return to rundir
 		chdir $bogDir;
-		Log::Log4perl->get_logger('timetrace')->trace("csa_agent $execrunuid elapsed: ", time() - $event_start);
     }
 }
 $log->info("ending process loop on bogDir: $bogDir ($PID)");
@@ -228,6 +235,8 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 	}
 	my $submitbundle = $execrunuid . '_submitbundle.tar.gz';
 	if (open(my $fh, ">>", $submitfile)) {
+		$global_swamp_config ||= getSwampConfig();
+		my $htcondor_assessment_max_retries = $global_swamp_config->get('htcondor_assessment_max_retries') || 3;
 		my $owner = getpwuid($UID);
 		print $fh "\n";
 		print $fh "##### Dynamic Submit File Attributes #####";
@@ -245,11 +254,13 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 		print $fh "\n";
 		print $fh "### Start PRE- and POST- Script Settings\n";
 		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_PreAssessment_launcher\"\n";
-		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID)\"\n";
+		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_PostAssessment_launcher\"\n";
-		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID)\"\n";
+		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "\n";
 		print $fh "### Job Priority\n";
+		print $fh "+ViewerJob = false\n";
+		print $fh "Rank = 0\n";
 		print $fh "priority = $job_priority\n";
 		print $fh "\n";
 
@@ -265,6 +276,10 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 		print $fh "\n";
 
 		print $fh "### Queue the job\n";
+		print $fh "+SuccessPostExitCode = 0\n";
+		print $fh "max_retries = $htcondor_assessment_max_retries\n";
+		print $fh "periodic_release = HoldReasonCode == $HTCONDOR_POSTSCRIPT_FAILED && NumJobStarts <= $htcondor_assessment_max_retries\n";
+		print $fh "periodic_remove = HoldReasonCode =?= $HTCONDOR_POSTSCRIPT_FAILED && NumJobStarts > $htcondor_assessment_max_retries\n";
 		print $fh "queue\n";
 		close($fh);
 	}
@@ -300,11 +315,13 @@ sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfil
 		print $fh "\n";
 		print $fh "### Start PRE- and POST- Script Settings\n";
 		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_PreViewer_launcher\"\n";
-		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID)\"\n";
+		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_PostViewer_launcher\"\n";
-		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID)\"\n";
+		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "\n";
 		print $fh "### Job Priority\n";
+		print $fh "+ViewerJob = true\n";
+		print $fh "Rank = 100\n";
 		print $fh "priority = $job_priority\n";
 		print $fh "\n";
 
@@ -336,7 +353,12 @@ sub startHTCondorJob { my ($bogref, $submitfile) = @_ ;
     while (! $started && ($retry++ < 3)) {
         $tracelog->trace("$bogref->{'execrunid'} Calling condor_submit");
         $log->debug("condor_submit file: $submitfile cwd: ", getcwd());
+		my $execrunuid = $bogref->{'execrunid'};
+		my $job_type = 'assessment';
+		$job_type = 'viewer' if ($execrunuid =~ m/^vrun_/);
+		my $event_start = timetrace_event($execrunuid, $job_type, 'condor submit start');
         ($output, $status) = systemcall("condor_submit $submitfile");
+		timetrace_elapsed($execrunuid, $job_type, 'condor submit', $event_start);
         if ($status) {
             $log->warn("Failed to start condor job using $submitfile: $output. Trying again in 5 seconds");
             sleep 5;
@@ -421,49 +443,5 @@ sub runImmediate { my ($bogfile) = @_ ;
 	# return to rundir
 	chdir $bogDir;
 	return $ret;
-}
-
-sub isJobInHistory { my ($execrunuid) = @_ ;
-    my $cmd  = qq(condor_history);
-       $cmd .= qq( -constraint ');
-       $cmd .= qq(SWAMP_arun_execrunuid == "$execrunuid");
-       $cmd .= qq( || SWAMP_mrun_execrunuid == "$execrunuid");
-       $cmd .= qq( || SWAMP_vrun_execrunuid == "$execrunuid");
-       $cmd .= qq(');
-       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
-       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
-       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
-       $cmd .= qq( -limit 1);
-    my ($output, $status) = systemcall($cmd);
-    if ($status) {
-        $log->error("isJobInHistory condor_history failed - $status output: $output");
-        return 0;
-    }
-    if ($output =~ m/^$execrunuid$/) {
-        $log->info("$execrunuid found from condor_history");
-        return 1;
-    }
-    return 0;
-}
-
-sub isJobInQueue { my ($execrunuid) = @_ ;
-    my $cmd  = qq(condor_q);
-       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
-       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
-       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
-    my ($output, $status) = systemcall($cmd);
-    if ($status) {
-        $log->error("isJobInQueue condor_q failed - $status output: $output");
-        return 0;
-    }
-    if ($output =~ m/$execrunuid/) {
-        $log->info("$execrunuid found from condor_q");
-        return 1;
-    }
-    return 0;
-}
-
-sub condorJobExists { my ($execrunuid) = @_ ;
-    return isJobInQueue($execrunuid) || isJobInHistory($execrunuid);
 }
 

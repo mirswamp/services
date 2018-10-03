@@ -31,6 +31,8 @@ use SWAMP::vmu_Support qw(
 	getLoggingConfigString
 	switchExecRunAppenderLogFile
 	getSwampDir
+	timetrace_event
+	timetrace_elapsed
 	$LAUNCHPAD_SUCCESS
 	$LAUNCHPAD_BOG_ERROR
 	$LAUNCHPAD_FILESYSTEM_ERROR
@@ -88,7 +90,9 @@ if (isSWAMPRunning()) {
 	switchExecRunAppenderLogFile($execrunuid);
 	$tracelog->trace("execrunuid: $execrunuid - calling doRun");
 	$log->info("Attempting to launch run $execrunuid");
+	my $event_start = timetrace_event($execrunuid, 'assessment', 'calldorun start');
 	my $status = doRun($execrunuid);
+	timetrace_elapsed($execrunuid, 'assessment', 'calldorun', $event_start);
 	# HTCondor submit succeeded
 	if ($status == $LAUNCHPAD_SUCCESS) {
 		$tracelog->trace("execrunuid: $execrunuid - doRun succeeded");

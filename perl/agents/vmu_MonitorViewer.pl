@@ -21,14 +21,17 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 use SWAMP::vmu_Support qw(
 	getStandardParameters
 	identifyScript
+	getVMIPAddress
 	getSwampDir
 	getLoggingConfigString
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	buildExecRunAppenderLogFileName
 	loadProperties
 	construct_vmhostname
-	deleteJobDir
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_ERROR
@@ -38,21 +41,22 @@ use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_SHUTDOWN
 	updateClassAdViewerStatus
 );
-use SWAMP::Libvirt qw(getVMIPAddress);
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
-my $events_file = catfile('events', 'JobVMEvents.log');
+my $events_file = 'JobVMEvents.log';
+my $vmip_file = 'vmip.txt';
 my $MAX_OPEN_ATTEMPTS = 5;
 my $done = 0;
 
 my %status_seen = ();
+my $INITIAL_STATUS	= 'RUNSHSTART';
 my $FINAL_STATUS	= 'VIEWERUP';
 my $status_messages = {
-	'RUNSHSTART'			=> ['Starting viewer vm run script', 				$VIEWER_STATE_LAUNCHING	],
+	$INITIAL_STATUS			=> ['Starting viewer vm run script', 				$VIEWER_STATE_LAUNCHING	],
 	'NOIP'					=> ['Viewer vm has no ip address', 					$VIEWER_STATE_STOPPING	],
 	'NOIPSHUTDOWN'			=> ['Shutting down viewer vm for no ip address', 	$VIEWER_STATE_STOPPING	],
 	'LEGACYVIEWERDB'		=> ['Unbundling legacy viewer database', 			$VIEWER_STATE_LAUNCHING	],
@@ -90,7 +94,7 @@ my $status_messages = {
 };
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -142,6 +146,7 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 			$log->info("Status: $mstatus state: $state message: $message");
 			# this is where VIEWER_STATE_READY is set
 			if ($mstatus eq $FINAL_STATUS) {
+				timetrace_event($execrunuid, 'viewer', $FINAL_STATUS);
 				$log->info("MonitorViewer entering collector beacon mode");
 				$final_status_seen = 1;
 			}
@@ -181,14 +186,50 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 	}
 }
 
+sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
+	my $event_start = timetrace_event($execrunuid, 'viewer', 'wait initial start');
+	my $vmip_lookup_viewer_delay = $global_swamp_config->get('vmip_lookup_viewer_delay') || 100;
+	# open vmip file and read vm ip address
+	my $mstatus;
+    for (my $i = 0; $i < $vmip_lookup_viewer_delay; $i++) {
+		return if ($done);
+		(my $open_attempts, $mstatus) = get_next_status($events_file, 0);
+		# check for termination
+		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
+			$log->error("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
+			timetrace_elapsed($execrunuid, 'viewer', 'wait initial max', $event_start);
+			return;
+		}
+		last if ($mstatus eq $INITIAL_STATUS);
+		sleep 1;
+	}
+	if ($mstatus ne $INITIAL_STATUS) {
+		$log->error("$events_file initial status not found");
+		timetrace_elapsed($execrunuid, 'viewer', 'wait initial not seen', $event_start);
+		return;
+	}
+	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, 'Obtaining VM IP Address', $bogref);
+	timetrace_elapsed($execrunuid, 'viewer', 'wait initial', $event_start);
+	$event_start = timetrace_event($execrunuid, 'viewer', 'get vmip start');
+	my $vmip = getVMIPAddress($vmhostname);
+	if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
+		$log->info("Obtained vmip: $vmip");
+		$bogref->{'vmip'} = $vmip;
+	}
+	else {
+		$log->error("Failed to obtain vmip: $vmip");
+	}
+	timetrace_elapsed($execrunuid, 'viewer', 'get vmip', $event_start);
+}
+
 ########
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
@@ -216,39 +257,20 @@ $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 identifyScript(\@ARGV);
 
+my $event_start = timetrace_event($execrunuid, 'viewer', 'monitor start');
+
 my %bog;
 my $bogfile = $execrunuid . '.bog';
 loadProperties($bogfile, \%bog);
 $bog{'vmhostname'} = $vmhostname;
 
+# look for INITIAL_STATUS and then obtain vm ip address
+obtain_vmip($execrunuid, \%bog, $vmhostname);
 
-updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, 'Obtaining VM IP Address', \%bog);
-my $vmip = getVMIPAddress($config, $vmhostname);
-$bog{'vmip'} = $vmip;
-my $message;
-if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
-	$message = 'Obtained vmip';
-	$log->info($message . ": $vmip");
-}
-else {
-	$message = 'Failed to obtain vmip';
-	$log->error($message . ": $vmip");
-}
 monitor($execrunuid, \%bog);
-$message = "Viewer is shutting down";
-updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, $message, \%bog);
-
-# signal delete jobdir on sumbit node
-my $status = deleteJobDir($execrunuid);
-if ($status) {
-	$message = "Viewer shutdown complete";
-	$log->info("MonitorViewer - job directory for: $execrunuid successfully deleted");
-}
-else {
-	$message = "Viewer shutdown incomplete";
-	$log->error("MonitorViewer - job directory for: $execrunuid deletion failed");
-}
+my $message = "Viewer is shutdown complete";
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, $message, \%bog);
 
 $log->info("MonitorViewer: $execrunuid Exit");
+timetrace_elapsed($execrunuid, 'viewer', 'monitor', $event_start);
 exit(0);

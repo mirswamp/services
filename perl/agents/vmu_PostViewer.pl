@@ -23,6 +23,7 @@ use SWAMP::vmu_Support qw(
 	getSwampDir 
 	getLoggingConfigString 
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	buildExecRunAppenderLogFileName
 	systemcall 
@@ -35,14 +36,14 @@ use SWAMP::vmu_ViewerSupport qw(
 	updateClassAdViewerStatus
 );
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -77,10 +78,10 @@ sub extract_outputdisk { my ($outputfolder) = @_ ;
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);

@@ -37,6 +37,8 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig 
 	getSwampDir
 	makezip
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
@@ -130,7 +132,9 @@ if ($viewer_name =~ /Native/ixsm) {
     $exitCode = doNative();
 }
 elsif ($viewer_name =~ /CodeDX/isxm || $viewer_name =~ /ThreadFix/isxm) {
+	my $event_start = timetrace_event($project_uuid, 'viewer', 'launch start'); 
     $exitCode = doViewerVM();
+	timetrace_elapsed($project_uuid, 'viewer', 'launch', $event_start);
 }
 else {
     $log->error("viewer '$viewer_name' not supported.");
@@ -265,7 +269,7 @@ sub printPara {
 
 sub doNativeError { my ($file, $outputdir) = @_ ;
 	$log->info("doNativeError - processing error result: $file");
-	my $config = getSwampConfig();
+	$global_swamp_config ||= getSwampConfig($configfile);
 	my $retCode = 0;
 	my $JSONname  = q{failedreport.json};
 	my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
@@ -279,7 +283,7 @@ sub doNativeError { my ($file, $outputdir) = @_ ;
 		$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
 		my $report = generateErrorJson(catfile($outputdir, $htmlfile . $ext), $topdir, @header);
 		my $savereport = catfile($outputdir, $JSONname);
-		$log->info("report - file: $savereport url: ", $config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
+		$log->info("report - file: $savereport url: ", $global_swamp_config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
 		my$saveResult = saveErrorJson($report, $savereport);
 	    if ($saveResult == 0) {
             $log->error("Failed to save the error report json to: $savereport");

@@ -21,6 +21,7 @@ use RPC::XML::Client;
 use DBI;
 use Capture::Tiny qw(:all);
 use JSON qw(from_json);
+use Time::HiRes qw(time);
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -36,6 +37,7 @@ BEGIN {
 	  trim
       systemcall
 	  getSwampDir
+	  getVMIPAddress
 	  $global_swamp_config
       getSwampConfig
 	  isSwampInABox
@@ -54,11 +56,15 @@ BEGIN {
 	  getUUID
 	  HTCondorJobStatus
 	  getHTCondorJobId
+	  isJobInQueue
+	  isJobInHistory
+	  condorJobExists
 	  start_process
 	  stop_process
 	  launchPadStart
 	  launchPadKill
 	  deleteJobDir
+	  cleanRunDir
 	  construct_vmhostname
 	  construct_vmdomainname
 	  create_empty_file
@@ -67,6 +73,8 @@ BEGIN {
 	  isViewerRun
 	  database_connect
 	  database_disconnect
+	  timetrace_event
+	  timetrace_elapsed
 
 	  $LAUNCHPAD_SUCCESS
 	  $LAUNCHPAD_BOG_ERROR
@@ -100,6 +108,46 @@ my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
 
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
+
+sub timetrace_event { my ($execrunuid, $job_type, $message) = @_ ;
+	my $event_start = time();
+	my $uuid = $execrunuid;
+	$uuid =~ s/^vrun_//;
+	$uuid =~ s/_.*$//;
+	Log::Log4perl->get_logger('timetrace')->trace("$uuid $job_type $message: $event_start");
+	return $event_start;
+}
+
+sub timetrace_elapsed { my ($execrunuid, $job_type, $message, $event_start) = @_ ;
+	my $event_time = time();
+	my $uuid = $execrunuid;
+	$uuid =~ s/^vrun_//;
+	$uuid =~ s/_.*$//;
+	Log::Log4perl->get_logger('timetrace')->trace("$uuid $job_type $message elapsed: ", $event_time - $event_start);
+	return $event_time;
+}
+
+sub getVMIPAddress { my ($vmhostname) = @_ ;
+	$global_swamp_config ||= getSwampConfig();
+	my $vmip = '';
+	my $vmip_lookup_sleep = $global_swamp_config->get('vmip_lookup_sleep') || 1;
+	my $vmip_lookup_attempts = $global_swamp_config->get('vmip_lookup_attempts') || 10;
+	for (my $i = 0; $i < $vmip_lookup_attempts; $i++) {
+		if (open(my $fh, '<', 'vmip.txt')) {
+			$vmip = <$fh>;
+			close($fh);
+			if ($vmip) {
+				chomp $vmip;
+				$vmip =~ s/[^[:print:]]+//g;
+				return $vmip if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/);
+			}
+		}
+		sleep $vmip_lookup_sleep;
+	}
+	$vmip = 'vm ip timeout';
+	$log->error("Unable to dermine IP address of: $vmhostname");
+	return $vmip;
+}
 
 sub getSwampDir {
 	return "/opt/swamp";
@@ -140,19 +188,21 @@ sub runScriptDetached { my ($logfile) = @_ ;
 }
 
 sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
-	# execrunuid owner uiddomain clusterid procid [debug]
+	# 0          1     2         3         4      5             6
+	# execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 	my $argc = scalar(@$argv);
-	return if ($argc < 5 || $argc > 6);
+	return if ($argc < 5 || $argc > 7);
 	$$execrunuidref = $argv->[0];
 	my $owner = $argv->[1];
 	my $uiddomain = $argv->[2];
 	$$clusteridref = $argv->[3];
 	my $procid = $argv->[4];
+	my $numjobstarts = $argv->[5];
 	# debug is optional
-	my $debug = $argv->[5];
+	my $debug = $argv->[6];
 	# execrunuid is returned via reference because it is global
 	# clusterid is returned via reference because it is global
-	return($owner, $uiddomain, $procid, $debug);
+	return($owner, $uiddomain, $procid, $numjobstarts, $debug);
 }
 
 sub setHTCondorEnvironment {
@@ -345,7 +395,7 @@ sub HTCondorJobStatus { my ($jobid) = @_ ;
 }
 
 sub construct_vmdomainname { my ($owner, $uiddomain, $clusterid, $procid) = @_ ;
-	my $vmdomainname = $owner . '_' . $uiddomain . '_' . $clusterid . '_' . $procid;
+	my $vmdomainname = $owner . '_' . $uiddomain . '_' . $clusterid . '.' . $procid;
 	return $vmdomainname;
 }
 
@@ -1019,6 +1069,144 @@ sub deleteJobDir { my ($execrunuid) = @_ ;
     }
 	my $delete_count = $result->{'value'} || 0;
 	return $delete_count;
+}
+
+sub _listJobDirs { my ($rundir) = @_ ;
+    my $dirs = {};
+    my $dh;
+    if (! opendir($dh, $rundir)) {
+        $log->error("listJobDirs - opendir $rundir failed");
+        return $dirs;
+    }
+    my @dirs = grep {!/^\./ && -d "$rundir/$_"} readdir($dh);
+    closedir($dh);
+    foreach my $jobdir (@dirs) {
+        my $clusterid = `find "$rundir/$jobdir" -name "ClusterId_*"`;
+        $clusterid =~ s/^.*ClusterId_//;
+        chomp $clusterid;
+        if ($clusterid) {
+            $dirs->{$jobdir} = $clusterid . '.0'; 
+        }
+        else {
+            $dirs->{$jobdir} = 'nojobid';
+        }
+    }
+    return $dirs;
+}
+
+sub _listJobIDs {
+    my $jobs = {};
+    my $command = 'condor_q -af:j SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid';
+    my ($output, $status) = systemcall($command);
+    if ($status) {
+        $log->error("listJobIDs condor_q failed - $status output: $output");
+        return;
+    }
+    my @joblines = split "\n", $output;
+    foreach my $jobline (@joblines) {
+        my ($jobid, $arunid, $mrunid, $vrunid) = split ' ', $jobline;
+        $jobs->{$jobid} = $arunid if ($arunid ne 'undefined'); 
+        $jobs->{$jobid} = $mrunid if ($mrunid ne 'undefined');
+        $jobs->{$jobid} = $vrunid if ($vrunid ne 'undefined');
+    }
+    return $jobs;
+}
+
+sub isJobInHistory { my ($execrunuid) = @_ ;
+    my $cmd  = qq(condor_history);
+       $cmd .= qq( -constraint ');
+       $cmd .= qq(SWAMP_arun_execrunuid == "$execrunuid");
+       $cmd .= qq( || SWAMP_mrun_execrunuid == "$execrunuid");
+       $cmd .= qq( || SWAMP_vrun_execrunuid == "$execrunuid");
+       $cmd .= qq(');
+       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
+       $cmd .= qq( -limit 1);
+    my ($output, $status) = systemcall($cmd);
+    if ($status) {
+        $log->error("isJobInHistory condor_history failed - $status output: $output");
+        return 0;
+    }
+    if ($output =~ m/^$execrunuid$/) {
+        $log->info("$execrunuid found from condor_history");
+        return 1;
+    }
+    return 0;
+}
+
+sub isJobInQueue { my ($execrunuid) = @_ ;
+    my $cmd  = qq(condor_q);
+       $cmd .= qq( -format "%s\n" SWAMP_arun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_vrun_execrunuid);
+       $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
+    my ($output, $status) = systemcall($cmd);
+    if ($status) {
+        $log->error("isJobInQueue condor_q failed - $status output: $output");
+        return 0;
+    }
+    if ($output =~ m/$execrunuid/) {
+        $log->info("$execrunuid found from condor_q");
+        return 1;
+    }
+    return 0;
+}
+
+sub condorJobExists { my ($execrunuid) = @_ ;
+    return isJobInQueue($execrunuid) || isJobInHistory($execrunuid);
+}
+
+sub cleanRunDir {
+    my $rundir = catdir(getSwampDir(), 'run');
+    my $jobdirs = _listJobDirs($rundir);
+    my $jobids = _listJobIDs();
+	# do not continue if condor_q systemcall failed
+	return if (! defined($jobids));
+    foreach my $jobdir (keys %$jobdirs) {
+        my $jobid = $jobdirs->{$jobdir};
+        # active job case 
+        if ($jobid && exists($jobids->{$jobid})) {
+            my $runid = $jobids->{$jobid};
+            if ($jobdir =~ m/$runid/) {
+                $log->debug("cleanRunDir $jobid: $jobdir matches $runid");
+                next;
+            }
+        }
+        # inactive job case
+        if ($jobid) {
+            # reused jobid
+            if (exists($jobids->{$jobid})) {
+                my $runid = $jobids->{$jobid};
+                $log->warn("cleanRunDir $jobid: $jobdir does not match $runid");
+            }
+            # inactive
+            else {
+                $log->info("cleanRunDir $jobid: $jobdir not active in jobids");
+            }
+        }
+        else {
+            # no jobid
+            $log->warn("cleanRunDir $jobdir has no jobid");
+        }
+        # remove jobdir iff it is in the history
+		# it may not have been submitted yet
+		my $execrunuid = $jobdir;
+		$execrunuid =~ s/^.swamp_//;
+		if (! isJobInHistory($execrunuid)) {
+            $log->warn("cleanRunDir $jobdir $execrunuid is not in history - skipping");
+			next;
+		}
+        $log->info("cleanRundir removing $rundir/$jobdir");
+        my $result = remove_tree("$rundir/$jobdir", {error => \my $error});
+        if (@$error || ! $result) {
+            my $error_string = '';
+            foreach my $diag (@$error) {
+                my ($file, $message) = %$diag;
+                $error_string .= $file . ' ' . $message . ' ';
+            }
+            $log->error("cleanRunDir Error - $jobdir remove failed - result: $result error: $error_string");
+        }
+    }
 }
 
 1;

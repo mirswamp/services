@@ -25,6 +25,7 @@ use SWAMP::vmu_Support qw(
 	getSwampDir
 	getLoggingConfigString
 	getSwampConfig
+	$global_swamp_config
 	isSwampInABox
 	isMetricRun
 	buildExecRunAppenderLogFileName
@@ -33,6 +34,8 @@ use SWAMP::vmu_Support qw(
 	checksumFile
 	construct_vmhostname
 	construct_vmdomainname
+	timetrace_event
+	timetrace_elapsed
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
@@ -49,9 +52,9 @@ use SWAMP::vmu_AssessmentSupport qw(
 	isSynopsysC
 );
 
+$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
-my $config = getSwampConfig();
 my $execrunuid;
 my $clusterid;
 
@@ -59,7 +62,7 @@ my $inputarchive = 'inputdisk.tar.gz';
 my $outputarchive = 'outputdisk.tar.gz';
 
 sub logfilename {
-	if (isSwampInABox($config)) {
+	if (isSwampInABox($global_swamp_config)) {
 		my $name = buildExecRunAppenderLogFileName($execrunuid);
 		return $name;
 	}
@@ -98,6 +101,7 @@ sub extract_outputdisk { my ($outputfolder) = @_ ;
 sub parse_status_output { my ($outputfolder) = @_ ;
 	my $status = -1;
 	my $weaknesses;
+	my $first_failure_task = '';
 	my $fh;
 	my $status_file = catfile($outputfolder, 'status.out');
 	if (! open($fh, '<', $status_file)) {
@@ -113,8 +117,12 @@ sub parse_status_output { my ($outputfolder) = @_ ;
 			$status |= 1;
 		}
 		elsif ($line =~ m/^FAIL:/sxm) {
-			$log->error("parse_status_output - status.out: $line");
+			$log->info("parse_status_output - status.out: $line");
 			$status |= 2;
+			if (! $first_failure_task) {
+				my @parts = split ' ', $line;
+				$first_failure_task = $parts[1];
+			}
 		}
 		elsif ($line =~ m/^NOTE:\s*retry/sxm) {
 			$log->info("parse_status_output - status.out: $line");
@@ -125,7 +133,7 @@ sub parse_status_output { my ($outputfolder) = @_ ;
 			$weaknesses = $1;
 		}
 	}
-	return ($status, $weaknesses);
+	return ($status, $weaknesses, $first_failure_task);
 }
 
 sub load_config { my ($outputfolder, $configfilename) = @_ ;
@@ -347,7 +355,6 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	# create vmlog directory and move files
 	# <vmdomainname>.log from /var/log/libvirt/qemu for command line definition of vm
 	# messages and boot.log from /var/log in vm
-	# output of virsh dumpxml <vmdomainname> for xml definition of vm
 	my $vmlog = catdir($resultsfolder, "vmlog");
 	if (mkdir($vmlog)) {
 		# /var/log/libvirt/qemu/<vmdomainname>.log
@@ -464,7 +471,7 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	return ($retval, $package_archive_file, $logfile);
 }
 
-sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum) = @_ ;
+sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum) = @_ ;
 	$log->info("saving pathname: $assessment_results_file");
 	my $assessment_results = {
 			'execrunid'			=> $execrunuid,
@@ -476,6 +483,7 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 			'sourcepathname'	=> $package_archive_file,
 			'source512sum'		=> checksumFile($package_archive_file),
 			'status_out'		=> $status_out,
+			'status_out_error_msg'	=> $first_failure_task,
 			'locSum'			=> $locSum,
 			};
 	my $status = saveAssessmentResult($assessment_results);
@@ -487,10 +495,10 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 # Main #
 ########
 
-# args: execrunuid owner uiddomain clusterid procid [debug]
+# args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
 # clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
+my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
 if (! $execrunuid || ! $clusterid) {
 	# we have no execrunuid or clusterid for the log4perl log file name
 	exit(1);
@@ -516,7 +524,13 @@ loadProperties($bogfile, \%bog);
 my $user_uuid = $bog{'userid'} || 'null';
 my $projectid = $bog{'projectid'} || 'null';
 
-my $message = 'Extracting assessment results';
+my $job_status_message_suffix = '';
+my $htcondor_assessment_max_retries = $global_swamp_config->get('htcondor_assessment_max_retries') || 3;
+if ($numjobstarts > 0) {
+	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
+}
+
+my $message = 'Extracting assessment results' . $job_status_message_suffix;
 updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 my $status = extract_outputdisk($outputfolder);
 if (! $status) {
@@ -525,7 +539,7 @@ if (! $status) {
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 
-$message = 'Post-Processing';
+$message = 'Post-Processing' . $job_status_message_suffix;
 updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 # attempt to log status.out
 my $status_out = '';
@@ -546,7 +560,7 @@ if (-r $status_file) {
 # 2  FAIL
 # 4  retry
 my $retry = 0;
-($status, my $weaknesses) = parse_status_output($outputfolder);
+($status, my $weaknesses, my $first_failure_task) = parse_status_output($outputfolder);
 my $framework_said_pass = ($status == 1);
 $message = '';
 if ($status < 0) {
@@ -593,7 +607,7 @@ chmod(0755, $resultsfolder);
 	preserve_assessment_data($vmdomainname, $inputfolder, $outputfolder, $resultsfolder);
 my $locSum = -1;
 if (! $status) {
-	$message = 'Failed to preserve assessment data';
+	$message = 'Failed to preserve assessment data' . $job_status_message_suffix;
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 else {
@@ -605,7 +619,7 @@ else {
 ($status, my $have_results, my $assessment_results_file) =
 	preserve_assessment_results(\%bog, $framework_said_pass, $outputfolder, $resultsfolder);
 if (! $status) {
-	$message = 'Failed to preserve assessment results';
+	$message = 'Failed to preserve assessment results' . $job_status_message_suffix;
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 elsif ($have_results) {
@@ -616,19 +630,27 @@ elsif ($have_results) {
 	}
 }
 
-$message = 'Saving Results';
+$message = 'Saving Results' . $job_status_message_suffix;
 updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-my $results_in_db = save_results_in_database($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum);
+my $results_in_db = save_results_in_database($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum);
 if (! $results_in_db) {
-	$message = 'Failed to save assessment results in database';
+	$message = 'Failed to save assessment results in database' . $job_status_message_suffix;
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 }
 
-# FIXME - how should HTCondor be instructed to retry this job?
+# signal condor to retry this job by exiting with ExitCode != 0
+my $CondorExitCode = 0;
+my $retries_remaining = 0;
 if (! $framework_said_pass || ! $have_results || ! $results_in_db) {
 	$message = 'Finished with Errors';
 	if ($retry) {
-		$message .= ' - Retry' 
+		$retries_remaining = $htcondor_assessment_max_retries - $numjobstarts;
+		if ($retries_remaining) {
+			$message .= $job_status_message_suffix;
+			$message .= " - Will retry $retries_remaining time";
+			$message .= 's' if ($retries_remaining > 1);
+		}
+		$CondorExitCode = 5;
 	}
 	$log->error("Assessment: $execrunuid $message");
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
@@ -640,31 +662,35 @@ else {
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
 	updateRunStatus($execrunuid, $message, 1);
 }
-if (! setCompleteFlag($execrunuid, 1)) {
-	$log->warn("Assessment: $execrunuid - setCompleteFlag 1 failed");
-}
 
-if ($bog{'notify_when_complete_flag'}) {
-	my $swamp_api_web_server = $config->get('swamp_api_web_server');
-	if (! $swamp_api_web_server) {
-		$log->error("assessment notification failed - no swamp_api_web_server found in swamp.conf");
+# set complete flag and notify via email iff no retries remaining
+if (! $retries_remaining) {
+	if (! setCompleteFlag($execrunuid, 1)) {
+		$log->warn("Assessment: $execrunuid - setCompleteFlag 1 failed");
 	}
-	else {
-		my $notify_route = "execution_records/$execrunuid/notify";
-		my $post_url = $swamp_api_web_server . '/' . $notify_route;
-		my $command = "curl --silent --insecure -H 'Accept: application/json' --header \"Content-Length:0\" -X POST $post_url";
-		my ($output, $status) = systemcall($command);
-		if ($status || $output) {
-			$log->error("$command failed - status: $status output: [$output]");
+	if ($bog{'notify_when_complete_flag'}) {
+		my $swamp_api_web_server = $global_swamp_config->get('swamp_api_web_server');
+		if (! $swamp_api_web_server) {
+			$log->error("assessment notification failed - no swamp_api_web_server found in swamp.conf");
 		}
 		else {
-			$log->info("$command succeeded - status: $status output: [$output]");
+			my $notify_route = "execution_records/$execrunuid/notify";
+			my $post_url = $swamp_api_web_server . '/' . $notify_route;
+			my $command = "curl --silent --insecure -H 'Accept: application/json' --header \"Content-Length:0\" -X POST $post_url";
+			my ($output, $status) = systemcall($command);
+			if ($status || $output) {
+				$log->error("$command failed - status: $status output: [$output]");
+			}
+			else {
+				$log->info("$command succeeded - status: $status output: [$output]");
+			}
 		}
 	}
-}
-else {
-	$log->debug("Email notification is not turned on for: $execrunuid", sub {use Data::Dumper; Dumper(\%bog);});
+	else {
+		$log->debug("Email notification is not turned on for: $execrunuid", sub {use Data::Dumper; Dumper(\%bog);});
+	}
 }
 
-$log->info("PostAssessment: $execrunuid Exit");
-exit(0);
+$log->info("PostAssessment: $execrunuid Exit $CondorExitCode");
+timetrace_event($execrunuid, 'assessment', $message);
+exit($CondorExitCode);
