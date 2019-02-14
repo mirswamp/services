@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -19,19 +19,23 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::vmu_Support qw(
 	getStandardParameters
+	setHTCondorEnvironment
 	identifyScript
+	isSwampInABox
 	getSwampDir 
 	getLoggingConfigString 
 	getSwampConfig
 	$global_swamp_config
-	isSwampInABox
-	buildExecRunAppenderLogFileName
 	systemcall 
 	loadProperties
 	construct_vmhostname
+	getSwampConfig
+	$global_swamp_config
 );
+$global_swamp_config = getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_STOPPING
+	$VIEWER_STATE_SHUTDOWN
 	saveViewerDatabase
 	updateClassAdViewerStatus
 );
@@ -40,38 +44,51 @@ $global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
-my $clusterid;
 
+# logfilesuffix is the HTCondor clusterid and is used to distinguish viewer log files
+# since the execrunuid for viewers is the viewer projectid and is not distinct across
+# viewer executions
+my $logfilesuffix = '';
 sub logfilename {
-	if (isSwampInABox($global_swamp_config)) {
-		my $name = buildExecRunAppenderLogFileName($execrunuid);
-		return $name;
-	}
-    my $name = basename($0, ('.pl'));
-	chomp $name;
-	$name =~ s/Post//sxm;
-	$name .= '_' . $clusterid;
-    return catfile(getSwampDir(), 'log', $name . '.log');
+	my $projectid = $execrunuid;
+	$projectid =~ s/^vrun_//;
+	$projectid =~ s/_CodeDX$//;
+	my $name = catfile(getSwampDir(), 'log', $projectid . '_' . $logfilesuffix . '.log');
+	return $name;
 }
 
+# returns:
+# -1 - extraction failed
+# -2 - viewerdb bundle not found
+#  1 - viewerdb bundle skipped
+#  0 - success
 sub extract_outputdisk { my ($outputfolder) = @_ ;
-    my $gfname = 'extract.gf';
-    my $script;
-    if (! open($script, '>', $gfname)) {
-        $log->error("open failed for: $gfname");
-        return 0;
-    }
-    print $script "add outputdisk.qcow2\n";
-    print $script "run\n";
-    print $script "mount /dev/sda /\n";
-    print $script "glob copy-out /* $outputfolder\n";
-    close($script);
-    my ($output, $status) = systemcall("/usr/bin/guestfish -f $gfname");
+	my ($output, $status) = systemcall(qq{/usr/bin/guestfish --ro -a outputdisk.qcow2 run : mount /dev/sda / : glob copy-out '/*' $outputfolder});    
     if ($status) {
         $log->error("extract_outputdisk - output extraction failed: $output $status");
-        return 0;
+        return -1;
     }
-    return 1;
+	if (-r "$outputfolder/skippedbundle") {
+        $log->warn("extract_outputdisk - output extraction viewerdb bundle skipped");
+		return 1;
+	}
+	if (! -r "$outputfolder/codedx_viewerdb.tar.gz") {
+        $log->error("extract_outputdisk - output extraction viewerdb bundle not found");
+		return -2;
+	}
+    return 0;
+}
+
+sub get_final_viewer_status { my ($file) = @_ ;
+	my $fh;
+	if (! open($fh, '<', $file)) {
+		return ''; 
+	}
+	my @lines = <$fh>;
+	close($fh);
+	my $viewer_status = $lines[-1];
+	$viewer_status =~ s/[^[:print:]]+//g;
+	return $viewer_status;
 }
 
 ########
@@ -80,12 +97,12 @@ sub extract_outputdisk { my ($outputfolder) = @_ ;
 
 # args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
-# clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
-if (! $execrunuid || ! $clusterid) {
-	# we have no execrunuid or clusterid for the log4perl log file name
+my ($owner, $uiddomain, $clusterid, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid);
+if (! $execrunuid) {
+	# we have no execrunuid for the log4perl log file name
 	exit(1);
 }
+$logfilesuffix = $clusterid if (defined($clusterid));
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
@@ -95,7 +112,15 @@ $log->level($debug ? $TRACE : $INFO);
 $log->info("PostViewer: $execrunuid Begin");
 $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
+setHTCondorEnvironment();
 identifyScript(\@ARGV);
+
+my $viewer_status = get_final_viewer_status('JobVMEvents.log');
+if (! $viewer_status || (($viewer_status =~ m/SHUTDOWN/) && ($viewer_status ne 'TIMERSHUTDOWN'))) {
+	$viewer_status = 'no JobVMEvents.log' if (! $viewer_status);
+	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, "Viewer did not start - status: $viewer_status", {});
+	exit(1);
+}
 
 my $outputfolder = q{output};
 
@@ -107,25 +132,48 @@ $bog{'vmhostname'} = $vmhostname;
 $log->info("Viewer is starting shutdown");
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, 'Viewer is starting shutdown', \%bog);
 
+# returns:
+# -1 - extraction failed
+# -2 - viewerdb bundle not found
+#  1 - viewerdb bundle skipped
+#  0 - success
 my $status = extract_outputdisk($outputfolder);
-if (! $status) {
-    my $error_message = "Failed to extract viewer results for: $vmhostname";
-	$log->error($error_message);
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, $error_message, \%bog);
-	$log->info("PostViewer: $execrunuid Error Exit");
-	exit(1);
+if ($status == -1) {
+	$log->error("Failed to extract viewer results for: $vmhostname");
+}
+elsif ($status == -2) {
+	$log->error("Failed to find viewer bundle for: $vmhostname");
+}
+elsif ($status == 1) {
+	$log->warn("Viewer bundling skipped for: $vmhostname");
 }
 
-$status = saveViewerDatabase(\%bog, $vmhostname, $outputfolder);
-if (! $status) {
-	my $error_message = "Failed to save viewer results for: $vmhostname";
-	$log->error($error_message);
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, $error_message, \%bog);
-	$log->info("PostViewer: $execrunuid Error Exit");
-	exit(1);
+my $exitCode = 0;
+if ($status == 0) {
+	$status = saveViewerDatabase(\%bog, $vmhostname, $outputfolder);
+	if (! $status) {
+		$log->error("Failed to save viewer results for: $vmhostname");
+		$exitCode = 1;
+	}
+}
+else {
+	$exitCode = 1;
 }
 
-$log->info("Viewer is completing shutdown");
-updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, 'Viewer is completing shutdown', \%bog);
-$log->info("PostViewer: $execrunuid Exit");
-exit(0);
+$log->info("Viewer shutdown completed");
+updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, 'Viewer shutdown completed', \%bog);
+
+$log->info("PostViewer: $execrunuid Exit $exitCode");
+if (! isSwampInABox($global_swamp_config)) {
+	my $logfile = logfilename();
+	my $central_log_dir = '/swamp/working/logs';
+	if (! -d $central_log_dir) {
+		if (! use_make_path($central_log_dir)) {
+			$log->error("PostAssessment: $execrunuid - unable to create dir: $central_log_dir");
+		}
+	}
+	if (-d $central_log_dir && -r $logfile) {
+		copy($logfile, $central_log_dir);
+	}
+}
+exit($exitCode);

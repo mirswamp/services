@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -14,7 +14,6 @@ use English '-no_match_vars';
 use File::Spec qw(devnull);
 use File::Spec::Functions;
 use File::Basename qw(basename);
-use File::Path qw(remove_tree);
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl;
 use Log::Log4perl::Level;
@@ -27,14 +26,11 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	use_remove_tree
 	runScriptDetached
 	identifyScript
   	getSwampDir
-	$global_swamp_config
-  	getSwampConfig
   	getLoggingConfigString
-	switchExecRunAppenderLogFile
-  	getJobDir
 	construct_vmhostname
 	getUUID
 	launchPadStart
@@ -44,6 +40,8 @@ use SWAMP::vmu_Support qw(
     $LAUNCHPAD_CHECKSUM_ERROR
     $LAUNCHPAD_FORK_ERROR
     $LAUNCHPAD_FATAL_ERROR
+  	getSwampConfig
+	$global_swamp_config
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_LAUNCHING
@@ -107,15 +105,6 @@ $daemon->add_method(
     }
 );
 
-@sig = ( 'int', 'int struct ' );
-$daemon->add_method(
-    {
-        'name'      => 'agentMonitor.deleteJobDir',
-        'signature' => \@sig,
-        'code'      => \&_deleteJobDir
-    }
-);
-
 # start server loop - exit on TERM
 $log->info("$PROGRAM_NAME ($PID) entering listen loop at $serverhost on port: $port");
 my $res = $daemon->server_loop('signal' => ['TERM']);
@@ -126,57 +115,6 @@ sub logfilename {
     (my $name = $PROGRAM_NAME) =~ s/\.pl//sxm;
 	$name=basename($name);
 	return catfile(getSwampDir(), 'log', $name . '.log');
-}
-
-# options contains
-#	execrunuid
-# returns:
-# 	 0	failure
-#	>0	success
-sub _deleteJobDir { my ($server, $options) = @_ ;
-	my $execrunuid = $options->{'execrunuid'};
-	switchExecRunAppenderLogFile($execrunuid) if defined $execrunuid;
-	my $result = _deleteJobDirMain($server, $options);
-	return $result;
-}
-
-sub _deleteJobDirMain { my ($server, $options) = @_ ;
-	$tracelog->trace("_deleteJobDir options: ", sub {use Data::Dumper; Dumper($options);});
-	if (! defined($options->{'execrunuid'})) {
-		$log->error('_deleteJobDir Error - no execrunuid');
-		$tracelog->trace('_deleteJobDir - Error - no execrunuid');
-		# failure
-		return 0;
-	}
-	my $execrunuid = $options->{'execrunuid'};
-	my $jobDir = getJobDir($execrunuid);
-	my $jobDirPath = catdir(getSwampDir(), 'run', $jobDir);
-	if (! -d $jobDirPath) {
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath is not a directory");
-		$log->error("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath is not a directory");
-		# failure
-		return 0;
-	}
-	
-	# return number of files removed - should be >0 on success, 0 on failure
-	my $result = remove_tree($jobDirPath, {error => \my $error});
-	if (@$error || ! $result) {
-		my $error_string = '';
-		foreach my $diag (@$error) {
-			my ($file, $message) = %$diag;
-			$error_string .= $file . ' ' . $message . ' ';
-		}
-		$tracelog->trace("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath remove failed - result: $result");
-		$log->error("_deleteJobDir - Error - $execrunuid - jobDir: $jobDirPath remove failed  - result: $result - error: $error_string");
-		# set result to 0 on error in case it was >0 but an error occurred anyway
-		$result = 0;
-	}
-	else {
-		$tracelog->trace("_deleteJobDir - $execrunuid jobDir: $jobDirPath removed: $result");
-		$log->info("_deleteJobDir - $execrunuid - jobDir: $jobDirPath removed: $result");
-	}
-	# return >0 on success, 0 on failure
-	return $result;
 }
 
 sub _launchViewer { my ($server, $options) = @_ ;

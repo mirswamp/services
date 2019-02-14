@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
@@ -12,21 +12,26 @@ use warnings;
 use Getopt::Long qw/GetOptions/;
 use Pod::Usage qw/pod2usage/;
 use English '-no_match_vars';
+use Log::Log4perl;
+use Log::Log4perl::Level;
+use File::Spec qw(catfile);
 
 use FindBin;
-use lib "$FindBin::Bin/lib";
+use lib ("$FindBin::Bin/..agents/lib", "$FindBin::Bin/lib",
+        "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
 use VMTools qw(
 	checkEffectiveUser 
-	consoleMsg 
-	errorMsg 
 	extractOutput 
-	init 
-	logMsg
-  	pkgshutdown 
 	setvmprojectdir 
 	setvmimagedir 
 	vmExists 
 	vmState
+);
+use SWAMP::vmu_Support qw(
+    getLoggingConfigString
+    getSwampDir
+    identifyScript
+    runScriptDetached
 );
 
 our $VERSION = '0.98';
@@ -53,6 +58,22 @@ if ($doversion) {
     exit 0;
 }
 
+my @PRESERVEARGV = @ARGV;
+my $debug = 0;
+my $asdetached = 0;
+
+sub logfilename {
+        return File::Spec->catfile(getSwampDir(), 'log', 'start_vm.log');
+}
+
+Log::Log4perl->init(getLoggingConfigString());
+my $log = Log::Log4perl->get_logger(q{});
+$log->level($debug ? $TRACE : $INFO);
+my $tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+identifyScript(\@PRESERVEARGV);
+runScriptDetached() if ($asdetached);
+
 setvmprojectdir($vmfolder);
 setvmimagedir($vmimagefolder);
 
@@ -75,34 +96,32 @@ if ( !checkEffectiveUser() ) {
     exit 1;
 }
 
-init( $vmname, 'vm_output', 0 );
-logMsg('vm_output start');
+print("vm_output start\n");
 
 opendir(my $dir, $dirpath);
 my @files = readdir $dir;
 closedir $dir;
 foreach (@files) {
     next if ( $_ eq q{.} || $_ eq q{..} );
-    errorMsg('Error: output folder is not empty.');
+    print("Error: output folder is not empty.\n");
     exit 1;
 }
 
 if ( vmExists($vmname) ) {
     my $state = vmState($vmname);
     if ( $state eq 'running' ) {
-        errorMsg(
-"output from VM $vmname cannot be extracted at this time, it is still running.");
+        print(
+"output from VM $vmname cannot be extracted at this time, it is still running.\n");
     }
     else {
         if ( extractOutput( $dirpath, $vmname ) ) {
-            consoleMsg("VM $vmname has been removed from the system.");
+            print("VM $vmname has been removed from the system.\n");
         }
     }
 }
 else {
-    errorMsg("Cannot find a VM named $vmname");
+    print("Cannot find a VM named $vmname\n");
 }
-pkgshutdown();
 
 exit 0;
 

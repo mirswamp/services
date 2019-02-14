@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
@@ -15,28 +15,32 @@ use Pod::Usage qw/pod2usage/;
 use English qw(-no_match_vars);
 use Cwd 'abs_path';
 use Carp 'croak';
+use Log::Log4perl;
+use Log::Log4perl::Level;
+use File::Spec qw(catfile);
 
 use FindBin;
-use lib "$FindBin::Bin/lib";
+use lib ("$FindBin::Bin/..agents/lib", "$FindBin::Bin/lib",
+        "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
 use VMTools qw(
 	checkEffectiveUser 
-	consoleMsg 
-	errorMsg 
 	extractOutput 
-	init 
-	logMsg 
-	pkgshutdown 
 	startVM
 	defineVM
 	listMasters
 	listVMs
-	initProjectLog
 	createImages
 	createXML
 	setvmprojectdir
 	vmVNCDisplay
 	vmExists
 	vmState
+);
+use SWAMP::vmu_Support qw(
+    getLoggingConfigString
+    getSwampDir
+    identifyScript
+    runScriptDetached
 );
 use VMConstants;
 
@@ -73,6 +77,23 @@ if ($doversion) {
     print " VMTools : $VMTools::VERSION\n";
     exit 0;
 }
+
+my @PRESERVEARGV = @ARGV;
+my $debug = 0;
+my $asdetached = 0;
+
+sub logfilename {
+        return File::Spec->catfile(getSwampDir(), 'log', 'masterify_vm.log');
+}
+
+Log::Log4perl->init(getLoggingConfigString());
+my $log = Log::Log4perl->get_logger(q{});
+$log->level($debug ? $TRACE : $INFO);
+my $tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+identifyScript(\@PRESERVEARGV);
+runScriptDetached() if ($asdetached);
+
 setvmprojectdir($vmfolder);
 
 if ( !defined $vmname ) { pod2usage('vm-name option is required.'); }
@@ -99,8 +120,7 @@ if ($dolistmine) {
     exit 0;
 }
 
-init( $vmname, "$PROGRAM_NAME", 0 );
-logMsg("$PROGRAM_NAME started");
+print("$PROGRAM_NAME started\n");
 
 if ( !vmExists($vmname) ) {
     createImages( undef, $vmname, $imagename, $outsize, ($skipManifest ? 2 : 1 ));
@@ -108,28 +128,24 @@ if ( !vmExists($vmname) ) {
     defineVM($vmname);
 }
 else {
-    errorMsg("A VM of this name ($vmname) already exists.");
+    print("A VM of this name ($vmname) already exists.\n");
     exit 1;
 }
 
-initProjectLog($vmname);
-
 my $ret = ( startVM($vmname) );
 if ( $ret == 0 ) {
-    consoleMsg("Started master $imagename VM named $vmname.");
+    print("Started master $imagename VM named $vmname.\n");
     vmVNCDisplay($vmname);
 }
 else {
 # clean up project folder? Eventually, but for now leave it for troubleshooting.
-    consoleMsg("Unable to start $vmname.");
+    print("Unable to start $vmname.\n");
 }
-pkgshutdown();
 exit $ret;
 
 sub trap_handler {
 
     # still need to clean up partially created VMs
-    pkgshutdown();
     croak "Caught signal @_, shutting down";
 }
 __END__

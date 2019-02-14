@@ -3,18 +3,17 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
 use warnings;
 use strict;
 
-use Cwd qw(getcwd abs_path);
+use Cwd qw(getcwd);
 use English '-no_match_vars';
 use File::Basename qw(basename fileparse);
 use File::Copy qw(copy);
-use File::Path qw(make_path);
 use File::Spec::Functions;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl::Level;
@@ -25,27 +24,30 @@ use FindBin;
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::CodeDX qw(uploadanalysisrun);
-use SWAMP::ThreadFix qw(threadfix_uploadanalysisrun);
 use SWAMP::PackageTypes qw($GENERIC_PKG $JAVABYTECODE_PKG);
 use SWAMP::FrameworkUtils qw(generateErrorJson saveErrorJson);
 use SWAMP::vmu_Support qw(
+	use_make_path
 	runScriptDetached
+	setHTCondorEnvironment
 	identifyScript
 	systemcall
 	getLoggingConfigString 
-	$global_swamp_config
-	getSwampConfig 
 	getSwampDir
 	makezip
+	getSwampConfig 
+	$global_swamp_config
 	timetrace_event
 	timetrace_elapsed
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
 	$VIEWER_STATE_LAUNCHING
+	$VIEWER_STATE_STOPPING
 	$VIEWER_STATE_READY
 	$VIEWER_STATE_ERROR
-	needToLaunch
+	$VIEWER_STATE_TERMINATING
+	$VIEWER_STATE_TERMINATED
 	getViewerStateFromClassAd
 	updateClassAdViewerStatus
 	launchViewer
@@ -69,7 +71,7 @@ my $project_uuid;    # SWAMP project affiliation
 my $configfile;
 
 
-my $package_name;    # SWAMP package affiliation == CodeDX project, ThreadFix application
+my $package_name;    # SWAMP package affiliation == CodeDX project
 my $package_version; # SWAMP package version
 my $tool_name;       # SWAMP Toolname
 my $tool_version;	 # SWAMP Tool Version
@@ -117,9 +119,10 @@ my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+setHTCondorEnvironment();
 identifyScript(\@PRESERVEARGV);
 
-if ($asdetached && ($viewer_name =~ /CodeDX/ixsm) || ($viewer_name =~ /ThreadFix/ixsm)) {
+if ($asdetached && ($viewer_name =~ /CodeDX/ixsm)) {
 	print "SUCCESS\n"; # this string is propagated back to the database sys_eval to simply indicate that the script has started
 	runScriptDetached();
 }
@@ -131,7 +134,7 @@ my $exitCode = 0;
 if ($viewer_name =~ /Native/ixsm) {
     $exitCode = doNative();
 }
-elsif ($viewer_name =~ /CodeDX/isxm || $viewer_name =~ /ThreadFix/isxm) {
+elsif ($viewer_name =~ /CodeDX/isxm) {
 	my $event_start = timetrace_event($project_uuid, 'viewer', 'launch start'); 
     $exitCode = doViewerVM();
 	timetrace_elapsed($project_uuid, 'viewer', 'launch', $event_start);
@@ -151,7 +154,6 @@ sub uploadResults { my ($viewerState, $execrunuid) = @_ ;
             $log->info("uploadResults - viewer is ready - project_uuid: $project_uuid viewer_name: $viewer_name");
 			last;
 		}
-		return 0 if ($state != $VIEWER_STATE_LAUNCHING && $state != $VIEWER_STATE_NO_RECORD);
         sleep $sleep_time;
         $viewerState = getViewerStateFromClassAd($project_uuid, $viewer_name);
         if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
@@ -159,57 +161,59 @@ sub uploadResults { my ($viewerState, $execrunuid) = @_ ;
             return 0;
         }
 		$state = $viewerState->{'state'};
+		if (($state != $VIEWER_STATE_READY) && ($state != $VIEWER_STATE_LAUNCHING)) {
+            $log->info("uploadResults - viewer is being terminated - project_uuid: $project_uuid viewer_name: $viewer_name");
+			return 0;
+		}
     }
     if ($state != $VIEWER_STATE_READY) {
 		$log->error('Error launch timed out after ', 60 * $sleep_time, " seconds - project_uuid: $project_uuid viewer_name: $viewer_name");
 		return 0;
 	}
-	if (($viewer_name ne 'ThreadFix') && $package_type && ($package_type ne $JAVABYTECODE_PKG)) {
+    my $removeZip = 0;
+	if ($package_type && ($package_type ne $JAVABYTECODE_PKG) && -r $source_archive) {
+		if ($source_archive && $source_archive !~ /\.zip$/sxm && -r $source_archive) {
+			$log->info('original source_archive: ', $source_archive);
+			$source_archive = makezip($source_archive);
+			$log->info('makezip source_archive: ', $source_archive);
+			# If the name was changed to zip form, remove the zip when finished
+			if ( $source_archive =~ /\.zip$/sxm ) {
+				$removeZip = 1;
+			}
+		}
 		push @file_path, $source_archive;
 	}
-	my $result = 0;
-	if ($viewer_name eq 'CodeDX') {
-		$log->info("Calling uploadanalysysrun $package_name ", sub {join ', ', map(abs_path($_), @file_path);});
-		$result = uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
-	}
-	elsif ($viewer_name eq 'ThreadFix') {
-		$log->info("Calling threadfix_uploadanalysysrun $package_name ", sub {join ', ', map(abs_path($_), @file_path);});
-		$result = threadfix_uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
-	}
+	$log->info("Calling uploadanalysisrun $package_name ", sub {join ', ', map($_, @file_path);});
+	my $result = uploadanalysisrun($viewerState->{'address'}, $viewerState->{'apikey'}, $viewerState->{'urluuid'}, $package_name, \@file_path);
 	if ($result) {
 		$log->info("uploaded results - package_name: $package_name viewer_name: $viewer_name");
 	}
 	else {
 		$log->error("Unable to upload results - package_name: $package_name viewer_name: $viewer_name");
 	}
+	unlink $source_archive if ($removeZip);
 	return $result;
 }
 
 sub doViewerVM {
-	$global_swamp_config ||= getSwampConfig($configfile);
+	my $execrunuid = 'vrun_' . $project_uuid . '_' . $viewer_name;
+	my $options = {};
+	my $launch_result = 1;
     my $viewerState = getViewerStateFromClassAd($project_uuid, $viewer_name);
+	# immediately test for error conditions
 	if (defined($viewerState->{'error'}) || ! defined($viewerState->{'state'})) {
 		$log->error("doViewerVM - Error checking for viewer - project_uuid: $project_uuid viewer_name: $viewer_name");
 		return 1;
 	}
-
-    my $removeZip = 0;
-    if ($source_archive && $source_archive !~ /\.zip$/sxm) {
-		$log->info('original source_archive: ', abs_path($source_archive));
-        $source_archive = makezip(abs_path($source_archive));
-		$log->info('makezip source_archive: ', abs_path($source_archive));
-        # If the name was changed to zip form, remove the zip when finished
-        if ( $source_archive =~ /\.zip$/sxm ) {
-            $removeZip = 1;
-        }
-    }
-
-	# if viewer state indicates need to launch then launch new viewer vm 
 	my $state = $viewerState->{'state'};
-	my $execrunuid = 'vrun_' . $project_uuid . '_' . $viewer_name;
-	my $options = {};
-	my $launch_result = 1;
-	if (needToLaunch($state)) {
+	if (
+		($state != $VIEWER_STATE_READY) && 
+		($state != $VIEWER_STATE_LAUNCHING) && 
+		($state != $VIEWER_STATE_STOPPING) && 
+		($state != $VIEWER_STATE_TERMINATING)
+	) {
+		updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, 'Launching Viewer VM', $options);
+		$global_swamp_config ||= getSwampConfig($configfile);
 		$options = {
 			'resultsfolder' => $global_swamp_config->get('resultsFolder'),
 			'projectid'     => $project_uuid,
@@ -222,6 +226,7 @@ sub doViewerVM {
 			$options->{'db_path'} = $viewer_db_path;
 		}
 		$log->info("Calling launchViewer via RPC project_uuid: $project_uuid viewer_name: $viewer_name");
+		# launch viewer vm asynchronously on submit node via rpc
 		$launch_result = launchViewer($options);
 		if (! $launch_result) {
 			$log->error("launchViewer failed - project_uuid: $project_uuid viewer_name: $viewer_name");
@@ -233,7 +238,6 @@ sub doViewerVM {
 		$log->info("Calling uploadResults for: $package_name");
 		$upload_result = uploadResults($viewerState, $execrunuid);
 	}
-	unlink $source_archive if ($removeZip);
     return 0 if ($launch_result && $upload_result);
     return 1;
 }
@@ -273,8 +277,11 @@ sub doNativeError { my ($file, $outputdir) = @_ ;
 	my $retCode = 0;
 	my $JSONname  = q{failedreport.json};
 	my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
-	make_path($outputdir);
-	if ( copy( $file, $outputdir )) {
+	if (! use_make_path($outputdir)) {
+		$log->error("Error - make_path failed for: $outputdir");
+		$retCode = 3;
+	}
+	elsif (copy($file, $outputdir)) {
 		$log->info("Copied $file to $outputdir ret=[${htmlfile}${ext}]");
 		my $topdir = 'out';
 		my $reportTime = ctime();
@@ -284,7 +291,7 @@ sub doNativeError { my ($file, $outputdir) = @_ ;
 		my $report = generateErrorJson(catfile($outputdir, $htmlfile . $ext), $topdir, @header);
 		my $savereport = catfile($outputdir, $JSONname);
 		$log->info("report - file: $savereport url: ", $global_swamp_config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
-		my$saveResult = saveErrorJson($report, $savereport);
+		my $saveResult = saveErrorJson($report, $savereport);
 	    if ($saveResult == 0) {
             $log->error("Failed to save the error report json to: $savereport");
         }
@@ -304,7 +311,11 @@ sub doNativeError { my ($file, $outputdir) = @_ ;
 sub doNativeHTML { my ($file, $outputdir) = @_ ;
 	$log->info("doNativeHTML - processing html result: $file");
 	my $retCode = 0;
-	make_path($outputdir);
+	if (! use_make_path($outputdir)) {
+		$log->error("Error make_path failed for: $outputdir");
+		$retCode = 3;
+		return $retCode;
+	}
 	chdir $outputdir;
 	# basename of HTML archive
 	my $base = basename($file);
@@ -364,7 +375,11 @@ sub doNativeSCARF { my ($file, $tool_name) = @_ ;
 	my $toolListPath = catfile(getSwampDir(), 'etc', 'Scarf_ToolList.json');
 	my $parsingScript = catfile(getSwampDir(), 'bin', 'vmu_Scarf_CParsing');
 	my $reportTime = ctime();
-	make_path($outputdir);
+	if (! use_make_path($outputdir)) {
+		$log->error("Error - make_path failed for: $outputdir");
+		$retCode = 2;
+		return $retCode;
+	}
 	# print the metadata information into a tempfile in the outputdir, for the CParsing program
 	my $metaDataFile = q{SCARFmetaData};
 	my $metaDataPath = catfile($outputdir, $metaDataFile);

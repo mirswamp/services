@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::FrameworkUtils;
 use 5.014;
@@ -15,12 +15,14 @@ use XML::LibXML;
 use XML::LibXSLT;
 use SWAMP::vmu_Support qw(getSwampDir);
 use JSON;
+# required for MongoDB
+use MongoDB;
 use parent qw(Exporter);
 
 our (@EXPORT_OK);
 BEGIN {
     require Exporter;
-    @EXPORT_OK = qw(generateErrorJson saveErrorJson);
+    @EXPORT_OK = qw(generateErrorJson saveErrorJson generateMongoJson);
 }
 
 my $stdDivPrefix = q{ } x 2;
@@ -155,6 +157,43 @@ sub ReadStatusOut { my ($lines) = @_ ;
 	return \%status;
 }
 
+sub generateMongoJson { my ($tarball, $topdir) = @_;
+    my %report; 
+    my $skip = 1;
+	if ($skip) {	
+	#load and save the status out
+	my ($statusOut, $status) = loadStatusOut($tarball, $topdir);
+	$report{'status_out'} = $statusOut;
+
+	if ($status) {
+		#include specific error
+		$report{'error_message'} = addErrorNote($status);
+		my $string;
+        my $nOut;
+        my $nErr;
+        #$report{'no-build'} = addBuildfailures($status, $tarball, $topdir);
+        ($nOut, $string) = addStdout($status, $tarball);
+
+		#load and save the stdout
+		if ($nOut > 0) {
+            $report{'stdout'} = $string;
+        }
+		#load and save the stderr
+		($nErr, $string) = addStderror($status, $tarball);
+        if ($nErr > 0) {
+            $report{'stderr'} = $string;
+        }
+		#load and save the versions
+		 $string = rawTar($tarball, qq{$topdir/versions.txt});
+        if ($string) {
+        	$report{'version_information'} = $string
+		}
+	}
+    }
+	return \%report
+    
+}
+
 # Read all the accessment error report from outputdisk.tar.gz,
 # and store all of them into a perl dictionary.
 sub generateErrorJson {
@@ -257,7 +296,6 @@ sub addErrorNote { my ($s) = @_;
         else {
             my $errCnt   = scalar @{ $s->{'#errors'} };
             my $warnCnt  = scalar @{ $s->{'#warnings'} };
-            my $errorString;
             $note = "(errors: $errCnt, warnings: $warnCnt)\n";
             foreach my $t ( @{ $s->{'#order'} } ) {
                 my $status   = $t->{'status'};

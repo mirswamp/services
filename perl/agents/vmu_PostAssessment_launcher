@@ -1,8 +1,0 @@
-#!/bin/bash
-
-# This file is subject to the terms and conditions defined in
-# 'LICENSE.txt', which is part of this source code distribution.
-#
-# Copyright 2012-2018 Software Assurance Marketplace
-
-sudo /opt/perl5/perls/perl-5.18.1/bin/perl /opt/swamp/bin/vmu_PostAssessment.pl "$@"

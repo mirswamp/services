@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -21,18 +21,16 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::vmu_Support qw(
 	runScriptDetached
+	setHTCondorEnvironment
 	identifyScript
-	deleteJobDir
 	getLoggingConfigString 
-	$global_swamp_config
-	getSwampConfig
 	getSwampDir 
-	isSwampInABox
-	buildExecRunAppenderLogFileName
 	launchPadKill
 	$LAUNCHPAD_SUCCESS
 	getHTCondorJobId
 	HTCondorJobStatus
+	getSwampConfig
+	$global_swamp_config
 );
 
 use SWAMP::vmu_AssessmentSupport qw(
@@ -53,10 +51,10 @@ my $asdetached = 1;
 my $log;
 my $tracelog;
 my $execrunuid;
+my $hard_kill;
 my $configfile;
 my $kill_sleep_time = 5; 	# seconds
 my $kill_wait_time = 180;	# seconds
-my $kill_rewrite_status_count = 10;
 
 sub logfilename {
     my $name = basename($PROGRAM_NAME, ('.pl'));
@@ -68,15 +66,21 @@ my @PRESERVEARGV = @ARGV;
 GetOptions(
 	'debug'						=> \$debug,
 	'execution_record_uuid=s'	=> \$execrunuid,
+	'hard=s'					=> \$hard_kill,
 	'detached!'					=> \$asdetached,
 	'config=s'					=> \$configfile,
 );
+# viewer jobs provide hard kill and graceful shutdown
+# all other jobs provide only hard kill
+# the default for viewer jobs is graceful shutdown
+my $graceful_shutdown = 0;
 
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
 $log->level($TRACE);
 $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+setHTCondorEnvironment();
 identifyScript(\@PRESERVEARGV);
 
 if ($execrunuid) {
@@ -86,22 +90,24 @@ if ($execrunuid) {
 		my $viewerbog = {};
 		if ($type eq 'vrun') {
 			my $viewer_name = '';
-			$viewer_name = (split, '_', $returned_execrunuid)[2] if ($returned_execrunuid);
+			$viewer_name = (split '_', $returned_execrunuid)[2] if ($returned_execrunuid);
 			$viewerbog->{'projectid'} = $execrunuid;
 			$viewerbog->{'viewer'} = $viewer_name;
 			$viewerbog->{'viewer_uuid'} = $viewer_instanceuid;
+			# the default for viewer jobs is graceful shutdown
+			$graceful_shutdown = 1 if (! defined($hard_kill) || ($hard_kill =~ m/false/i));
 		}
-    	my $retval = launchPadKill($returned_execrunuid, $jobid);
+    	my $retval = launchPadKill($returned_execrunuid, $jobid, $type, $graceful_shutdown);
 		if ($retval != $LAUNCHPAD_SUCCESS) {
-			my $status_message = 'Terminate Failed';
-			$tracelog->trace("$PROGRAM_NAME launchPadKill returned failure for $returned_execrunuid $jobid: $retval $status_message");
+			my $job_status_message = 'Terminate Failed';
+			$tracelog->trace("$PROGRAM_NAME launchPadKill returned failure for $returned_execrunuid $jobid: $retval $job_status_message");
 			# these status page entries will be overwritten by the entries from the monitor 
 			if ($type eq 'arun' || $type eq 'mrun') {
-				updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
-				updateRunStatus($returned_execrunuid, $status_message, 1);
+				updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $job_status_message);
+				updateRunStatus($returned_execrunuid, $job_status_message, 1);
 			}
 			elsif ($type eq 'vrun') {
-				updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATE_FAILED, $status_message, $viewerbog);
+				updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATE_FAILED, $job_status_message, $viewerbog);
 			}
 		}
 		else {
@@ -109,63 +115,36 @@ if ($execrunuid) {
 			# stop when jobid not found in queue
 			# or time limit expires
 
-			my $status_message = 'Terminating';
-			$tracelog->trace("$PROGRAM_NAME launchPadKill returned success for $returned_execrunuid $jobid: $retval $status_message");
+			my $job_status_message = 'Terminating';
+			$tracelog->trace("$PROGRAM_NAME launchPadKill returned success for $returned_execrunuid $jobid: $retval $job_status_message");
 			my $total_sleep_time = 0;
-			my $job_found = 1;
+			my $job_found = HTCondorJobStatus($jobid);
 			my $timeout = 0;
 			while ($job_found && ! $timeout) {
 				if ($type eq 'arun' || $type eq 'mrun') {
-					updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
+					updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $job_status_message);
 				}
 				elsif ($type eq 'vrun') {
-					updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATING, $status_message, $viewerbog);
+					updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATING, $job_status_message, $viewerbog);
 				}
 				$job_found = HTCondorJobStatus($jobid);
-				if (! $job_found) {
+				if ($job_found) {
 					sleep $kill_sleep_time;
 					$total_sleep_time += $kill_sleep_time;
 					$timeout = ($total_sleep_time >= $kill_wait_time);
 				}
 			}
 
-			# if jobid is still in condor queue
-			# update status accordingly and return
-			if ($job_found) {
-				return;
-			}
-
-			# rewrite Terminating status to collector until the exec node job monitor has exited
-			# because job monitor also writes status to collector
-			# this is imprecise because it relies on a timer, not an exact query for job monitor exit
-			for (my $i = 0; $i < $kill_rewrite_status_count; $i++) {
-				if ($type eq 'arun' || $type eq 'mrun') {
-					updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
-				}
-				elsif ($type eq 'vrun') {
-					updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATING, $status_message, $viewerbog);
-				}
-				sleep $kill_sleep_time;
-			}
-
-			# now rewrite Terminated status to collector and database
-			$status_message = 'Terminated';
+			# now rewrite status to collector and database
+			$job_status_message = 'Terminated';
+			$job_status_message = 'Terminate Status Unknown' if ($job_found);
 			if ($type eq 'arun' || $type eq 'mrun') {
-				updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $status_message);
+				updateClassAdAssessmentStatus($returned_execrunuid, '', '', '', $job_status_message);
 				updateExecutionResults($returned_execrunuid, {'vm_password' => ''});
-				updateRunStatus($returned_execrunuid, $status_message, 1);
+				updateRunStatus($returned_execrunuid, $job_status_message, 1);
 			}
 			elsif ($type eq 'vrun') {
-				updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATED, $status_message, $viewerbog);
-			}
-
-			# remove job run directory on submit node
-			my $status = deleteJobDir($returned_execrunuid);
-			if ($status) {
-				$tracelog->info("$PROGRAM_NAME - job directory for: $returned_execrunuid successfully deleted");
-			}
-			else {
-				$tracelog->info("$PROGRAM_NAME - job directory for: $returned_execrunuid deletion failed");
+				updateClassAdViewerStatus($returned_execrunuid, $VIEWER_STATE_TERMINATED, $job_status_message, $viewerbog);
 			}
 		}
 	}

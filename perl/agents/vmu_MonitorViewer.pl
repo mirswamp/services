@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -20,19 +20,20 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::vmu_Support qw(
 	getStandardParameters
+	setHTCondorEnvironment
+	runScriptDetached
 	identifyScript
 	getVMIPAddress
 	getSwampDir
 	getLoggingConfigString
-	getSwampConfig
-	$global_swamp_config
-	isSwampInABox
-	buildExecRunAppenderLogFileName
 	loadProperties
 	construct_vmhostname
+	getSwampConfig
+	$global_swamp_config
 	timetrace_event
 	timetrace_elapsed
 );
+$global_swamp_config ||= getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_ERROR
 	$VIEWER_STATE_LAUNCHING
@@ -46,21 +47,19 @@ $global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
-my $clusterid;
 my $events_file = 'JobVMEvents.log';
 my $vmip_file = 'vmip.txt';
 my $MAX_OPEN_ATTEMPTS = 5;
 my $done = 0;
 
 my %status_seen = ();
-my $INITIAL_STATUS	= 'RUNSHSTART';
-my $FINAL_STATUS	= 'VIEWERUP';
+my $INITIAL_STATUS		= 'RUNSHSTART';
+my $FINAL_UP_STATUS		= 'VIEWERUP';
+my $FINAL_DOWN_STATUS	= 'VIEWERDOWN';
 my $status_messages = {
 	$INITIAL_STATUS			=> ['Starting viewer vm run script', 				$VIEWER_STATE_LAUNCHING	],
 	'NOIP'					=> ['Viewer vm has no ip address', 					$VIEWER_STATE_STOPPING	],
 	'NOIPSHUTDOWN'			=> ['Shutting down viewer vm for no ip address', 	$VIEWER_STATE_STOPPING	],
-	'LEGACYVIEWERDB'		=> ['Unbundling legacy viewer database', 			$VIEWER_STATE_LAUNCHING	],
-	'VIEWERDB'				=> ['Unbundling viewer database', 					$VIEWER_STATE_LAUNCHING	],
 	'MYSQLSTART'			=> ['Starting mysql service', 						$VIEWER_STATE_LAUNCHING	],
 	'MYSQLFAIL'				=> ['Service mysql failed to start', 				$VIEWER_STATE_STOPPING	],
 	'MYSQLSHUTDOWN'			=> ['Shutting down viewer vm for no mysql', 		$VIEWER_STATE_STOPPING	],
@@ -68,41 +67,45 @@ my $status_messages = {
 	'MYSQLEMPTY'			=> ['Restoring empty mysql database', 				$VIEWER_STATE_LAUNCHING	],
 	'MYSQLGRANT'			=> ['Granting privileges for viewer database', 		$VIEWER_STATE_LAUNCHING	],
 	'MYSQLDROP'				=> ['Dropping viewer database', 					$VIEWER_STATE_LAUNCHING	],
-	'EMPTYDB'				=> ['Restoring empty viewer database', 				$VIEWER_STATE_LAUNCHING	],
 	'USERDB'				=> ['Restoring user database', 						$VIEWER_STATE_LAUNCHING	],
+	'EMPTYDB'				=> ['Restoring empty viewer database', 				$VIEWER_STATE_LAUNCHING	],
 	'CREATEPROXY'			=> ['Creating proxy directory', 					$VIEWER_STATE_LAUNCHING	],
-	'APIKEY'				=> ['Inserting APIKEY', 							$VIEWER_STATE_LAUNCHING	],
-	'BASEURL'				=> ['Inserting DefaultConfiguration', 				$VIEWER_STATE_LAUNCHING	],
 	'CONFIG'				=> ['Restoring viewer configuration', 				$VIEWER_STATE_LAUNCHING	],
 	'EMPTYCONFIG'			=> ['Initializing viewer configuration', 			$VIEWER_STATE_LAUNCHING	],
 	'PROPERTIES'			=> ['Copying viewer properties', 					$VIEWER_STATE_LAUNCHING	],
+	'APIKEY'				=> ['Inserting APIKEY', 							$VIEWER_STATE_LAUNCHING	],
+	'BASEURL'				=> ['Inserting DefaultConfiguration', 				$VIEWER_STATE_LAUNCHING	],
 	'WARFILE'				=> ['Restoring viewer war file', 					$VIEWER_STATE_LAUNCHING	],
 	'TOMCATSTART'			=> ['Starting tomcat service', 						$VIEWER_STATE_LAUNCHING	],
 	'TOMCATFAIL'			=> ['Service tomcat failed to start', 				$VIEWER_STATE_STOPPING	],
+	'CONNECTEDUSERS'		=> ['Checking for connected users', 				$VIEWER_STATE_STOPPING	],
 	'TOMCATSHUTDOWN'		=> ['Shutting down viewer vm for no tomcat', 		$VIEWER_STATE_STOPPING	],
 	'TOMCATRUN'				=> ['Service tomcat running', 						$VIEWER_STATE_LAUNCHING	],
-	'TIMESHUTDOWN'			=> ['Shutting down viewer after timeout', 			$VIEWER_STATE_STOPPING	],
+	'TIMERSTART'			=> ['Starting viewer checktimeout', 				$VIEWER_STATE_LAUNCHING	],
+	'TIMERSHUTDOWN'			=> ['Shutting down viewer after timeout', 			$VIEWER_STATE_STOPPING	],
 	'VIEWERDBBACKUP'		=> ['Starting viewer database backup', 				$VIEWER_STATE_STOPPING	],
 	'VIEWERDBDUMPFAIL'		=> ['Viewer database dump failed', 					$VIEWER_STATE_STOPPING	],
 	'VIEWERDBDUMPSUCCESS'	=> ['Viewer database dump succeeded', 				$VIEWER_STATE_STOPPING	],
 	'VIEWERDBCONFIGFAIL'	=> ['Viewer configuration tar failed', 				$VIEWER_STATE_STOPPING	],
 	'VIEWERDBCONFIGSUCCESS'	=> ['Viewer configuration tar succeeded', 			$VIEWER_STATE_STOPPING	],
-	'VIEWERDBNOBUNDLE'		=> ['Starting viewer user data bundling', 			$VIEWER_STATE_STOPPING	],
+	'VIEWERDBBUNDLESKIP'	=> ['Viewer user data bundling skipped', 			$VIEWER_STATE_STOPPING	],
+	'VIEWERDBNOBUNDLE'		=> ['Viewer no user data to bundle', 				$VIEWER_STATE_STOPPING	],
 	'VIEWERDBBUNDLEFAIL'	=> ['Viewer user data bundling failed', 			$VIEWER_STATE_STOPPING	],
 	'VIEWERDBBUNDLESUCCESS'	=> ['Viewer user data bundling succeeded', 			$VIEWER_STATE_STOPPING	],
-	$FINAL_STATUS			=> ['Viewer is up', 								$VIEWER_STATE_READY		],
+	$FINAL_UP_STATUS		=> ['Viewer is up', 								$VIEWER_STATE_READY		],
+	$FINAL_DOWN_STATUS		=> ['Viewer is shutdown', 							$VIEWER_STATE_SHUTDOWN  ],
 };
 
+# logfilesuffix is the HTCondor clusterid and is used to distinguish viewer log files
+# since the execrunuid for viewers is the viewer projectid and is not distinct across
+# viewer executions
+my $logfilesuffix = '';
 sub logfilename {
-	if (isSwampInABox($global_swamp_config)) {
-		my $name = buildExecRunAppenderLogFileName($execrunuid);
-		return $name;
-	}
-    my $name = basename($0, ('.pl'));
-    chomp $name;
-	$name =~ s/Monitor//sxm;
-    $name .= '_' . $clusterid;
-    return catfile(getSwampDir(), 'log', $name . '.log');
+	my $projectid = $execrunuid;
+	$projectid =~ s/^vrun_//;
+	$projectid =~ s/_CodeDX$//;
+	my $name = catfile(getSwampDir(), 'log', $projectid . '_' . $logfilesuffix . '.log');
+	return $name;
 }
 
 my $open_attempts = 0;
@@ -141,12 +144,16 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 			$log->info("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
 			return;
 		}
+		if ($mstatus && ($mstatus eq $FINAL_DOWN_STATUS)) {
+			$log->info("MonitorViewer $mstatus - leaving monitor loop");
+			return;
+		}
 		if ($mstatus && exists($status_messages->{$mstatus})) {
 			my ($message, $state) = @{$status_messages->{$mstatus}};
 			$log->info("Status: $mstatus state: $state message: $message");
 			# this is where VIEWER_STATE_READY is set
-			if ($mstatus eq $FINAL_STATUS) {
-				timetrace_event($execrunuid, 'viewer', $FINAL_STATUS);
+			if ($mstatus eq $FINAL_UP_STATUS) {
+				timetrace_event($execrunuid, 'viewer', $FINAL_UP_STATUS);
 				$log->info("MonitorViewer entering collector beacon mode");
 				$final_status_seen = 1;
 			}
@@ -228,12 +235,12 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
 
 # args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
-# clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
-if (! $execrunuid || ! $clusterid) {
-	# we have no execrunuid or clusterid for the log4perl log file name
+my ($owner, $uiddomain, $clusterid, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid);
+if (! $execrunuid) {
+	# we have no execrunuid for the log4perl log file name
 	exit(1);
 }
+$logfilesuffix = $clusterid if (defined($clusterid));
 
 if (open(my $fh, '>', "vmu_MonitorViewer_${clusterid}.pid")) {
 	print $fh "$$\n";
@@ -255,7 +262,10 @@ $log->level($debug ? $TRACE : $INFO);
 $log->info("MonitorViewer: $execrunuid Begin");
 $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
+setHTCondorEnvironment();
 identifyScript(\@ARGV);
+# my $startupdir = runScriptDetached();
+# chdir($startupdir);
 
 my $event_start = timetrace_event($execrunuid, 'viewer', 'monitor start');
 
@@ -268,7 +278,7 @@ $bog{'vmhostname'} = $vmhostname;
 obtain_vmip($execrunuid, \%bog, $vmhostname);
 
 monitor($execrunuid, \%bog);
-my $message = "Viewer is shutdown complete";
+my $message = "Viewer shutdown complete";
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, $message, \%bog);
 
 $log->info("MonitorViewer: $execrunuid Exit");

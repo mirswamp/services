@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package VMTools;
 
@@ -11,6 +11,22 @@ use strict;
 use warnings;
 use FindBin qw($Bin);
 use parent qw(Exporter);
+use English '-no_match_vars';
+use File::Spec qw(catfile);
+use XML::Simple;
+use File::Basename qw(basename);
+use lib ("$FindBin::Bin/lib", "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
+
+# TODO: currently relies upon module existing in /opt/swamp/perl5, consider
+# packaging VMTools such that you don't have to rely on an absolute path
+use SWAMP::vmu_Support qw(
+    insertIntoInit 
+    getLoggingConfigString
+    systemcall
+);
+
+use constant 'ONEK' => 1024;
+use Log::Log4perl;
 
 BEGIN {
     $VMTools::VERSION = '1.04';
@@ -19,7 +35,7 @@ our (@EXPORT_OK);
 
 BEGIN {
     require Exporter;
-    @EXPORT_OK = qw(checkEffectiveUser consoleMsg displaynameToMastername errorMsg extractOutput init logMsg pkgshutdown
+    @EXPORT_OK = qw(checkEffectiveUser displaynameToMastername extractOutput 
       startVM
       defineVM
       destroyVM
@@ -32,9 +48,9 @@ BEGIN {
       masterizeName
       listMasters
       listVMs
-      initProjectLog
       createImages
       createXML
+      _getLoggingConfigString
       masternameToDisplayname
       masterimagefolder
       vmconvert
@@ -45,13 +61,6 @@ BEGIN {
       vmState);
 }
 
-use English '-no_match_vars';
-use File::Spec qw(catfile);
-use XML::Simple;
-use File::Basename qw(basename);
-use Sys::Syslog qw(syslog openlog closelog);
-use Carp qw(croak carp);
-
 my $VIRSH        = '/usr/bin/virsh';
 my $QEMUIMG      = '/usr/bin/qemu-img';
 my $MAKEFS       = '/usr/bin/virt-make-fs';
@@ -61,117 +70,12 @@ my $SHRED        = '/usr/bin/shred';
 my $TEMPLATE_VM  = "$Bin/templ.xml";
 my $SYSTEMPREFIX = q{};
 
-use constant 'ONEK' => 1024;
-my $MASTER_IMAGE_FOLDER = '/var/lib/libvirt/images';
+# my $MASTER_IMAGE_FOLDER = '/var/lib/libvirt/images';
+my $MASTER_IMAGE_FOLDER = '/swamp/platforms/images';
 my $PROJECT_FOLDER      = '/swamp/working/project';
 my $EMPTY               = '/usr/local/empty';
-my @projectlog;
-my $loggingOn     = 0;
 my $origusername  = 'unknown';
-my $vmlogfilename = q{};
-
-my %os_init = (
-    'rhel'     => \&handleRHEL6,
-    'centos'     => \&handleRHEL6,
-    'ubuntu'     => \&handleUbuntu,
-    'debian'     => \&handleDebian,
-    'fedora'     => \&handleFedora,
-    'scientific' => \&handleScientific,
-    'windows-7'  => \&handleWindows,
-);
-
-# Log a message to syslog and our log
-
-sub logMsg {
-    my ($message) = @_;
-    if ( !$loggingOn ) {    # this is a programmer error
-        carp 'Logging hasn\'t been started. Did init get called?';
-        return;
-    }
-    syslog( 'info', $message );
-    my $now = scalar localtime;
-    if ( $loggingOn > 1 ) {
-        if ( open my $logfh, '>>', $vmlogfilename ) {
-            print $logfh "$now: $message\n";
-            close $logfh or croak "Cannot close log file $OS_ERROR";
-        }
-    }
-    else {
-        push @projectlog, "$now: $message";
-    }
-    return;
-}
-
-sub consoleMsg {
-    my ($message) = @_;
-    print {*STDOUT} "$message\n";
-    logMsg($message);
-    return;
-}
-
-sub errorMsg {
-    my ($message) = @_;
-    print {*STDERR} "$message\n";
-    logMsg($message);
-    return;
-}
-
-sub systemcall {
-    my ($command) = @_;
-    my ( $output, $status ) = ( $_ = qx{$SYSTEMPREFIX $command 2>&1}, $CHILD_ERROR >> 8 );
-    logMsg("system: $command returned $output");
-    carp "$command failed with status $status\n" if ($status);
-    return ( $output, $status );
-}
-
-# -----------------------------------------------------------------------------
-# Initialize logging and any other package items
-# @param vmname the vm for which we are running
-# @ident The identity used in syslog calls
-# -----------------------------------------------------------------------------
-sub init {
-    my ( $vmname, $ident, $syslogOnly ) = $_;
-    openlog( $ident, 'pid, ndelay' );
-    ++$loggingOn;
-    if ( !$syslogOnly ) {
-        initProjectLog($vmname);
-    }
-    else {    #init backing store for project log.
-        @projectlog = ();
-    }
-    return;
-}
-
-sub setVMLogFilename {
-    my ($vmname) = @_;
-    $vmlogfilename = getVMDir($vmname) . '/messages.log';
-    return $vmlogfilename;
-}
-
-sub initProjectLog {
-    my ($vmname) = @_;
-    mkdir( getVMDir($vmname) );
-    if ( open my $logfh, '>>', setVMLogFilename($vmname) ) {
-
-        # dump any logging so far.
-        foreach (@projectlog) {
-            print $logfh "$_\n";
-        }
-        close $logfh or errorMsg("Cannot close log file $ERRNO");
-        ++$loggingOn;
-        @projectlog = ();
-    }
-    else {
-        errorMsg("Could not open project log file $ERRNO");
-    }
-    return;
-}
-
-# shut down this package. Close log files.
-sub pkgshutdown {
-    closelog();
-    return;
-}
+my $log = Log::Log4perl->get_logger(q{});
 
 sub isMasterImage {
     my ($name) = @_;
@@ -194,7 +98,7 @@ sub displaynameToMastername {
     my @files;
     if (!defined($fileref)) {
         opendir( my $dir, $MASTER_IMAGE_FOLDER )
-          or croak "Cannot opendir $MASTER_IMAGE_FOLDER $ERRNO";
+          or $log->error("Cannot opendir $MASTER_IMAGE_FOLDER $ERRNO");
         @files = readdir($dir);
         closedir($dir);
     }
@@ -257,6 +161,7 @@ sub inspectmaster {
         return $output;
     }
     else {
+        $log->error("Unable to run inspection of master on $file from system $status");
         return "ERROR: Unable to run virt-inspect on $file:\nerror from system $status";
     }
 }
@@ -294,11 +199,12 @@ sub vmVNCDisplay {
     my ($vmname) = @_;
     my ( $output, $status ) = systemcall("$VIRSH vncdisplay $vmname");
     if ($status) {
-        errorMsg("Unable to get vncdisplay : Error reported is: $output");
+        $log->error("Unable to get vncdisplay: reported error is $output");
         return 1;
     }
     else {
-        print "$output";
+        # print "$output";
+        $log->error("$output");
     }
     return 0;
 }
@@ -308,7 +214,7 @@ sub vmExists {
     my ($vmname) = @_;
     my ( $output, $status ) = systemcall("$VIRSH list --all --name");
     if ($status) {
-        errorMsg("Unable to get list of VMs: Error reported is: $output");
+        $log->error("Unable to obtain list of VMs: error reported is $output");
         return 0;
     }
     my @vms = split( /\n/mxs, $output );
@@ -330,7 +236,7 @@ sub vmState {
         return $output;
     }
     else {
-        errorMsg("Unable to get VM state: $output");
+        $log->error("Unable to obtain VM state: error reported is $output");
         return "undefined";
     }
 }
@@ -346,7 +252,7 @@ sub startVM {
         if ( $state eq "shut off" ) {
             my ( $output, $status ) = systemcall("$VIRSH start $vmname");
             if ($status) {
-                errorMsg("VM '$vmname' cannot be started. Error reported is : '$output'");
+                $log->error("VM $vmname cannot be started: error reported is $output");
             }
             else {
                 # Make a symlink to the vm log
@@ -356,22 +262,23 @@ sub startVM {
                 }
                 $ret = 0;
             }
-        }    # are these ALL the states reported by domstate?
+        }    
+        # VM states that are not shut off
         elsif ( $state eq "paused" ) {
-            errorMsg("VM '$vmname' is currently running but suspended.");
+            $log->error("VM '$vmname' is currently running but suspended.");
         }
         elsif ( $state eq "in shutdown" ) {
-            errorMsg("VM '$vmname' is currently shutting down.");
+            $log->erorr("VM '$vmname' is currently shutting down.");
         }
         elsif ( $state eq "running" ) {
-            errorMsg("VM '$vmname' is already started.");
+            $log->error("VM '$vmname' is already started.");
         }
         else {
-            errorMsg("VM '$vmname' unknown state [$state]");
-        }
+            $log->error("VM '$vmname' unknown state [$state]");
+        } 
     }
     else {
-        errorMsg("Cannot find a VM named '$vmname'");
+        $log->error("Cannot find a VM named $vmname");
     }
     return $ret;
 }
@@ -381,7 +288,7 @@ sub vmconvert {
     my $vmwarefile = shift;
     my ($output, $status) = systemcall(qq{$QEMUIMG convert $masterfile -O vmdk $vmwarefile});
     if ($status) {
-        carp "Error converting $masterfile to $vmwarefile: $output";
+        $log->error("Error converting $masterfile to $vmwarefile: $output");
         return 0;
     }
     return 1;
@@ -403,7 +310,7 @@ sub rebasevm {
     my $masterfile  = shift;
     my ( $output, $status ) = systemcall(qq{$QEMUIMG rebase -u -b $masterfile $vmdeltafile});
     if ($status) {
-        carp "Error rebasing $vmdeltafile onto $masterfile $OS_ERROR ($output)";
+        $log->error("Error rebasing $vmdeltafile onto $masterfile $OS_ERROR ($output)");
         return 0;
     }
     else {
@@ -411,7 +318,7 @@ sub rebasevm {
         # is now the VM's backing file)
         ( $output, $status ) = systemcall(qq{$QEMUIMG commit $vmdeltafile});
         if ($status) {
-            carp "Error committing $vmdeltafile: $OS_ERROR ($output)";
+            $log->error("Error committing $vmdeltafile: $OS_ERROR ($output)");
             return 0;
         }
         return 1;
@@ -466,145 +373,26 @@ sub setvmprojectdir {
 sub extractOutput {
     my ( $dirpath, $vmname ) = @_;
     if ( !-d $dirpath ) {
-        errorMsg("$dirpath does not exist.");
+        $log->error("$dirpath does not exist");
         return 1;
     }
     my $vmdir = getVMDir($vmname);
     open( my $script, '>', "$vmdir/gfout.sh" )
-      or croak "Cannot create guestfish script $ERRNO";
+      or $log->error("Cannot create guestfish script $ERRNO");
     print $script "add $vmdir/outputdisk.qcow2\n";
     print $script "run\n";
     print $script "mount /dev/sda /\n";
     print $script "glob copy-out /* $dirpath\n";
-    close $script or errorMsg("Cannot close guestfish script $OS_ERROR");
+    close $script or $log->erorr("Cannot close guestfish script $OS_ERROR");
     my ( $output, $status ) = systemcall("${GUESTFISH} -f $vmdir/gfout.sh");
 
     if ($status) {
-        errorMsg("output extraction failed: $output $status");
+        $log->error("Output extraction failed: $output $status");
         return 1;
     }
     return 0;
 }
 
-sub handleRHEL6 {
-    my ($opts)     = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmname   = $opts->{'vmname'};
-    my $ostype   = 'unknown';
-    if ( $osimage =~ /rhel.*-6..-32/mxs ) {
-        $ostype = 'RHEL6.4 32 bit';
-    }
-    elsif ( $osimage =~ /rhel.*-6..-64/mxs || $osimage =~ /centos/mxs ) {
-        $ostype = 'RHEL6.4 64 bit';
-    }
-    print $script "write /etc/sysconfig/network \"HOSTNAME=$vmname\\nNETWORKING=yes\\n\"\n";
-    print $script
-"write /etc/sysconfig/network-scripts/ifcfg-eth0 \"DHCP_HOSTNAME=$vmname\\nBOOTPROTO=dhcp\\nONBOOT=yes\\nDEVICE=eth0\\nTYPE=Ethernet\\n\"\n";
-    print $script "rm-rf /etc/udev/rules.d/70-persistent-net.rules\n";
-    print $script "write /etc/rc3.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc3.d/S99runsh\n";
-    return $ostype;
-}
-
-sub handleDebian {
-    my ($opts)     = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmname   = $opts->{'vmname'};
-    my $ostype   = 'Debian';
-
-    # Debian hostname should not have FQDN
-    print $script "write /etc/hostname \"${vmname}\\n\"\n";
-
-    # Debian has the funky script order .files that need to be modified
-    # so for now, just stuff this in rc.local
-    print $script "write /etc/rc.local $runshcmd\n";
-    return $ostype;
-}
-
-sub handleUbuntu {
-    my ($opts)     = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmname   = $opts->{'vmname'};
-    my $ostype   = 'Ubuntu';
-
-    #Ubuntu hostname should not have FQDN
-    print $script "write /etc/hostname \"${vmname}\\n\"\n";
-    print $script "write /etc/rc2.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc2.d/S99runsh\n";
-    return $ostype;
-}
-
-sub handleScientific {
-    my ($opts)     = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmname   = $opts->{'vmname'};
-    my $ostype   = 'Scientific';
-    if ( $osimage =~ /scientific-5/mxs ) {
-        $ostype = 'Scientific 5.9';
-    }
-    elsif ( $osimage =~ /scientific-6/mxs ) {
-        $ostype = 'Scientific 6.4';
-    }
-    print $script "write /etc/sysconfig/network \"HOSTNAME=$vmname\\nNETWORKING=yes\\n\"\n";
-    print $script
-"write /etc/sysconfig/network-scripts/ifcfg-eth0 \"DHCP_HOSTNAME=$vmname\\nBOOTPROTO=dhcp\\nONBOOT=yes\\nDEVICE=eth0\\nTYPE=Ethernet\\n\"\n";
-    print $script "rm-rf /etc/udev/rules.d/70-persistent-net.rules\n";
-    print $script "write /etc/rc3.d/S99runsh $runshcmd\n";
-    print $script "chmod 0777 /etc/rc3.d/S99runsh\n";
-
-    return $ostype;
-}
-
-sub handleFedora {
-    my ($opts)     = @_;
-    my $osimage  = $opts->{'osimage'};
-    my $script   = $opts->{'script'};
-    my $runshcmd = $opts->{'runcmd'};
-    my $vmname   = $opts->{'vmname'};
-    my $ostype   = 'Fedora';
-    print $script "write /etc/hostname \"${vmname}.vm.cosalab.org\\n\"\n";
-    print $script "write /etc/rc.d/rc.local $runshcmd\n";
-    print $script "chmod 0777 /etc/rc.d/rc.local\n";
-
-    return $ostype;
-}
-
-sub handleWindows {
-    return 'Windows7';
-}
-sub insertIntoInit {
-    my $osimage   = shift;
-    my $script    = shift;
-    my $runshcmd  = shift;
-    my $vmname    = shift;
-    my $imagename = shift;
-    my $ostype    = 'unknown';
-    my $ret       = 1;
-    foreach my $key ( keys %os_init ) {
-        if ( lc $osimage =~ /$key/sxm ) {
-            $ostype = $os_init{$key}->( { 'osimage' => $osimage, 'script'  => $script, 'runcmd'  => $runshcmd, 'vmname'  => $vmname });
-            $ret = 0;
-            last;
-        }
-    }
-    if ($ret == 1) {
-        errorMsg("Unrecognized image platform type using \"$imagename\"");
-    }
-    return ( $ostype, $ret );
-}
-
-# If makeMaster is 2, imagename is expected to contain an path to a qcow2
-# image but skip the guestfish additions.
-# If makeMaster is 1, imagename is expected to contain an path to a qcow2 image.
-# If makeMaster is 0, imagename is a masterified image name.
 sub createImages {
     my ( $dirpath, $vmname, $imagename, $outsize, $makeMaster ) = @_;
 
@@ -618,16 +406,16 @@ sub createImages {
     # If not a master image, use master as a backing file.
     if ( $makeMaster == 0 ) {
         $imagename = displaynameToMastername($imagename);
-        consoleMsg("Creating base image for VM \"$vmname\"");
+        $log->info("Creating base image for VM \"$vmname\"");
         ( $output, $status ) = systemcall(
 "$QEMUIMG create -b ${MASTER_IMAGE_FOLDER}/${imagename} -f qcow2 ${vmdir}/${vmname}.qcow2"
         );
         if ($status) {
-            errorMsg("image creation failed: $output $status");
+            $log->error("Image creation failed: $output $status");
             return 1;
         }
         open( my $script, '>', "$vmdir/gf.sh" )
-          or croak "Cannot create guestfish script $ERRNO";
+          or $log->error("Cannot create guestfish script $ERRNO");
         print $script "#!${GUESTFISH} -f\n";
 
         # Command to run run.sh from init scripts
@@ -644,7 +432,8 @@ sub createImages {
         if ( $status == 1 ) {    # error already emitted
             return $status;
         }
-        consoleMsg("Modifying base image : type detected $ostype");
+
+        $log->info("Modifying base image: type detected $ostype");
 
         # 8/19/2013 Adding files for Jeff G's manifest scripts to parse
         $imagename = basename($imagename);
@@ -653,14 +442,14 @@ sub createImages {
         print $script "write /etc/vm-master-mode \"interactive\\n\"\n";
 
         print $script "\n";
-        close $script or croak "Cannot close guestfish script $OS_ERROR";
+        close $script or $log->error("Cannot close guestfish script $OS_ERROR");
 
         # if we are a Windows OS, don't run the guest fish script
         if ( $ostype !~ /Windows/mxs ) {
             ( $output, $status ) =
               systemcall("${GUESTFISH} -f $vmdir/gf.sh -a ${vmdir}/${vmname}.qcow2 -i </dev/null");
             if ($status) {
-                errorMsg("image modification failed: $output $status");
+                $log->error("Image modification failed: $output $status");
                 return 1;
             }
         }
@@ -670,7 +459,7 @@ sub createImages {
         if ( $makeMaster == 1 ) {
 
             open( my $script, '>', "$vmdir/gf.sh" )
-              or croak "Cannot create guestfish script $ERRNO";
+              or $log->error("Cannot create guestfish script $ERRNO");
             print $script "#!${GUESTFISH} -f\n";
 
             # 8/19/2013 Adding files for Jeff G's manifest scripts to parse
@@ -679,11 +468,11 @@ sub createImages {
             print $script "write /etc/vm-master-name \"$name\\n\"\n";
             print $script "write /etc/vm-master-mode \"master\\n\"\n";
             print $script "\n";
-            close $script or croak "Cannot close guestfish script $OS_ERROR";
+            close $script or $log->error("Cannot close guestfish script $OS_ERROR");
             ( $output, $status ) = systemcall("${GUESTFISH} -f $vmdir/gf.sh -a $imagename -i </dev/null");
 
             if ($status) {
-                errorMsg("image modification failed: $output $status");
+                $log->error("Image modification failed: $output $status");
                 return 1;
             }
         }
@@ -695,7 +484,7 @@ sub createImages {
     }
 
     if ( $makeMaster != 0 ) {
-        consoleMsg("Creating input disk image");
+        $log->info("Creating input disk image");
         ( $output, $status ) = systemcall(
 
          #"$MAKEFS --type=ext3 --size=+${outsize}M --format=qcow2 ${EMPTY} ${vmdir}/inputdisk.qcow2"
@@ -704,7 +493,7 @@ sub createImages {
     }
     else {
         if ( -d $dirpath ) {
-            consoleMsg("Creating input disk image");
+            $log->info("Creating input disk image");
 
             # It has been seen that virt-make-fs incorrectly estimates the size
             # of filesystems with .zip files in them. Pad by +10M.
@@ -714,35 +503,36 @@ sub createImages {
 				"$MAKEFS --type=${fstype} --size=+1G --format=qcow2 $dirpath ${vmdir}/inputdisk.qcow2"
             );
             if ($status) {
-                errorMsg("input disk creation failed: $output");
+                $log->info("Input disk creation failed: $output");
                 return 1;
             }
         }
         else {
-            errorMsg("input disk folder '$dirpath' does not exist.");
+            $log->info("Input disk folder $dirpath does not exist.");
             return 1;
         }
     }
 
-    consoleMsg("Creating output disk image");
+    $log->info("Creating output disk image");
     ( $output, $status ) = systemcall(
 
 #        "$MAKEFS --type=ext3 --size=+${outsize}M --format=qcow2 ${EMPTY} ${vmdir}/outputdisk.qcow2"
 "$MAKEFS --type=${fstype} --size=+${outsize}M --format=qcow2 ${EMPTY} ${vmdir}/outputdisk.qcow2"
     );
     if ($status) {
-        errorMsg("output disk creation failed: $output");
+        $log->error("output disk creation failed: $output");
         return 1;
     }
-	consoleMsg("Creating export disk image");
+    
+    $log->info("Creating export disk image");
 	($output, $status) = systemcall("qemu-img create -f raw ${vmdir}/${vmname}-events.raw 2M");
 	if ($status) {
-		errorMsg("qemu-img create export disk creation failed: $output");
+        $log->error("qemu-img create export disk creation failed: $output");
 		return 1;
 	}
 	($output, $status) = systemcall("mkfs.ext2 -F ${vmdir}/${vmname}-events.raw");
 	if ($status) {
-		errorMsg("mkfs.ext2 export disk creation failed: $output");
+        $log->error("mkfs.ext2 export disk creation failed: $output");
 		return 1;
 	}
     return 0;
@@ -759,7 +549,7 @@ sub createXML {
 #    my ( $vmname, $nCPU, $memMB, $imagename, $macaddr, $makeMaster ) = @_;
     my $xs = XML::Simple->new( 'KeepRoot' => 1, 'ForceArray' => 1, 'NoSort' => 1 );
     if ( !-r $TEMPLATE_VM ) {
-        errorMsg("Cannot read xml template $TEMPLATE_VM");
+        $log->error("Cannot read xml template $TEMPLATE_VM");
         return 1;
     }
 
@@ -805,11 +595,11 @@ sub createXML {
     my $xmlout = $xs->XMLout($xmlref);
     if ( open( my $out, '>', "$vmdir/${vmname}.xml" ) ) {
         print $out $xmlout;
-        close $out or croak "Cannot write to VM XML file $OS_ERROR";
+        close $out or $log->error("Cannot write to VM XML file $OS_ERROR");
         return 0;
     }
     else {
-        errorMsg("Cannot create XML $ERRNO");
+        $log->error("Cannot create XML $ERRNO");
         return 1;
     }
 }
@@ -818,7 +608,7 @@ sub destroyVM {
     my ($vmname) = @_;
     my ( $output, $status ) = systemcall("$VIRSH destroy $vmname");
     if ($status) {
-        errorMsg("Unable to undefine $vmname: $output");
+        $log->error("Unable to undefine $vmname: $output");
         return 1;
     }
     return 0;
@@ -828,14 +618,14 @@ sub removeVM {
     my ($vmname) = @_;
     my ( $output, $status ) = systemcall("$VIRSH undefine $vmname");
     if ($status) {
-        errorMsg("Unable to undefine $vmname: $output");
+        $log->error("Unable to undefine $vmname: $output");
         return 1;
     }
 
     # Got here, ok to shred files and folder.
     my $folder = getVMDir($vmname);
     opendir( my $dir, $folder )
-      or croak "Cannot find vm folder $folder $ERRNO\n";
+      or $log->info("Cannot find vm folder $folder $ERRNO\n");
     my @files = readdir($dir);
     closedir($dir);
     foreach (@files) {
@@ -849,7 +639,7 @@ sub removeVM {
                 ( $output, $status ) = systemcall("/bin/rm -f $name");
             }
             if ($status) {
-                errorMsg("Unable to remove $name : $output");
+                $log->info("Unable to remove $name: $output");
                 return 1;
             }
         }
@@ -866,11 +656,11 @@ sub defineVM {
     if ( !$status ) {
         if ( open( my $id, '>', "${dir}/.creator" ) ) {
             print $id "$origusername\n";
-            close $id or errorMsg("Cannot close .creator file $OS_ERROR");
+            close $id or $log->info("Cannot close .creator file $OS_ERROR");
         }
     }
     else {
-        errorMsg("Unable to define VM : $output");
+        $log->info("Unable to define VM: $output");
         $ret = 1;
     }
     return $ret;
@@ -891,7 +681,7 @@ sub listVMs {
                 if ( open( my $fh, '<', "$file" ) ) {
                     my $creatorID = <$fh>;
                     close $fh
-                      or errorMsg("Cannot close .creator file $OS_ERROR");
+                      or $log->error("Cannot close .creator file $OS_ERROR");
                     chomp $creatorID;
                     if ( $creatorID eq $id ) {
                         push @vms, $_;
@@ -901,7 +691,7 @@ sub listVMs {
         }
     }
     else {
-        print {*STDERR} "Cannot read project folder.";
+        $log->info("Cannot read project folder.");
         return ();
     }
     return @vms;
@@ -924,6 +714,10 @@ sub enableTestMode {
 
     mkdir $PROJECT_FOLDER;
     return;
+}
+
+sub _getLoggingConfigString {
+        return getLoggingConfigString();
 }
 1;
 __END__

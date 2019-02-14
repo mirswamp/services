@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::vmu_AssessmentSupport;
 use strict;
@@ -18,12 +18,12 @@ use File::Spec::Functions;
 use POSIX qw(strftime);
 
 use SWAMP::vmu_Support qw(
+	use_make_path
+	getUUID
 	from_json_wrapper
     trim
     systemcall
     getSwampDir
-	$global_swamp_config
-    getSwampConfig
     saveProperties
 	checksumFile
 	launchPadStart
@@ -41,6 +41,8 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_CHECKSUM_ERROR
 	$LAUNCHPAD_FORK_ERROR
 	$LAUNCHPAD_FATAL_ERROR
+    getSwampConfig
+	$global_swamp_config
 );
 use SWAMP::PackageTypes qw(
     $C_CPP_PKG_STRING
@@ -57,12 +59,7 @@ use SWAMP::PackageTypes qw(
     $RUBY_PADRINO_PKG_STRING
     $ANDROID_APK_PKG_STRING
     $WEB_SCRIPTING_PKG_STRING
-
-    $CPP_TYPE
-    $PYTHON_TYPE
-    $JAVA_TYPE
-    $RUBY_TYPE
-    $SCRIPT_TYPE
+	$DOT_NET_PKG_STRING
 );
 
 use parent qw(Exporter);
@@ -76,8 +73,9 @@ BEGIN {
       updateRunStatus
       updateAssessmentStatus
       updateClassAdAssessmentStatus
+      saveMetricResult
       saveAssessmentResult
-	  saveMetricResult
+	  saveMetricSummary
 	  getLaunchExecrunuids
 	  incrementLaunchCounter
 	  setLaunchFlag
@@ -113,11 +111,10 @@ BEGIN {
       isPythonPackage
       isRubyPackage
       isScriptPackage
-      packageType
+	  isDotNetPackage
     );
 }
 
-# my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 
@@ -152,7 +149,8 @@ my $bogtranslator = {
 	},
 	'packages'	=> {
 		'package_name' 		=> 'packagename', 			
-		'package_version'	=> 'packageversion',
+		'package_version' 	=> 'packageversion', 			
+		'package_build_settings'	=> 'packagebuild_settings',
 		'build_target' 		=> 'packagebuild_target',		
 		'build_system' 		=> 'packagebuild_system',		
 		'build_dir' 		=> 'packagebuild_dir',		
@@ -495,25 +493,25 @@ sub updateRunStatus { my ($execrunid, $status, $finalStatus) = @_ ;
     updateExecutionResults($execrunid, {'status' => $status}, $finalStatus);
 }
 
-sub saveMetricResult { my ($metric_results) = @_ ;
+sub saveMetricSummary { my ($metric_results) = @_ ;
     if (!defined($metric_results->{'execrunid'})) {
-        $log->error('saveMetricResult - error: hash is missing execrunid');
+        $log->error('saveMetricSummary - error: hash is missing execrunid');
 		return;
     }
     if (!defined($metric_results->{'code-lines'})) {
-        $log->error('saveMetricResult - error: hash is missing code-lines');
+        $log->error('saveMetricSummary - error: hash is missing code-lines');
 		return;
     }
     if (!defined($metric_results->{'comment-lines'})) {
-        $log->error('saveMetricResult - error: hash is missing comment-lines');
+        $log->error('saveMetricSummary - error: hash is missing comment-lines');
 		return;
     }
     if (!defined($metric_results->{'blank-lines'})) {
-        $log->error('saveMetricResult - error: hash is missing blank-lines');
+        $log->error('saveMetricSummary - error: hash is missing blank-lines');
 		return;
     }
     if (!defined($metric_results->{'total-lines'})) {
-        $log->error('saveMetricResult - error: hash is missing total-lines');
+        $log->error('saveMetricSummary - error: hash is missing total-lines');
 		return;
     }
 	if (my $dbh = database_connect()) {
@@ -526,26 +524,66 @@ sub saveMetricResult { my ($metric_results) = @_ ;
 		$sth->bind_param(5, $metric_results->{'execrunid'});
 		$sth->execute();
 		if ($sth->err) {
-			$log->error("saveMetricResult - error: ", $sth->errstr);
+			$log->error("saveMetricSummary - error: ", $sth->errstr);
 		}
 		database_disconnect($dbh);
 	}
 	else {
-		$log->error("saveMetricRun - database connection failed");
+		$log->error("saveMetricSummary - database connection failed");
 	}
 }
 
-sub saveAssessmentResult { my ($assessment_results) = @_ ;
+sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
     if (!defined($assessment_results->{'pathname'})) {
         $log->error('saveAssessmentResult - error: hash is missing pathname');
-        return {'error', 'hash is missing pathname'};
+        return 0;
     }
     if (!defined($assessment_results->{'execrunid'})) {
         $log->error('saveAssessmentResult - error: hash is missing execrunid');
-        return {'error', 'hash is missing execrunid'};
+        return 0;
     }
+
+	$log->debug("saveAssessmentResult - assessment_results: ", sub { use Data::Dumper; Dumper($assessment_results); });
+	$log->debug("saveAssessmentResult - BOG: ", sub { use Data::Dumper; Dumper($bogref); });
+
+	my $project_uuid = $bogref->{'projectid'};
+	my $assessment_result_uuid = getUUID();
+
+	my $result_dest_path = catdir(rootdir(), 'swamp', 'SCAProjects', $project_uuid, 'A-Results', $assessment_result_uuid);
+	if (! use_make_path($result_dest_path)) {
+        $log->error("Error - make_path failed for: $result_dest_path");
+        return 0;
+	}
+	my $log_dest_path = catdir(rootdir(), 'swamp', 'SCAProjects', $project_uuid, 'A-Logs', $assessment_result_uuid);
+	if (! use_make_path($log_dest_path)) {
+        $log->error("Error - make_path failed for: $log_dest_path");
+        return 0;
+	}
+
+	if (! copy($assessment_results->{'pathname'}, $result_dest_path)) {
+        $log->error('saveAssessmentResult - copy ', $assessment_results->{'pathname'}, " to $result_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $assessment_results->{'pathname'}, " to: $result_dest_path");
+	my $result_file = catfile($result_dest_path, basename($assessment_results->{'pathname'}));
+
+	if (! copy($assessment_results->{'sourcepathname'}, $result_dest_path)) {
+        $log->error('saveAssessmentResult - copy ', $assessment_results->{'sourcepathname'}, " to $result_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $assessment_results->{'sourcepathname'}, " to: $result_dest_path");
+	my $source_file = catfile($result_dest_path, basename($assessment_results->{'sourcepathname'}));
+
+	if (! copy($assessment_results->{'logpathname'}, $log_dest_path)) {
+        $log->error('saveAssessmentResult - copy ', $assessment_results->{'logpathname'}, " to $log_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $assessment_results->{'logpathname'}, " to: $log_dest_path");
+	my $log_file = catfile($log_dest_path, basename($assessment_results->{'logpathname'}));
+
 	if (my $dbh = database_connect()) {
-		# execution_record_uuid
+		# execution_record_uuid_in
+		# assessment_result_uuid_in
 		# result_path_in
 		# result_checksum_in
 		# source_archive_path_in
@@ -557,19 +595,20 @@ sub saveAssessmentResult { my ($assessment_results) = @_ ;
 		# status_out_in
 		# status_out_error_msg_in
 		# return_string
-		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
+		my $query = q{CALL assessment.insert_results(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
 		$sth->bind_param(1, $assessment_results->{'execrunid'});
-		$sth->bind_param(2, $assessment_results->{'pathname'});
-		$sth->bind_param(3, $assessment_results->{'sha512sum'});
-		$sth->bind_param(4, $assessment_results->{'sourcepathname'});
-		$sth->bind_param(5, $assessment_results->{'source512sum'});
-		$sth->bind_param(6, $assessment_results->{'logpathname'});
-		$sth->bind_param(7, $assessment_results->{'log512sum'});
-		$sth->bind_param(8, $assessment_results->{'weaknesses'});
-		$sth->bind_param(9, $assessment_results->{'locSum'});
-		$sth->bind_param(10, $assessment_results->{'status_out'});
-		$sth->bind_param(11, $assessment_results->{'status_out_error_msg'});
+		$sth->bind_param(2, $assessment_result_uuid);
+		$sth->bind_param(3, $result_file);
+		$sth->bind_param(4, $assessment_results->{'sha512sum'});
+		$sth->bind_param(5, $source_file);
+		$sth->bind_param(6, $assessment_results->{'source512sum'});
+		$sth->bind_param(7, $log_file);
+		$sth->bind_param(8, $assessment_results->{'log512sum'});
+		$sth->bind_param(9, $assessment_results->{'weaknesses'});
+		$sth->bind_param(10, $assessment_results->{'locSum'});
+		$sth->bind_param(11, $assessment_results->{'status_out'});
+		$sth->bind_param(12, $assessment_results->{'status_out_error_msg'});
 		$sth->execute();
 		my $result;
 		if (! $sth->err) {
@@ -589,6 +628,55 @@ sub saveAssessmentResult { my ($assessment_results) = @_ ;
 		return 0;
 	}
     return 1;
+}
+
+sub saveMetricResult { my ($bogref, $metric_results) = @_ ;
+    if (!defined($metric_results->{'pathname'})) {
+        $log->error('saveMetricResult - error: hash is missing pathname');
+        return 0;
+    }
+    if (!defined($metric_results->{'execrunid'})) {
+        $log->error('saveMetricResult - error: hash is missing execrunid');
+        return 0;
+    }
+
+	$log->debug("saveMetricResult - metric_results: ", sub { use Data::Dumper; Dumper($metric_results); });
+	$log->debug("saveMetricResult - BOG: ", sub { use Data::Dumper; Dumper($bogref); });
+
+	my $result_dest_path = catdir(rootdir(), 'swamp', 'store', 'SCAPackages', 'Metrics', $metric_results->{'execrunid'});
+	if (! use_make_path($result_dest_path)) {
+        $log->error("Error - make_path failed for: $result_dest_path");
+        return 0;
+	}
+
+	if (! copy($metric_results->{'pathname'}, $result_dest_path)) {
+        $log->error('saveMetricResult - copy ', $metric_results->{'pathname'}, " to $result_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $metric_results->{'pathname'}, " to: $result_dest_path");
+	my $result_file = catfile($result_dest_path, basename($metric_results->{'pathname'}));
+
+	my $result = 0;
+	if (my $dbh = database_connect()) {
+		my $query = qq{UPDATE metric.metric_run SET file_host = ?, result_path = ?, result_checksum = ?, status_out = ?, status_out_error_msg = ? WHERE metric_run_uuid = ?};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, 'SWAMP');
+		$sth->bind_param(2, $result_file);
+		$sth->bind_param(3, $metric_results->{'sha512sum'});
+		$sth->bind_param(4, $metric_results->{'status_out'});
+		$sth->bind_param(5, $metric_results->{'status_out_error_msg'});
+		$sth->bind_param(6, $metric_results->{'execrunid'});
+		$sth->execute();
+		if ($sth->err) {
+			$log->error("saveMetricResult - error: ", $sth->errstr);
+		}
+		database_disconnect($dbh);
+		$result = 1;
+	}
+	else {
+        $log->error("saveMetricResult - database connection failed");
+	}
+    return $result;
 }
 
 #############################
@@ -766,7 +854,6 @@ sub _deployTarByPlatform { my ($tarfile, $compressed, $dest, $platform) = @_ ;
 
 sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
     my $file;
-    my $compressed = 0;
     if (isJavaPackage($bogref)) {
         $file = "$basedir/thirdparty/java-assess.tar";
     }
@@ -774,17 +861,22 @@ sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
         $file = "$basedir/thirdparty/ruby-assess.tar";
     }
     elsif (isCPackage($bogref)) {
-        $file = "$basedir/thirdparty/c-assess.tar.gz";
-        $compressed = 1;
+        $file = "$basedir/thirdparty/c-assess.tar";
     }
-    elsif (isScriptPackage($bogref) || isPythonPackage($bogref)) {
+    elsif (isScriptPackage($bogref) || isPythonPackage($bogref) || isDotNetPackage($bogref)) {
         $file = "$basedir/thirdparty/script-assess.tar";
     }
+    my $compressed = 0;
     if (! -r $file) {
-        $log->error($bogref->{'execrunid'}, "Cannot see assessment toolchain $file");
-        return 1;
+		$file .= '.gz';
+		$compressed = 1;
+    	if (! -r $file) {
+        	$log->error($bogref->{'execrunid'}, "Cannot see assessment toolchain $file");
+        	return 0;
+		}
     }
     my $platform = $bogref->{'platform'} . qq{/};
+	$log->info("using framework: $file $compressed on platform: $platform");
     _deployTarByPlatform($file, $compressed, $dest, $platform);
     if (-r "$dest/os-dependencies-framework.conf") {
         $log->debug("Adding $dest/os-dependencies-framework.conf");
@@ -804,6 +896,7 @@ sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
         $log->debug("renaming $dest/run.sh");
         if (! move( "$dest/run.sh", "$dest/_run.sh")) {
             $log->error($bogref->{'execrunid'}, "Cannot move run.sh to _run.sh in $dest");
+			return 0;
         }
     }
     return 1;
@@ -922,24 +1015,8 @@ sub isPythonPackage { my ($bogref) = @_ ;
 sub isScriptPackage { my ($bogref) = @_ ;
     return ($bogref->{'packagetype'} eq $WEB_SCRIPTING_PKG_STRING);
 }
-
-sub packageType { my ($bogref) = @_ ;
-    if (isJavaPackage($bogref)) {
-        return $JAVA_TYPE;
-    }
-    elsif (isPythonPackage($bogref)) {
-        return $PYTHON_TYPE;
-    }
-    elsif (isCPackage($bogref)) {
-        return $CPP_TYPE;
-    }
-    elsif (isRubyPackage($bogref)) {
-        return $RUBY_TYPE;
-    }
-    elsif (isScriptPackage($bogref)) {
-        return $SCRIPT_TYPE;
-    }
-    return;
+sub isDotNetPackage { my ($bogref) = @_ ;
+	return ($bogref->{'packagetype'} eq $DOT_NET_PKG_STRING);
 }
 
 sub createAssessmentConfigs { my ($bogref, $dest, $user, $password) = @_ ;
@@ -1060,16 +1137,23 @@ sub _createPackageConf { my ($bogref, $dest) = @_ ;
 	# 1 new field for ruby assess and web packages assess 03.05.2018 CSA-2369, CSA-2889
 	$packageConfig{'package-exclude-paths'} = _getBOGValue($bogref, 'exclude_paths');
 
+	# 1 new field for script assess .NET assessments 10.10.2018
+	if (isDotNetPackage($bogref)) {
+		$packageConfig{'package-build-settings'} = _getBOGValue($bogref, 'packagebuild_settings');
+        $packageConfig{'package-language'} = _getBOGValue($bogref, 'package_language');
+	}
+
     foreach my $key ( keys %packageConfig ) {
         if ( !defined( $packageConfig{$key} ) ) {
             delete $packageConfig{$key};
         }
     }
 
+
     $packageConfig{'package-archive'} = basename(_getBOGValue($bogref, 'packagepath'));
     $packageConfig{'package-dir'}     = trim(_getBOGValue($bogref, 'packagesourcepath'));
     $packageConfig{'package-short-name'} = _getBOGValue($bogref, 'packagename');
-    $packageConfig{'package-version'} = _getBOGValue($bogref, 'packageversion') || 'unknown';
+	$packageConfig{'package-version'} = _getBOGValue($bogref, 'packageversion') || 'unknown';
     return saveProperties("$dest/package.conf", \%packageConfig);
 }
 
@@ -1186,11 +1270,11 @@ sub _deployTarball { my ($tarfile, $dest) = @_ ;
 #########################
 
 sub updateClassAdAssessmentStatus { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $status) = @_ ;
-    $global_swamp_config ||= getSwampConfig();
-    my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
     $log->info("Status: $status");
 	my $poolarg = q();
+	$global_swamp_config ||= getSwampConfig();
 	if (! isSwampInABox($global_swamp_config)) {
+    	my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
 		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
 	}
     my ($output, $stat) = systemcall("condor_advertise $poolarg UPDATE_AD_GENERIC - <<'EOF'

@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::vmu_Support;
 use strict;
@@ -14,7 +14,7 @@ use Data::UUID;
 use Digest::SHA;
 use Log::Log4perl;
 use File::Basename qw(basename);
-use File::Path qw(remove_tree);
+use File::Path qw(make_path remove_tree);
 use File::Spec::Functions;
 use RPC::XML;
 use RPC::XML::Client;
@@ -33,25 +33,23 @@ BEGIN {
 	  setHTCondorEnvironment
 	  identifyScript
 	  listDirectoryContents
+	  computeDirectorySizeInBytes
 	  from_json_wrapper
 	  trim
       systemcall
 	  getSwampDir
 	  getVMIPAddress
-	  $global_swamp_config
-      getSwampConfig
 	  isSwampInABox
       getLoggingConfigString
-	  buildExecRunAppenderLogFileName
-      switchExecRunAppenderLogFile
       loadProperties
 	  saveProperties
-	  insertIntoInit
+	  createQcow2Disks
+	  patchDeltaQcow2ForInit
 	  displaynameToMastername
 	  masternameToPlatform
 	  checksumFile
 	  rpccall
-	  getJobDir
+	  constructJobDirName
 	  makezip
 	  getUUID
 	  HTCondorJobStatus
@@ -63,8 +61,11 @@ BEGIN {
 	  stop_process
 	  launchPadStart
 	  launchPadKill
-	  deleteJobDir
-	  cleanRunDir
+	  identifyPreemptedJobs
+	  listJobDirs
+	  getRunDirHistory
+	  use_make_path
+	  use_remove_tree
 	  construct_vmhostname
 	  construct_vmdomainname
 	  create_empty_file
@@ -87,6 +88,10 @@ BEGIN {
 	  $RUNTYPE_ARUN
 	  $RUNTYPE_VRUN
 	  $RUNTYPE_MRUN
+      getSwampConfig
+	  $global_swamp_config
+	  $HTCONDOR_POSTSCRIPT_FAILED
+	  $HTCONDOR_POSTSCRIPT_EXIT
     );
 }
 
@@ -102,6 +107,9 @@ our $LAUNCHPAD_FATAL_ERROR		= 5;
 our $RUNTYPE_ARUN	= 1;
 our $RUNTYPE_VRUN	= 2;
 our $RUNTYPE_MRUN	= 3;
+
+our $HTCONDOR_POSTSCRIPT_FAILED = 44;
+our $HTCONDOR_POSTSCRIPT_EXIT = 5;
 
 my $DEFAULT_CONFIG = catfile(getSwampDir(), 'etc', 'swamp.conf');
 my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
@@ -125,6 +133,36 @@ sub timetrace_elapsed { my ($execrunuid, $job_type, $message, $event_start) = @_
 	$uuid =~ s/_.*$//;
 	Log::Log4perl->get_logger('timetrace')->trace("$uuid $job_type $message elapsed: ", $event_time - $event_start);
 	return $event_time;
+}
+
+sub use_make_path { my ($dir) = @_ ;
+	return -1 if (-d $dir);
+	my $result = make_path($dir, {error => \my $error});
+	if (@$error || ! $result) {
+		my $error_string = '';
+		foreach my $diag (@$error) {
+			my ($file, $message) = %$diag;
+			$error_string .= $file . ' ' . $message . ' ';
+		}
+		$log->error("Error - $dir make_path failed - result: $result error: $error_string");
+		return 0;
+	}
+	return $result;
+}
+
+sub use_remove_tree { my ($dir) = @_ ;
+	return -1 if (! -d $dir);
+	my $result = remove_tree($dir, {error => \my $error});
+	if (@$error || ! $result) {
+		my $error_string = '';
+		foreach my $diag (@$error) {
+			my ($file, $message) = %$diag;
+			$error_string .= $file . ' ' . $message . ' ';
+		}
+		$log->error("Error - $dir remove_tree failed - result: $result error: $error_string");
+		return 0;
+	}
+	return $result;
 }
 
 sub getVMIPAddress { my ($vmhostname) = @_ ;
@@ -154,6 +192,7 @@ sub getSwampDir {
 }
 
 sub runScriptDetached { my ($logfile) = @_ ;
+	my $cwd = getcwd();
     if (! chdir(q{/})) {
 		$log->error("chdir to / failed: $OS_ERROR");
 		exit;
@@ -168,7 +207,7 @@ sub runScriptDetached { my ($logfile) = @_ ;
         exit;
     }
     if (! open(STDERR, ">&STDOUT")) {
-        $log->error("child - dup(open) STDERR to STDOUT failed:$OS_ERROR");
+        $log->error("child - dup(open) STDERR to STDOUT failed: $OS_ERROR");
         exit;
     }
     my $pid = fork();
@@ -185,9 +224,10 @@ sub runScriptDetached { my ($logfile) = @_ ;
         $log->error("child - setsid failed: $OS_ERROR");
         exit;
     }
+	return $cwd;
 }
 
-sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
+sub getStandardParameters { my ($argv, $execrunuidref) = @_ ;
 	# 0          1     2         3         4      5             6
 	# execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 	my $argc = scalar(@$argv);
@@ -195,14 +235,13 @@ sub getStandardParameters { my ($argv, $execrunuidref, $clusteridref) = @_ ;
 	$$execrunuidref = $argv->[0];
 	my $owner = $argv->[1];
 	my $uiddomain = $argv->[2];
-	$$clusteridref = $argv->[3];
+	my $clusterid = $argv->[3];
 	my $procid = $argv->[4];
 	my $numjobstarts = $argv->[5];
 	# debug is optional
 	my $debug = $argv->[6];
 	# execrunuid is returned via reference because it is global
-	# clusterid is returned via reference because it is global
-	return($owner, $uiddomain, $procid, $numjobstarts, $debug);
+	return($owner, $uiddomain, $clusterid, $procid, $numjobstarts, $debug);
 }
 
 sub setHTCondorEnvironment {
@@ -221,6 +260,7 @@ sub setHTCondorEnvironment {
 
 sub identifyScript { my ($argv) = @_ ;
 	my $cwd = getcwd();
+	my $umask = umask();
 	my $identity_string = "\n\t$PROGRAM_NAME ($PID)";
 	$identity_string   .= "\n\targv: <" . (join ' ', @$argv) . ">";
 	$identity_string   .= "\n\tuid: $REAL_USER_ID";
@@ -228,6 +268,7 @@ sub identifyScript { my ($argv) = @_ ;
 	$identity_string   .= "\tgid: $REAL_GROUP_ID";
 	$identity_string   .= "\tegid: $EFFECTIVE_GROUP_ID";
 	$identity_string   .= "\n\tcwd: $cwd";
+	$identity_string   .= "\n\tumask: " . sprintf("%04o", $umask);
 	$identity_string   .= "\n\texecutable: $EXECUTABLE_NAME";
 	$identity_string   .= "\n\tPATH: " . ($ENV{'PATH'} || 'undefined');
 	$identity_string   .= "\n\tCONDOR_CONFIG: " . ($ENV{'CONDOR_CONFIG'} || 'undefined');
@@ -238,15 +279,24 @@ sub identifyScript { my ($argv) = @_ ;
 
 sub listDirectoryContents { my ($dir) = @_ ;
 	if ($log->is_debug()) {
-		if (! $dir) {
-			$dir = getcwd();
-		}
+		$dir = getcwd() if (! $dir);
 		my ($output, $status) = systemcall("ls -lart $dir");
 		if ($status) {
 			$log->error("unable to list $dir");
 		}
 		$log->debug("Contents of $dir:\n", $output);
 	}
+}
+
+sub computeDirectorySizeInBytes { my ($dir) = @_ ;
+	$dir = getcwd() if (! $dir);
+	my ($output, $status) = systemcall("du --summarize --block-size=1 $dir");
+	if ($status) {
+		$log->error("unable to get size of $dir");
+	}
+	my $bytes = (split ' ', $output)[0];
+	$log->info("Size in bytes of $dir is $bytes");
+	return $bytes;
 }
 
 sub isAssessmentRun { my ($execrunuid) = @_ ;
@@ -387,7 +437,7 @@ sub HTCondorJobStatus { my ($jobid) = @_ ;
 	$cmd .= qq( -f \"%s\" JobStatus $jobid);
 	my ($output, $status) = systemcall($cmd);
 	if (! $status) {
-		if (! $output) {
+		if ($output) {
 			return $output;
 		}
 	}
@@ -399,28 +449,26 @@ sub construct_vmdomainname { my ($owner, $uiddomain, $clusterid, $procid) = @_ ;
 	return $vmdomainname;
 }
 
-sub _execrunuidToHostname { my ($execrunuid) = @_ ;
-	my $name = 'aswamp';
+sub _execrunuidToJobtype { my ($execrunuid) = @_ ;
+	my $jobtype = 'aswamp';
 	if (isMetricRun($execrunuid)) {
-		$name = 'mswamp';
+		$jobtype = 'mswamp';
 	}
 	elsif (isViewerRun($execrunuid)) {
-		$name = 'vswamp';
+		$jobtype = 'vswamp';
 	}
-	return $name;
+	return $jobtype;
 }
 
 sub construct_vmhostname { my ($execrunuid, $clusterid, $procid) = @_ ;
-	my $name = _execrunuidToHostname($execrunuid);
-	my $vmhostname = $name . '-' . $clusterid . '-' . $procid;
+	my $jobtype = _execrunuidToJobtype($execrunuid);
+	my $vmhostname = $jobtype . '-' . $clusterid . '-' . $procid;
 	return $vmhostname;
 }
 
-sub getJobDir { my ($execrunuid, $vmhostname) = @_ ;
-	if (! defined($vmhostname)) {
-		$vmhostname = _execrunuidToHostname($execrunuid);
-	}
-    return $vmhostname . '_' . $execrunuid;
+sub constructJobDirName { my ($jobtype) = @_ ;
+	my $rundiruid = getUUID();
+    return $jobtype . '_' . $rundiruid;
 }
 
 sub create_empty_file { my ($filename) = @_ ;
@@ -534,13 +582,15 @@ sub makezip { my ($oldname) = @_ ;
         }
     }
     chdir(q{..});
-    remove_tree($tmpdir);
+    if (! use_remove_tree($tmpdir)) {
+		$log->error("Unable to remove: $tmpdir");
+	}
     return $newname;
 }
 
 sub checksumFile { my ($filename, $algorithm) = @_ ;
 	$algorithm ||= 512;
-    my $sha = Digest::SHA->new(512);
+    my $sha = Digest::SHA->new($algorithm);
 	eval {
 		$sha->addfile($filename, "pb");
 	};
@@ -660,7 +710,7 @@ sub getSwampConfig { my ($configfile) = @_ ;
     if (defined($configfile)) {
         return loadProperties($configfile);
     }
-	$log->error('getSwampConfig - config file: ', $configfile || '', ' not found');
+	$log->error('getSwampConfig - no config file found');
     return;
 }
 
@@ -700,22 +750,6 @@ sub getLoggingConfigString {
     return $config;
 }
 
-sub buildExecRunAppenderLogFileName { my ($execrunuid) = @_ ;
-	my $name = catfile(getSwampDir(), 'log', $execrunuid . '.log');
-	return $name;
-}
-
-sub switchExecRunAppenderLogFile { my ($execrunuid) = @_ ;
-    $global_swamp_config ||= getSwampConfig();
-    # A unified a-run log isn't helpful with multi-server setups.
-    # For example, it will clutter the log directory on the data server.
-	if (isSwampInABox($global_swamp_config)) {
-		my $file_appender = Log::Log4perl::appender_by_name('Logfile');
-		my $name = buildExecRunAppenderLogFileName($execrunuid);
-		$file_appender->file_switch($name);
-	}
-}
-
 sub systemcall { my ($command, $silent) = @_;
 	my ($stdout, $stderr, $exit) = capture {
 		system($command);
@@ -743,12 +777,6 @@ sub masternameToPlatform { my ($qcow_name) = @_ ;
 	my $platform = basename($qcow_name);
 	$platform =~ s/^condor-//;
 	$platform =~ s/-master-\d+.qcow2$//;
-	# my ($vendor, $release, $bits) = split /\-/, $platform;
-	# my ($major, $minor) = split /\./, $release;
-	# $platform = $vendor || '';
-	# $platform .= '-' . $major if ($major);
-	# $platform .= '.' . $minor if ($minor);
-	# $platform .= '-' . $bits if ($bits);
 	if (! $platform) {
 		$log->error("Could not translate $qcow_name to platform");
 		return '';
@@ -943,7 +971,7 @@ my %os_init = (
     'windows-7'  	=> \&_handleWindows,
 );
 
-sub insertIntoInit { my ($osimage, $script, $runshcmd, $vmhostname, $imagename) = @_ ;
+sub _insertIntoInit { my ($osimage, $script, $runshcmd, $vmhostname, $imagename) = @_ ;
     my $ostype    = 'unknown';
     my $ret       = 1;
     foreach my $key (keys %os_init) {
@@ -954,9 +982,82 @@ sub insertIntoInit { my ($osimage, $script, $runshcmd, $vmhostname, $imagename) 
         }
     }
     if ($ret == 1) {
-        $log->error("insertIntoInit - Unrecognized image platform type using \"$imagename\"");
+        $log->error("_insertIntoInit - Unrecognized image platform type using \"$imagename\"");
     }
     return ($ostype, $ret);
+}
+
+sub _edit_fstab { my ($imagename, $script) = @_ ;
+	my $yearstamp = ($imagename =~ m/\-(\d{4})\d{6}\.qcow2$/) ? $1 : 0;
+	# only edit new platform images with datestamp in year 2019 or greater
+	return if ($yearstamp < 2019);
+    ## VMs now need to have the fstab entries added
+    print $script "write-append /etc/fstab \"## SWAMP-START\\n\"\n";
+    print $script "write-append /etc/fstab \"## all swamp changes in this block\\n\"\n";
+    print $script "write-append /etc/fstab \"/dev/vdb           /mnt/in                 auto    defaults        0 0\\n\"\n";
+    print $script "write-append /etc/fstab \"/dev/vdc           /mnt/out                auto    defaults        0 0\\n\"\n";
+    print $script "write-append /etc/fstab \"## SWAMP-END\\n\"\n";
+}
+
+sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
+	my $swampdir = getSwampDir();
+	my $runshcmd =
+		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/runsh.out 2>&1 &\\n\"";
+	my $gfname = 'init.gf';
+	my $script;
+	if (! open($script, '>', $gfname)) {
+		$log->error("patchDeltaQcow2ForInit - open failed for: $gfname");
+		return 0;
+	}
+	print $script "#!/usr/bin/guestfish -f\n";
+	my ($ostype, $status) = _insertIntoInit($imagename, $script, $runshcmd, $vmhostname, $imagename);
+	if ($status) {
+		$log->error("patchDeltaQcow2ForInit - _insertIntoInit failed");
+		close($script);
+		return 0;
+	}
+	# for new platform images - edit fstab to add /mnt/in and /mnt/out
+	_edit_fstab($imagename, $script);
+	close($script);
+	(my $output, $status) = systemcall("LIBGUESTFS_BACKEND=direct /usr/bin/guestfish -f $gfname -a delta.qcow2 -i </dev/null");
+	if ($status) {
+		$log->error("patchDeltaQcow2ForInit - guestfish -f $gfname failed: $output $status");
+		return 0;
+	}
+	return 1;
+}
+
+sub createQcow2Disks { my ($bogref, $inputfolder, $outputfolder) = @_ ;
+	# delta qcow2
+	$log->info('Creating base image for: ', $bogref->{'platform'});
+	my $imagename = displaynameToMastername($bogref->{'platform'});
+	if (! $imagename) {
+		$log->error("createQcow2Disks - base image creation failed - no image");
+		return;
+	}
+	if (! -r $imagename) {
+		$log->error("createQcow2Disks - base image creation failed - $imagename not readable");
+		return;
+	}
+	my ($output, $status) = systemcall("qemu-img create -b $imagename -f qcow2 delta.qcow2");
+	if ($status) {
+		$log->error("createQcow2Disks - base image creation failed: $imagename $output $status");
+		return;
+	}
+	# input qcow2
+	($output, $status) = systemcall("LIBGUESTFS_BACKEND=direct virt-make-fs --type=ext3 --format=qcow2 $inputfolder inputdisk.qcow2 --size=+1G");
+	if ($status) {
+		$log->error("createQcow2Disks - input disk creation failed: $inputfolder $output $status");
+		return;
+	}
+	# output qcow2
+	($output, $status) = systemcall("LIBGUESTFS_BACKEND=direct virt-make-fs --type=ext3 --format=qcow2 $outputfolder outputdisk.qcow2 --size=3G");
+	if ($status) {
+		$log->error("createQcow2Disks - output disk creation failed: $outputfolder $output $status");
+		return;
+	}
+	chmod 0644, "outputdisk.qcow2";
+	return $imagename;
 }
 
 #########################
@@ -998,8 +1099,8 @@ sub launchPadStart { my ($options)    = @_ ;
 #	Launch Pad Kill		#
 #########################
 
-sub launchPadKill { my ($execrunuid, $jobid)    = @_ ;
-    my $req = RPC::XML::request->new('swamp.launchPad.kill', RPC::XML::string->new($execrunuid), RPC::XML::string->new($jobid));
+sub launchPadKill { my ($execrunuid, $jobid, $type, $graceful_shutdown) = @_ ;
+    my $req = RPC::XML::request->new('swamp.launchPad.kill', RPC::XML::string->new($execrunuid), RPC::XML::string->new($jobid), RPC::XML::string->new($type), RPC::XML::int->new($graceful_shutdown));
 	$launchpadUri ||= _configureLaunchPadClient();
 	$launchpadClient ||= RPC::XML::Client->new($launchpadUri);
     my $result = rpccall($launchpadClient, $req);
@@ -1052,64 +1153,38 @@ sub database_disconnect { my ($dbh) = @_ ;
 	$dbh->disconnect();
 }
 
-#####################
-#	Delete Job Dir	#
-#####################
+#################################
+#	Identify Preempted Jobs		#
+#################################
 
-sub deleteJobDir { my ($execrunuid) = @_ ;
-	my $options = {};
-	$options->{'execrunuid'} = $execrunuid;
-    my $req = RPC::XML::request->new('agentMonitor.deleteJobDir', RPC::XML::struct->new($options));
-	$agentUri ||= _configureAgentClient();
-	$agentClient ||= RPC::XML::Client->new($agentUri);
-	my $result = rpccall($agentClient, $req);
-    if ($result->{'error'}) {
-        $log->error("deleteJobDir with $execrunuid error: $result->{'error'}");
-        return 0;
-    }
-	my $delete_count = $result->{'value'} || 0;
-	return $delete_count;
-}
-
-sub _listJobDirs { my ($rundir) = @_ ;
-    my $dirs = {};
-    my $dh;
-    if (! opendir($dh, $rundir)) {
-        $log->error("listJobDirs - opendir $rundir failed");
-        return $dirs;
-    }
-    my @dirs = grep {!/^\./ && -d "$rundir/$_"} readdir($dh);
-    closedir($dh);
-    foreach my $jobdir (@dirs) {
-        my $clusterid = `find "$rundir/$jobdir" -name "ClusterId_*"`;
-        $clusterid =~ s/^.*ClusterId_//;
-        chomp $clusterid;
-        if ($clusterid) {
-            $dirs->{$jobdir} = $clusterid . '.0'; 
-        }
-        else {
-            $dirs->{$jobdir} = 'nojobid';
-        }
-    }
-    return $dirs;
-}
-
-sub _listJobIDs {
-    my $jobs = {};
-    my $command = 'condor_q -af:j SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid';
+sub identifyPreemptedJobs {
+	# htcondor job has been preempted job if
+	# it is idle - JobStatus == 1
+	# it has been started previously - NumJobStarts > 0
+	# it has been vacated - LastVacateTime > 0
+    my $command = 'condor_q -af SWAMP_arun_execrunuid -constraint "JobStatus == 1" -constraint "NumJobStarts > 0" -constraint "LastVacateTime > 0"';
     my ($output, $status) = systemcall($command);
     if ($status) {
         $log->error("listJobIDs condor_q failed - $status output: $output");
         return;
     }
-    my @joblines = split "\n", $output;
-    foreach my $jobline (@joblines) {
-        my ($jobid, $arunid, $mrunid, $vrunid) = split ' ', $jobline;
-        $jobs->{$jobid} = $arunid if ($arunid ne 'undefined'); 
-        $jobs->{$jobid} = $mrunid if ($mrunid ne 'undefined');
-        $jobs->{$jobid} = $vrunid if ($vrunid ne 'undefined');
-    }
-    return $jobs;
+    my @jobs = split "\n", $output;
+	return \@jobs;
+}
+
+#####################
+#	Clean Run Dir	#
+#####################
+
+sub listJobDirs { my ($rundir) = @_ ;
+	my $dh;
+	if (! opendir($dh, $rundir)) {
+		$log->error("listJobDirs - opendir $rundir failed");
+		return;
+	}
+	my @dirs = grep {!/^\./ && -d "$rundir/$_"} readdir($dh);
+	closedir($dh);
+	return \@dirs;
 }
 
 sub isJobInHistory { my ($execrunuid) = @_ ;
@@ -1156,57 +1231,16 @@ sub condorJobExists { my ($execrunuid) = @_ ;
     return isJobInQueue($execrunuid) || isJobInHistory($execrunuid);
 }
 
-sub cleanRunDir {
-    my $rundir = catdir(getSwampDir(), 'run');
-    my $jobdirs = _listJobDirs($rundir);
-    my $jobids = _listJobIDs();
-	# do not continue if condor_q systemcall failed
-	return if (! defined($jobids));
-    foreach my $jobdir (keys %$jobdirs) {
-        my $jobid = $jobdirs->{$jobdir};
-        # active job case 
-        if ($jobid && exists($jobids->{$jobid})) {
-            my $runid = $jobids->{$jobid};
-            if ($jobdir =~ m/$runid/) {
-                $log->debug("cleanRunDir $jobid: $jobdir matches $runid");
-                next;
-            }
-        }
-        # inactive job case
-        if ($jobid) {
-            # reused jobid
-            if (exists($jobids->{$jobid})) {
-                my $runid = $jobids->{$jobid};
-                $log->warn("cleanRunDir $jobid: $jobdir does not match $runid");
-            }
-            # inactive
-            else {
-                $log->info("cleanRunDir $jobid: $jobdir not active in jobids");
-            }
-        }
-        else {
-            # no jobid
-            $log->warn("cleanRunDir $jobdir has no jobid");
-        }
-        # remove jobdir iff it is in the history
-		# it may not have been submitted yet
-		my $execrunuid = $jobdir;
-		$execrunuid =~ s/^.swamp_//;
-		if (! isJobInHistory($execrunuid)) {
-            $log->warn("cleanRunDir $jobdir $execrunuid is not in history - skipping");
-			next;
-		}
-        $log->info("cleanRundir removing $rundir/$jobdir");
-        my $result = remove_tree("$rundir/$jobdir", {error => \my $error});
-        if (@$error || ! $result) {
-            my $error_string = '';
-            foreach my $diag (@$error) {
-                my ($file, $message) = %$diag;
-                $error_string .= $file . ' ' . $message . ' ';
-            }
-            $log->error("cleanRunDir Error - $jobdir remove failed - result: $result error: $error_string");
-        }
-    }
+sub getRunDirHistory {
+	my $cmd = qq{condor_history -format "%s\n" SWAMP_submit_jobdir};
+	my ($output, $status) = systemcall($cmd);
+	return {} if ($status);
+	my @rundirs = split /\n/, $output;
+	my $hash = {};
+	foreach my $rundir (@rundirs) {
+		$hash->{$rundir} = 1;
+	}
+	return $hash;
 }
 
 1;

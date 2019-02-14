@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 RUNOUT="$VMOUTPUTDIR/swamp_run.out"
 EVENTOUT="/dev/ttyS1"
@@ -45,7 +45,7 @@ then
 	echo "ERROR: NO IP ADDRESS" >> $RUNOUT
 	if [ $shutdown_on_error -eq 1 ] 
 	then
-		echo "Shutting down $VIEWER viewer via run.sh" >> $RUNOUT
+		echo "Shutting down vm via run.sh" >> $RUNOUT
 		shutdown -h now 
 		exit
 	fi
@@ -79,7 +79,17 @@ then
 	cp /var/log/messages /mnt/out
 fi
 
+echo "CONNECTEDUSERS" > $EVENTOUT
+echo "Checking for connected users at: `date`" >> $RUNOUT
+connected_users="$(who)"
+while [ "$connected_users" != "" ]
+do
+	echo "$connected_users" > $EVENTOUT
+	echo "$connected_users" >> $RUNOUT
+	sleep 10
+	connected_users="$(who)"
+done
+
 echo "Shutting down assessment vm at: `date`" >> $RUNOUT
 echo "ENDASSESSMENT" > $EVENTOUT
-
 $VMSHUTDOWN >> $RUNOUT

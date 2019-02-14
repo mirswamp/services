@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -20,26 +20,31 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::ScarfXmlReader;
 use SWAMP::vmu_Support qw(
+	use_make_path
 	getStandardParameters
+	setHTCondorEnvironment
 	identifyScript
 	getSwampDir
 	getLoggingConfigString
-	getSwampConfig
-	$global_swamp_config
 	isSwampInABox
 	isMetricRun
-	buildExecRunAppenderLogFileName
 	systemcall
 	loadProperties
 	checksumFile
 	construct_vmhostname
 	construct_vmdomainname
+	computeDirectorySizeInBytes
+	getSwampConfig
+	$global_swamp_config
 	timetrace_event
 	timetrace_elapsed
+	$HTCONDOR_POSTSCRIPT_EXIT
 );
 use SWAMP::vmu_AssessmentSupport qw(
+	updateExecutionResults
 	updateClassAdAssessmentStatus
 	updateRunStatus
+	saveMetricSummary
 	saveMetricResult
 	saveAssessmentResult
 	setCompleteFlag
@@ -52,40 +57,40 @@ use SWAMP::vmu_AssessmentSupport qw(
 	isSynopsysC
 );
 
-$global_swamp_config ||= getSwampConfig();
+use SWAMP::mongoDBUtils qw(
+	mongoSaveAssessmentResult
+);
+
+$global_swamp_config = getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
-my $clusterid;
 
 my $inputarchive = 'inputdisk.tar.gz';
 my $outputarchive = 'outputdisk.tar.gz';
 
+# logfilesuffix is the HTCondor clusterid
+my $logfilesuffix = ''; 
 sub logfilename {
-	if (isSwampInABox($global_swamp_config)) {
-		my $name = buildExecRunAppenderLogFileName($execrunuid);
-		return $name;
-	}
-    my $name = basename($0, ('.pl'));
-	chomp $name;
-	$name =~ s/Post//sxm;
-	$name .= '_' . $clusterid;
-    return catfile(getSwampDir(), 'log', $name . '.log');
+	my $name = catfile(getSwampDir(), 'log', $execrunuid . '_' . $logfilesuffix . '.log');
+	return $name;
 }
 
 sub extract_outputdisk { my ($outputfolder) = @_ ;
-	my $gfname = 'extract.gf';
-	my $script;
-	if (! open($script, '>', $gfname)) {
-		$log->error("extract_outputdisk - open failed for: $gfname");
-		return 0;
-	}
-	print $script "add outputdisk.qcow2\n";
-	print $script "run\n";
-	print $script "mount /dev/sda /\n";
-	print $script "glob copy-out /* $outputfolder\n";
-	close($script);
-	my ($output, $status) = systemcall("/usr/bin/guestfish -f $gfname");
+	# my $gfname = 'extract.gf';
+	# if (open(my $fh, '>', $gfname)) {
+		# print $fh "add-ro outputdisk.qcow2\n";
+		# print $fh "run\n";
+		# print $fh "mount /dev/sda /\n";
+		# print $fh "glob copy-out /* $outputfolder\n";
+		# close($fh);
+	# }
+	# else {
+		# $log->error("extract_outputdisk - open failed for: $gfname");
+		# return 0;
+	# }
+	# my ($output, $status) = systemcall("/usr/bin/guestfish -f $gfname");
+	my ($output, $status) = systemcall(qq{/usr/bin/guestfish --ro -a outputdisk.qcow2 run : mount /dev/sda / : glob copy-out '/*' $outputfolder});
 	if ($status) {
 		$log->error("extract_outputdisk - output extraction failed: $output $status");
 		return 0;
@@ -222,7 +227,7 @@ sub metricSummaryFunction { my ($href, $execrunuid_ref) = @_ ;
         my $sum = $metricSummary->{'Sum'};
         $metric_results->{$type} = $sum;
     }
-	saveMetricResult($metric_results);
+	saveMetricSummary($metric_results);
 }
 
 sub parse_metric_loc { my ($execrunuid, $assessment_results_file) = @_ ;
@@ -342,7 +347,7 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	my $retval = 1;
 
 	# add inputarchive
-	my ($output, $status) = systemcall("tar cvfz $inputarchive $inputfolder");
+	my ($output, $status) = systemcall("tar -cvzf $inputarchive $inputfolder");
 	if ($status) {
 		$log->error("preserve_assessment_data - tar of $inputfolder failed: $output $status");
 		$retval = 0;
@@ -358,16 +363,16 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	my $vmlog = catdir($resultsfolder, "vmlog");
 	if (mkdir($vmlog)) {
 		# /var/log/libvirt/qemu/<vmdomainname>.log
-		my ($output, $status) = systemcall("find /var/log/libvirt/qemu -name ${vmdomainname}.log");
-		my $vmdeflog = '';
-		if (! $status) {
-			$vmdeflog = $output;
-			chomp $vmdeflog;
-			if ($vmdeflog && -r $vmdeflog) {
-				$log->info("copying: $vmdeflog to: ", $vmlog);
-				copy($vmdeflog, $vmlog);
-			}
-		}
+		# my ($output, $status) = systemcall("find /var/log/libvirt/qemu -name ${vmdomainname}.log");
+		# my $vmdeflog = '';
+		# if (! $status) {
+			# $vmdeflog = $output;
+			# chomp $vmdeflog;
+			# if ($vmdeflog && -r $vmdeflog) {
+				# $log->info("copying: $vmdeflog to: ", $vmlog);
+				# copy($vmdeflog, $vmlog);
+			# }
+		# }
 		# /var/log/messages
 		my $mlog = catfile($outputfolder, 'messages');
 		if (-r $mlog) {
@@ -396,22 +401,24 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	copy($versions, $outputfolder);
 
     # add outputarchive
-    my $using_gnu_tar = 0;
-    ($output, $status) = systemcall('tar --version');
-    if ($output =~ /GNU tar/smi) {
-        $log->info('We appear to be using GNU tar');
-        $using_gnu_tar = 1;
-    }
-    ($output, $status) = systemcall("tar cvfz $outputarchive $outputfolder");
-    if ($using_gnu_tar && $status == 1) {
-        $log->warn("preserve_assessment_data - tar of $outputfolder encountered potential problem: $output $status");
-        $retval = 0;
-    }
-    elsif ($status) {
+    # my $using_gnu_tar = 0;
+    # ($output, $status) = systemcall('tar --version');
+    # if ($output =~ /GNU tar/smi) {
+        # $log->info('We appear to be using GNU tar');
+        # $using_gnu_tar = 1;
+    # }
+    ($output, $status) = systemcall("tar --exclude='lost+found' -cvzf $outputarchive $outputfolder");
+    # if ($using_gnu_tar && $status == 1) {
+        # $log->warn("preserve_assessment_data - tar of $outputfolder encountered potential problem: $output $status");
+        # $retval = 0;
+    # }
+    # els
+	if ($status) {
         $log->error("preserve_assessment_data - tar of $outputfolder failed: $output $status");
         $retval = 0;
     }
-    if (-r $outputarchive) {
+    # if (-r $outputarchive) {
+	else {
         $log->info("copying: $outputarchive to: ", $resultsfolder);
         copy($outputarchive, $resultsfolder);
     }
@@ -471,9 +478,23 @@ sub preserve_assessment_data { my ($vmdomainname, $inputfolder, $outputfolder, $
 	return ($retval, $package_archive_file, $logfile);
 }
 
-sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum) = @_ ;
+sub save_results_in_database { my ($bogref, $execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum) = @_ ;
 	$log->info("saving pathname: $assessment_results_file");
-	my $assessment_results = {
+	my $sql_status;
+	my $run_results;
+	if (isMetricRun($execrunuid)) {
+		$run_results = {
+			'execrunid'			=> $execrunuid,
+			'pathname'			=> $assessment_results_file,
+			'sha512sum'			=> checksumFile($assessment_results_file),
+			'status_out'		=> $status_out,
+			'status_out_error_msg'	=> $first_failure_task,
+		};
+		$sql_status = saveMetricResult($bogref, $run_results);
+		$log->info("saveMetricResult returns: $sql_status called with: ", sub {use Data::Dumper; Dumper($run_results);});
+	}
+	else {
+		$run_results = {
 			'execrunid'			=> $execrunuid,
 			'weaknesses'		=> $weaknesses,
 			'pathname'			=> $assessment_results_file,
@@ -485,10 +506,14 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 			'status_out'		=> $status_out,
 			'status_out_error_msg'	=> $first_failure_task,
 			'locSum'			=> $locSum,
-			};
-	my $status = saveAssessmentResult($assessment_results);
-	$log->info("saveAssessmentResult returns: $status called with: ", sub {use Data::Dumper; Dumper($assessment_results);});
-	return $status;
+		};
+		$sql_status = saveAssessmentResult($bogref, $run_results);
+		$log->info("saveAssessmentResult returns: $sql_status called with: ", sub {use Data::Dumper; Dumper($run_results);});
+	}
+    my $mongo_status = mongoSaveAssessmentResult($run_results);
+	$log->info("mongoSaveAssessmentResult returns: $mongo_status");
+	# do not include mongo_status in result
+	return $sql_status;
 }
 
 ########
@@ -497,15 +522,12 @@ sub save_results_in_database { my ($execrunuid, $weaknesses, $assessment_results
 
 # args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
-# clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
-if (! $execrunuid || ! $clusterid) {
-	# we have no execrunuid or clusterid for the log4perl log file name
+my ($owner, $uiddomain, $clusterid, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid);
+if (! $execrunuid) {
+	# we have no execrunuid for the log4perl log file name
 	exit(1);
 }
-
-my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
-my $vmdomainname = construct_vmdomainname($owner, $uiddomain, $clusterid, $procid);
+$logfilesuffix = $clusterid if (defined($clusterid));
 
 Log::Log4perl->init(getLoggingConfigString());
 $log = Log::Log4perl->get_logger(q{});
@@ -513,7 +535,11 @@ $log->level($debug ? $TRACE : $INFO);
 $log->info("PostAssessment: $execrunuid Begin");
 $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
+setHTCondorEnvironment();
 identifyScript(\@ARGV);
+
+my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
+my $vmdomainname = construct_vmdomainname($owner, $uiddomain, $clusterid, $procid);
 
 my $inputfolder = q{input};
 my $outputfolder = q{output};
@@ -530,17 +556,17 @@ if ($numjobstarts > 0) {
 	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
 }
 
-my $message = 'Extracting assessment results' . $job_status_message_suffix;
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+my $job_status_message = 'Extracting assessment results' . $job_status_message_suffix;
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 my $status = extract_outputdisk($outputfolder);
 if (! $status) {
-	$message = 'Failed to extract assessment results';
-	$log->info($message);
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	$job_status_message = 'Failed to extract assessment results' . $job_status_message_suffix;
+	$log->info($job_status_message);
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 }
 
-$message = 'Post-Processing' . $job_status_message_suffix;
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+$job_status_message = 'Post-Processing' . $job_status_message_suffix;
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 # attempt to log status.out
 my $status_out = '';
 my $status_file = catfile($outputfolder, 'status.out');
@@ -562,26 +588,26 @@ if (-r $status_file) {
 my $retry = 0;
 ($status, my $weaknesses, my $first_failure_task) = parse_status_output($outputfolder);
 my $framework_said_pass = ($status == 1);
-$message = '';
+$job_status_message = '';
 if ($status < 0) {
-	$message .= 'Failed to parse status.out';
+	$job_status_message .= 'Failed to parse status.out';
 }
 elsif ($status) {
 	if ($status & 1) {
-		$message .= 'Assessment passed ';
+		$job_status_message .= 'Assessment passed ';
 	}
 	if ($status & 2) {
-		$message .= 'Assessment failed ';
+		$job_status_message .= 'Assessment failed ';
 	}
 	if ($status & 4) {
-		$message .= 'Assessment retry ';
+		$job_status_message .= 'Assessment retry ';
 		$retry = 1;
 	}
 }
 else {
-	$message .= 'Assessment status.out not found ';
+	$job_status_message .= 'Assessment status.out not found ';
 }
-$log->info("Status: $message");
+$log->info("Status: $job_status_message");
 # if not passed, attempt to log run.out
 if (! $status || ! ($status & 1)) {
 	my $runoutfile = catfile($outputfolder, 'run.out');
@@ -599,16 +625,13 @@ if (! $status || ! ($status & 1)) {
 # create results folder
 my $resultsfolder = catdir($bog{'resultsfolder'}, $execrunuid);
 mkdir($resultsfolder);
-my ($uid, $gid) = (getpwnam('mysql'))[2, 3];
-chown($uid, $gid, $resultsfolder);
-chmod(0755, $resultsfolder);
 
 ($status, my $package_archive_file, my $logfile) =
 	preserve_assessment_data($vmdomainname, $inputfolder, $outputfolder, $resultsfolder);
 my $locSum = -1;
 if (! $status) {
-	$message = 'Failed to preserve assessment data' . $job_status_message_suffix;
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	$job_status_message = 'Failed to preserve assessment data' . $job_status_message_suffix;
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 }
 else {
 	if (isSynopsysC(\%bog)) {
@@ -619,8 +642,8 @@ else {
 ($status, my $have_results, my $assessment_results_file) =
 	preserve_assessment_results(\%bog, $framework_said_pass, $outputfolder, $resultsfolder);
 if (! $status) {
-	$message = 'Failed to preserve assessment results' . $job_status_message_suffix;
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	$job_status_message = 'Failed to preserve assessment results' . $job_status_message_suffix;
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 }
 elsif ($have_results) {
 	if (isMetricRun($execrunuid)) {
@@ -630,37 +653,37 @@ elsif ($have_results) {
 	}
 }
 
-$message = 'Saving Results' . $job_status_message_suffix;
-updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-my $results_in_db = save_results_in_database($execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum);
+$job_status_message = 'Saving Results' . $job_status_message_suffix;
+updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
+my $results_in_db = save_results_in_database(\%bog, $execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum);
 if (! $results_in_db) {
-	$message = 'Failed to save assessment results in database' . $job_status_message_suffix;
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	$job_status_message = 'Failed to save assessment results in database' . $job_status_message_suffix;
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 }
 
 # signal condor to retry this job by exiting with ExitCode != 0
 my $CondorExitCode = 0;
 my $retries_remaining = 0;
 if (! $framework_said_pass || ! $have_results || ! $results_in_db) {
-	$message = 'Finished with Errors';
+	$job_status_message = 'Finished with Errors';
 	if ($retry) {
 		$retries_remaining = $htcondor_assessment_max_retries - $numjobstarts;
 		if ($retries_remaining) {
-			$message .= $job_status_message_suffix;
-			$message .= " - Will retry $retries_remaining time";
-			$message .= 's' if ($retries_remaining > 1);
+			$job_status_message .= $job_status_message_suffix;
+			$job_status_message .= " - Will retry $retries_remaining time";
+			$job_status_message .= 's' if ($retries_remaining > 1);
 		}
-		$CondorExitCode = 5;
+		$CondorExitCode = $HTCONDOR_POSTSCRIPT_EXIT;
 	}
-	$log->error("Assessment: $execrunuid $message");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-	updateRunStatus($execrunuid, $message, 1);
+	$log->error("Assessment: $execrunuid $job_status_message");
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
+	updateRunStatus($execrunuid, $job_status_message, 1);
 }
 else {
-	$message = 'Finished';
-	$log->info("Assessment: $execrunuid $message");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-	updateRunStatus($execrunuid, $message, 1);
+	$job_status_message = 'Finished';
+	$log->info("Assessment: $execrunuid $job_status_message");
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
+	updateRunStatus($execrunuid, $job_status_message, 1);
 }
 
 # set complete flag and notify via email iff no retries remaining
@@ -691,6 +714,21 @@ if (! $retries_remaining) {
 	}
 }
 
+my $slot_size_end = computeDirectorySizeInBytes();
+updateExecutionResults($execrunuid, {'slot_size_end' => $slot_size_end});
+
 $log->info("PostAssessment: $execrunuid Exit $CondorExitCode");
-timetrace_event($execrunuid, 'assessment', $message);
+timetrace_event($execrunuid, 'assessment', $job_status_message);
+if (! isSwampInABox($global_swamp_config)) {
+	my $logfile = logfilename();
+	my $central_log_dir = '/swamp/working/logs';
+	if (! -d $central_log_dir) {
+		if (! use_make_path($central_log_dir)) {
+			$log->error("PostAssessment: $execrunuid - unable to create dir: $central_log_dir");
+		}
+	}
+	if (-d $central_log_dir && -r $logfile) {
+		copy($logfile, $central_log_dir);
+	}
+}
 exit($CondorExitCode);

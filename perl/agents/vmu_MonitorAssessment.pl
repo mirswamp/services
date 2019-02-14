@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -20,21 +20,22 @@ use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::vmu_Support qw(
 	getStandardParameters
+	setHTCondorEnvironment
+	runScriptDetached
 	identifyScript
 	getSwampDir
-	getSwampConfig
-	$global_swamp_config
-	isSwampInABox
-	buildExecRunAppenderLogFileName
 	getLoggingConfigString
 	systemcall
 	loadProperties
 	construct_vmhostname
 	construct_vmdomainname
+	getSwampConfig
+	$global_swamp_config
 	getVMIPAddress
 	timetrace_event
 	timetrace_elapsed
 );
+$global_swamp_config = getSwampConfig();
 use SWAMP::vmu_AssessmentSupport qw(
 	updateExecutionResults
 	updateClassAdAssessmentStatus
@@ -48,7 +49,6 @@ $global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
-my $clusterid;
 my $events_file = 'JobVMEvents.log';
 my $vmip_file = 'vmip.txt';
 my $MAX_OPEN_ATTEMPTS = 5;
@@ -64,19 +64,15 @@ my $FINAL_STATUS	= 'ENDASSESSMENT';
 my %status_messages = (
 	$INITIAL_STATUS		=> 'Starting assessment run script',
 	'BEGINASSESSMENT'	=> 'Performing assessment',
+	'CONNECTEDUSERS'	=> 'Checking for connected users',
 	$FINAL_STATUS		=> 'Shutting down the VM',
 );
 
+# logfilesuffix is the HTCondor clusterid 
+my $logfilesuffix = ''; 
 sub logfilename {
-	if (isSwampInABox($global_swamp_config)) {
-		my $name = buildExecRunAppenderLogFileName($execrunuid);
-		return $name;
-	}
-    my $name = basename($0, ('.pl'));
-    chomp $name;
-	$name =~ s/Monitor//sxm;
-    $name .= '_' . $clusterid;
-    return catfile(getSwampDir(), 'log', $name . '.log');
+	my $name = catfile(getSwampDir(), 'log', $execrunuid . '_' . $logfilesuffix . '.log');
+	return $name;
 }
 
 sub send_command_to_vm { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $command) = @_ ;
@@ -144,6 +140,7 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 				$final_status_seen = 1;
 				# void the vm_password field in the database to turn off ssh access button
 				updateExecutionResults($execrunuid, {'vm_password' => ''});
+				return 1;
 			}
 			$any_status_seen = 1;
 			$poll_count = 0;
@@ -264,12 +261,12 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid,
 
 # args: execrunuid owner uiddomain clusterid procid numjobstarts [debug]
 # execrunuid is global because it is used in logfilename
-# clusterid is global because it is used in logfilename
-my ($owner, $uiddomain, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid, \$clusterid);
-if (! $execrunuid || ! $clusterid) {
-	# we have no execrunuid or clusterid for the log4perl log file name
+my ($owner, $uiddomain, $clusterid, $procid, $numjobstarts, $debug) = getStandardParameters(\@ARGV, \$execrunuid);
+if (! $execrunuid) {
+	# we have no execrunuid for the log4perl log file name
 	exit(1);
 }
+$logfilesuffix = $clusterid if (defined($clusterid));
 
 if (open(my $fh, '>', "vmu_MonitorAssessment_${clusterid}.pid")) {
 	print $fh "$$\n";
@@ -297,7 +294,10 @@ $log->level($debug ? $TRACE : $INFO);
 $log->info("MonitorAssessment: $execrunuid Begin");
 $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
+setHTCondorEnvironment();
 identifyScript(\@ARGV);
+# my $startupdir = runScriptDetached();
+# chdir($startupdir);
 
 my $event_start = timetrace_event($execrunuid, 'assessment', 'monitor start');
 

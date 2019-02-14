@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
@@ -14,22 +14,21 @@ use Getopt::Long qw/GetOptions/;
 use Pod::Usage qw/pod2usage/;
 use English '-no_match_vars';
 use Carp 'croak';
+use Log::Log4perl;
+use Log::Log4perl::Level;
+use File::Spec qw(catfile);
 
 use FindBin;
-use lib "$FindBin::Bin/lib";
+# use lib "$FindBin::Bin/lib";
+use lib ("$FindBin::Bin/..agents/lib", "$FindBin::Bin/lib", 
+        "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
 use VMTools qw(
 	checkEffectiveUser 
-	consoleMsg 
-	errorMsg 
 	extractOutput 
-	init 
-	logMsg 
-	pkgshutdown 
 	startVM
 	defineVM
 	listMasters
 	listVMs
-	initProjectLog
 	createImages
 	createXML
 	setvmimagedir
@@ -37,6 +36,12 @@ use VMTools qw(
 	vmVNCDisplay
 	vmExists
 	vmState
+);
+use SWAMP::vmu_Support qw(
+    getLoggingConfigString
+    getSwampDir
+    identifyScript
+    runScriptDetached
 );
 use VMConstants;
 
@@ -79,6 +84,22 @@ if ($doversion) {
     print " VMTools : $VMTools::VERSION\n";
     exit 0;
 }
+
+my @PRESERVEARGV = @ARGV;
+my $debug = 0;
+my $asdetached = 0;
+
+sub logfilename {
+        return File::Spec->catfile(getSwampDir(), 'log', 'start_vm.log');
+}
+
+Log::Log4perl->init(getLoggingConfigString());
+my $log = Log::Log4perl->get_logger(q{});
+$log->level($debug ? $TRACE : $INFO);
+my $tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+identifyScript(\@PRESERVEARGV);
+runScriptDetached() if ($asdetached);
 
 setvmprojectdir($vmfolder);
 setvmimagedir($vmimagefolder);
@@ -141,20 +162,17 @@ if ( $restart eq q{} && !-d $dirpath ) {
     exit 1;
 }
 
-init( $vmname, 'start_vm', 0 );
-logMsg('start_vm started');
+print("start_vm started\n");
 
 if ( $restart eq q{} ) {
     if ( vmExists($vmname) ) {
-        errorMsg("A VM of this name ($vmname) already exists.");
+        print("A VM of this name ($vmname) already exists.\n");
         exit 1;
     }
     createImages( $dirpath, $vmname, $imagename, $outsize, 0 );
     createXML( 'vmname'=> $vmname, 'nCPU' => $nCPU, 'memMB' => $memMB, 'imagename' => $imagename, 'macaddr' => $macaddr, 'isMaster' => 0 );
     defineVM($vmname);
 }
-
-initProjectLog($vmname);
 
 my $ret = ( startVM($vmname) );
 
@@ -165,27 +183,25 @@ sub handleStart {
     my $msg;
     if ( $arg == 0 ) {
         if ( $restart eq q{} ) {
-            $msg = "Started $imagename VM named $vmname with ${outsize}MB output disk, $nCPU cpus, ${memMB}MB memory .";
+            $msg = "Started $imagename VM named $vmname with ${outsize}MB output disk, $nCPU cpus, ${memMB}MB memory.\n";
         }
         else {
-            $msg = "Restarted VM named $vmname";
+            $msg = "Restarted VM named $vmname\n";
         }
     }
     else {
         # clean up project folder? Eventually, but for now leave it for troubleshooting.
-        $msg = "Unable to start $vmname.";
+        $msg = "Unable to start $vmname.\n";
     }
-    consoleMsg($msg);
+    print($msg);
     return;
 }
 
-pkgshutdown();
 exit $ret;
 
 sub trap_handler {
 
     # clean up partially created VMs
-    pkgshutdown();
     croak "Caught signal @_, shutting down";
 }
 __END__

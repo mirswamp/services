@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::PackageTypes;
 
@@ -30,6 +30,7 @@ BEGIN {
 	  $JAVA8SRC_PKG
 	  $JAVA8BYTECODE_PKG
 	  $WEB_SCRIPTING_PKG
+	  $DOT_NET_PKG
 
       $C_CPP_PKG_STRING
       $JAVA7SRC_PKG_STRING
@@ -45,12 +46,7 @@ BEGIN {
 	  $RUBY_PADRINO_PKG_STRING
       $ANDROID_APK_PKG_STRING
 	  $WEB_SCRIPTING_PKG_STRING
-
-      $CPP_TYPE
-      $JAVA_TYPE
-      $PYTHON_TYPE
-	  $RUBY_TYPE
-	  $SCRIPT_TYPE
+	  $DOT_NET_PKG_STRING
     );
 }
 
@@ -69,12 +65,7 @@ our $ANDROID_APK_PKG		= '11';
 our $JAVA8SRC_PKG			= '12';
 our $JAVA8BYTECODE_PKG		= '13';
 our $WEB_SCRIPTING_PKG		= '14';
-
-our $PYTHON_TYPE	= 'python';
-our $JAVA_TYPE		= 'java';
-our $CPP_TYPE		= 'cpp';
-our $RUBY_TYPE		= 'ruby';
-our $SCRIPT_TYPE	= 'script';
+our $DOT_NET_PKG			= '15';
 
 our $GENERIC_PKG_STRING			= 'generic';
 our $C_CPP_PKG_STRING			= 'C/C++';
@@ -91,5 +82,6 @@ our $RUBY_ON_RAILS_PKG_STRING	= 'Ruby on Rails';
 our $RUBY_PADRINO_PKG_STRING	= 'Ruby Padrino';
 our $ANDROID_APK_PKG_STRING		= 'Android .apk';
 our $WEB_SCRIPTING_PKG_STRING	= 'Web Scripting';
+our $DOT_NET_PKG_STRING			= '.NET';
 
 1;

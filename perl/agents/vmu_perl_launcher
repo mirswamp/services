@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# This file is subject to the terms and conditions defined in
+# 'LICENSE.txt', which is part of this source code distribution.
+#
+# Copyright 2012-2019 Software Assurance Marketplace
+
+args=("$@")
+launcher_name="${args[0]}"
+launcher_file="/opt/swamp/bin/vmu_${launcher_name}.pl"
+launcher_args=("${args[@]:1}")
+execrunuid="${launcher_args[0]}"
+clusterid="${launcher_args[3]}"
+# for viewers remove vrun_ prefix and _CodeDX suffix
+execrunuid=${execrunuid//vrun_/}
+execrunuid=${execrunuid//_CodeDX/}
+logfile="/opt/swamp/log/${execrunuid}_${clusterid}.log"
+
+# for vmu Pre launchers, log the output into the log file
+if [[ "$launcher_name" =~ ^Pre ]]; then
+    echo -e "$0 [$$]\n$@\nstarted at: `date`" >> $logfile
+    echo -n "id: " >> $logfile
+    id >> $logfile
+    echo -n "pwd: " >> $logfile
+    pwd >> $logfile
+    ls -l >> $logfile
+    source /etc/profile.d/swamp.sh
+    echo "perl: " >> $logfile
+    ls -l `which perl` >> $logfile
+    echo "" >> $logfile
+    "$launcher_file" "${launcher_args[@]}" >> $logfile 2>&1
+    result=$?
+    # try to signal htcondor to not start the vm if the PreCmd failed
+    if [ "$result" -ne 0 ]
+    then
+	    echo "Unlinking qcow2 files (delta, inputdisk, outputdisk)" >> $logfile
+	    unlink delta.qcow2 >> $logfile
+	    unlink inputdisk.qcow2 >> $logfile
+	    unlink outputdisk.qcow2 >> $logfile
+    fi
+else
+    echo -e "$0 [$$]\n$@\nstarted at: `date`" >> $logfile
+    source /etc/profile.d/swamp.sh
+    echo "" >> $logfile
+    "$launcher_file" "${launcher_args[@]}" >> $logfile 2>&1
+    result=$?
+fi
+
+# return result from command or its children
+echo "HTCondor vmu_perl_launcher $launcher_name exit result: $result" >> $logfile
+echo "" >> $logfile
+exit $result
+
+

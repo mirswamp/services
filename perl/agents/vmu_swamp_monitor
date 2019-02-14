@@ -3,14 +3,14 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
 use warnings;
 use strict;
 use Carp qw(croak);
-use Cwd qw(abs_path getcwd);
+use Cwd qw(getcwd);
 use English '-no_match_vars';
 use File::Basename qw(basename);
 use File::Spec qw(devnull);
@@ -25,6 +25,7 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::Locking qw(swamplock);
 use SWAMP::vmu_Support qw(
+	setHTCondorEnvironment
 	identifyScript
 	runScriptDetached
 	create_empty_file
@@ -43,7 +44,7 @@ my $debug   = 0;
 my $config;
 my $asdetached = 1;
 my $startupdir = getcwd();
-my $basedir = abs_path("$FindBin::Bin/..");
+my $basedir = "$FindBin::Bin/..";
 my $pidfile;
 
 my @PRESERVEARGV = @ARGV;
@@ -58,6 +59,7 @@ Log::Log4perl->init(getLoggingConfigString());
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 
+setHTCondorEnvironment();
 identifyScript(\@PRESERVEARGV);
 runScriptDetached() if ($asdetached);
 # change the default catch-all log file permissions so all scripts can write to it.
@@ -88,19 +90,17 @@ else {
 }
 chdir($startupdir);
 
+my $done = 0;
+my $reinit = 0;
+
 sub hup_handler {
     $log->info("HUP: reread config file");
-    reapChildren();
-    initMonitor();
-    initProcesses();
-    return;
+	$reinit = 1;
 }
 
 sub trap_handler {
     $log->info("Caught signal @_ - reaping children and shutting down");
-    reapChildren();
-    $log->info("Done reaping - exiting");
-	exit(0);
+	$done = 1;
 }
 
 use sigtrap 'handler', \&trap_handler, 'normal-signals';
@@ -114,8 +114,7 @@ my %maxRetries;
 my %maxFreq;
 my %startTime;
 
-my $done = 0;
-
+# if child stops on its own, wait for it
 local $SIG{'CHLD'} = sub { my ($sig) = @_ ;
     # don't change $! and $? outside handler
 	# process exit status for errors from child
@@ -125,11 +124,12 @@ local $SIG{'CHLD'} = sub { my ($sig) = @_ ;
     while ( $pid > 0 ) {
         $pid = waitpid( -1, WNOHANG );
 		if ($pid > 0) {
+			my $proc = $children{$pid};
+			my $process = $processes{$proc};
 			my ($rc, $sig, $core) = ($CHILD_ERROR >> 8, $CHILD_ERROR & 127, $CHILD_ERROR & 128);
-			$log->info("CHLD handler - received $sig for: $pid rc: $rc sig: $sig core: $core");
+			$log->info("CHLD handler - received signal $sig for: $pid [$process] rc: $rc core: $core");
 			if ($rc == 2) {
-    			my $proc = $children{$pid};
-    			$log->error("Fatal Error - $pid $proc [$processes{$proc}] - monitor will exit");
+    			$log->error("Fatal Error - $pid $proc [$process] - monitor will exit");
 				$done = 1;
 			}
 		}
@@ -140,17 +140,21 @@ Log::Log4perl->get_logger('runtrace')->trace("$PROGRAM_NAME ($PID) called with a
 $log->info("$PROGRAM_NAME: config file: $config");
 
 initMonitor();
-
 initProcesses();
 
 while (! $done) {
-    my $slept = sleep 60;
-    foreach my $child ( keys %children ) {
-        my $pid = waitpid( $child, WNOHANG );
+	if ($reinit) {
+		reapChildren();
+		initMonitor();
+		initProcesses();
+	}
+    sleep 60;
+    foreach my $child_pid ( keys %children ) {
+        my $pid = waitpid( $child_pid, WNOHANG );
         if ( $pid == -1 ) {
 			if (! $done) {
-				$log->info("Sleep loop restart child: $child");
-            	restart_child($child);
+				$log->info("Sleep loop restart after wait on child: $child_pid");
+            	restart_child($child_pid);
 			}
         }
     }
@@ -159,12 +163,20 @@ reapChildren();
 $log->info("$PROGRAM_NAME ($PID) leaving sleep loop - exiting");
 exit 0;
 
+# stop children and wait for them
 sub reapChildren {
-    foreach my $child (keys %children) {
-        my $ret = stop_process($child);
-        $log->info("stopping [$child] $processes{$children{$child}} returned $ret");
-        delete $children{$child};
+	$log->info('reapChildren - children: ', sub {use Data::Dumper; Dumper(\%children);}, ' processes: ', sub {use Data::Dumper; Dumper(\%processes);});
+    foreach my $child_pid (keys %children) {
+        $log->info("stopping [$child_pid] $processes{$children{$child_pid}}");
+        my $retval = stop_process($child_pid);
+        $log->info("[$child_pid] $processes{$children{$child_pid}} returns: $retval");
     }
+	$log->info('reapChildren - waiting on children: ', sub {use Data::Dumper; Dumper(\%children);});
+    foreach my $child_pid (keys %children) {
+        $log->info("waitpid [$child_pid] $processes{$children{$child_pid}}");
+        my $pid = waitpid( $child_pid, 0 );
+        $log->info("reaped [$child_pid] $processes{$children{$child_pid}}");
+	}
     return;
 }
 

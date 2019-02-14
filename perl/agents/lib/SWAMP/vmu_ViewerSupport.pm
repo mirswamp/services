@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::vmu_ViewerSupport;
 use strict;
@@ -10,18 +10,21 @@ use English '-no_match_vars';
 use RPC::XML;
 use RPC::XML::Client;
 use Log::Log4perl;
-use File::Path qw(make_path);
-use File::Copy qw(copy);
+use File::Copy qw(move copy);
+use File::Basename qw(basename);
+use File::Spec::Functions;
+use POSIX qw(strftime);
 use SWAMP::vmu_Support qw(
+	use_make_path
 	isSwampInABox
 	systemcall 
 	getSwampDir 
-	$global_swamp_config
-	getSwampConfig 
 	checksumFile 
 	rpccall
 	database_connect
 	database_disconnect
+	getSwampConfig 
+	$global_swamp_config
 );
 
 use parent qw(Exporter);
@@ -38,9 +41,9 @@ BEGIN {
 		$VIEWER_STATE_TERMINATING
 		$VIEWER_STATE_TERMINATED
 		$VIEWER_STATE_TERMINATE_FAILED
-		needToLaunch
 		createrunscript
 		copyvruninputs
+		getViewerVersion
 		saveViewerDatabase
 		updateClassAdViewerStatus
 		getViewerStateFromClassAd
@@ -48,7 +51,6 @@ BEGIN {
     );
 }
 
-# my $global_swamp_config;
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 
@@ -69,21 +71,7 @@ our $VIEWER_STATE_LAUNCHING 		= 1;
 our $VIEWER_STATE_STOPPING			= -1;
 our $VIEWER_STATE_TERMINATING		= -6;
 
-sub needToLaunch { my ($state) = @_ ;
-	# need to launch viewer vm if state is terminal and not ready
-	return 0 if ($state == $VIEWER_STATE_READY);
-	return 0 if ($state == $VIEWER_STATE_LAUNCHING || 
-		$state == $VIEWER_STATE_STOPPING ||
-		$state == $VIEWER_STATE_TERMINATING
-	);
-	return 1;
-}
-
 sub updateClassAdViewerStatus { my ($execrunuid, $state, $status, $options) = @_ ;
-	$global_swamp_config ||= getSwampConfig();
-	my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
-	$log->info("updateClassAdViewerStatus - collector: $HTCONDOR_COLLECTOR_HOST execrunuid: $execrunuid state: $state status: $status");
-	$log->debug("updateClassAdViewerStatus - options: ", sub { use Data::Dumper; Dumper($options); });
 	my $vmhostname = $options->{'vmhostname'} || 'null';
 	my $viewer = $options->{'viewer'} || 'null';
 	my $vmip = $options->{'vmip'} || 'null';
@@ -93,9 +81,13 @@ sub updateClassAdViewerStatus { my ($execrunuid, $state, $status, $options) = @_
 	my $viewer_instance_uuid = $options->{'viewer_uuid'} || 'null';
 	my $viewer_url_uuid = $options->{'urluuid'} || 'null';
 	my $poolarg = q();
+	$global_swamp_config ||= getSwampConfig();
 	if (! isSwampInABox($global_swamp_config)) {
+		my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
 		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
 	}
+	$log->info("updateClassAdViewerStatus - $poolarg execrunuid: $execrunuid state: $state status: $status");
+	$log->debug("updateClassAdViewerStatus - options: ", sub { use Data::Dumper; Dumper($options); });
     my ($output, $stat) = systemcall("condor_advertise $poolarg UPDATE_AD_GENERIC - <<'EOF'
 MyType=\"Generic\"
 Name=\"$execrunuid\"
@@ -117,16 +109,16 @@ EOF
 }
 
 sub getViewerStateFromClassAd { my ($project_uuid, $viewer_name) = @_ ;
-	$global_swamp_config ||= getSwampConfig();
-    my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
 	my $poolarg = q();
+	$global_swamp_config ||= getSwampConfig();
 	if (! isSwampInABox($global_swamp_config)) {
+    	my $HTCONDOR_COLLECTOR_HOST = $global_swamp_config->get('htcondor_collector_host');
 		$poolarg = qq(-pool $HTCONDOR_COLLECTOR_HOST);
 	}
     my $command = qq{condor_status $poolarg -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_user_uuid SWAMP_vmu_viewer_projectid SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
     my ($output, $status) = systemcall($command);
     if ($status) { 
-        my $error_message = "condor_status $HTCONDOR_COLLECTOR_HOST failed - status: $status output: $output";
+        my $error_message = "condor_status $poolarg failed - status: $status output: $output";
         $log->error($error_message);
         return {'error' => $error_message};
     }
@@ -175,7 +167,6 @@ sub _set_var { my ($name, $value, $file) = @_ ;
 #	swamp-shutdown-service
 
 sub createrunscript { my ($bogref, $dest) = @_ ;
-	$global_swamp_config ||= getSwampConfig();
     my $ret    = 1;
 
     my $basedir = getSwampDir();
@@ -185,16 +176,11 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 	# set APIKEY in run.sh
 	# cat vrun.sh into run.sh
 	my $vrunsh = "$basedir/thirdparty/codedx/swamp/vrun.sh";
-	if ($bogref->{'viewer'} eq 'ThreadFix') {
-		$vrunsh = "$basedir/thirdparty/threadfix/swamp/vrun.sh";
-	}
 	my $inputvrunsh = "${dest}/run.sh";
+	$global_swamp_config ||= getSwampConfig();
 	my $checktimeout_frequency = $global_swamp_config->get('vruntimeout_frequency') // '10';
 	$ret = 0 if (! _set_var('CHECKTIMEOUT_FREQUENCY', $checktimeout_frequency, $inputvrunsh));
 	$ret = 0 if (! _set_var('PROJECT', $bogref->{'urluuid'}, $inputvrunsh));
-	if ($bogref->{'viewer'} eq 'ThreadFix') {
-		$ret = 0 if (! _set_var('APIKEY', $bogref->{'apikey'}, $inputvrunsh));
-	}
     my ($output, $status) = systemcall("cat $vrunsh >> $inputvrunsh");
 	if ($status) {
         $log->error("Cannot add: $vrunsh to: $inputvrunsh $OS_ERROR");
@@ -243,7 +229,7 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 #	codedx.war
 #	emptydb-codedx.sql
 #	flushprivs.sql
-#	resetdb-threadfix.sql
+#	resetdb-codedx.sql
 #	emptydb-mysql-codedx.sql
 #	swamp-codedx-service
 #	checktimeout.pl
@@ -251,7 +237,7 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 #	codedx.props
 #	codedx_viewerdb.tar.gz
 
-sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
+sub copyvruninputs { my ($bogref, $dest) = @_ ;
 	my $ret = 1;
 	my $basedir = getSwampDir();
 	# copy codedx.war to vm input directory
@@ -313,112 +299,23 @@ sub _copyvruninputs_codedx { my ($bogref, $dest) = @_ ;
 	$ret = 0 if (! _set_var('swa.admin.system-key', $bogref->{'apikey'}, $inputcodedxprops));
 	
     # It is OK to not specify a db_path, this just means it has never been persisted
-    if (defined($bogref->{'db_path'}) && length($bogref->{'db_path'}) > 2) {
-		if (! -r $bogref->{'db_path'}) {
-			$log->error("file: $bogref->{'db_path'} not found");
+	my $db_path = $bogref->{'db_path'};
+    if (defined($db_path)) {
+		if (! -r $db_path) {
+			$log->error("file: $db_path not found");
 		}
 		else {
-        	if (copy($bogref->{'db_path'}, $dest)) {
-				$log->info("$bogref->{'db_path'} to $dest");
-        	}
-			else {
-            	# Error, but non-fatal.
-				$log->error("copy failed: $bogref->{'db_path'} to $dest $OS_ERROR");
-			}
-		}
-    }
-    return $ret;
-}
-
-#	ThreadFix Files
-#	threadfix_viewerdb.sh
-#	threadfix.war
-#	emptydb-threadfix.sql
-#	emptydb-mysql-threadfix.sql
-#	flushprivs.sql
-#	resetdb-threadfix.sql
-#	threadfix.jdbc.properties
-#	threadfix_viewerdb.tar.gz
-
-sub _copyvruninputs_threadfix { my ($bogref, $dest) = @_ ;
-	my $ret = 1;
-	my $basedir = getSwampDir();
-	# copy threadfix.war to vm input directory
-	my $file = "$basedir/thirdparty/threadfix/vendor/threadfix.war";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-	# copy empty threadfix database sql script to vm input directory
-	$file = "$basedir/thirdparty/threadfix/swamp/emptydb-threadfix.sql";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-	# copy empty mysql database sql script to vm input directory
-	$file = "$basedir/thirdparty/threadfix/swamp/emptydb-mysql-threadfix.sql";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-	# copy flushprivs.sql to vm input directory
-	$file = "$basedir/thirdparty/common/flushprivs.sql";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-	# copy resetdb-threadfix.sql to vm input directory
-	$file = "$basedir/thirdparty/threadfix/swamp/resetdb-threadfix.sql";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-	
-	# set PROJECT in backup_viewerdb.sh
-	# cat threadfix_viewerdb.sh into backup_viewerdb.sh
-	my $threadfix_viewerdbsh = "$basedir/thirdparty/threadfix/swamp/threadfix_viewerdb.sh";
-	my $inputbackup_viewerdbsh = "${dest}/backup_viewerdb.sh";
-	$ret = 0 if (! _set_var('PROJECT', $bogref->{'urluuid'}, $inputbackup_viewerdbsh));
-    my ($output, $status) = systemcall("cat $threadfix_viewerdbsh >> $inputbackup_viewerdbsh");
-	if ($status) {
-        $log->error("Cannot add: $threadfix_viewerdbsh to: $inputbackup_viewerdbsh $OS_ERROR");
-		$ret = 0;
-	}
-	
-	# copy threadfix.jdbc.properties to vm input directory
-	$file = "$basedir/thirdparty/threadfix/swamp/threadfix.jdbc.properties";
-	if (! copy($file, $dest)) {
-		$log->error("Cannot copy $file to $dest $OS_ERROR");
-		$ret = 0;
-	}
-    # It is OK to not specify a db_path, this just means it has never been persisted
-    if (defined($bogref->{'db_path'}) && length($bogref->{'db_path'}) > 2) {
-		if (! -r $bogref->{'db_path'}) {
-			$log->error("file: $bogref->{'db_path'} not found");
-		}
-		else {
-			my ($output, $status) = systemcall("tar -C $dest -xzf $bogref->{'db_path'}");
+			my ($output, $status) = systemcall("tar -C $dest -xzf $db_path");
 			if ($status) {
-            	# Error, but non-fatal.
-				$log->warn("untar failed: $bogref->{'db_path'} to $dest error: <$output>");
+				# Error, but non-fatal.
+				$log->warn("untar failed: $db_path to $dest error: <$output>");
 			}
 			else {
-				$log->info("untar: $bogref->{'db_path'} to $dest");
-        	}
+				$log->info("untar succeeded: $db_path to $dest");
+			}
 		}
     }
     return $ret;
-}
-
-sub copyvruninputs { my ($bogref, $dest) = @_ ;
-	my $retval = 0;
-	if ($bogref->{'viewer'} eq 'CodeDX') {
-		$retval = _copyvruninputs_codedx($bogref, $dest);
-	}
-	elsif ($bogref->{'viewer'} eq 'ThreadFix') {
-		$retval = _copyvruninputs_threadfix($bogref, $dest);
-	}
-	return $retval;
 }
 
 #####################
@@ -452,58 +349,76 @@ sub launchViewer { my ($options) = @_ ;
     return $result->{'value'};
 }
 
+sub getViewerVersion { my ($bogref) = @_ ;
+	my $viewerversion = 'unknown';
+	my $codedx_properties = 'WEB-INF/classes/version.properties';
+	my $basedir = getSwampDir();
+	my $war_file;
+	if ($bogref->{'viewer'} eq 'CodeDX') {
+		$war_file = "$basedir/thirdparty/codedx/vendor/codedx.war";
+	}
+	return $viewerversion if (! $war_file || ! -r $war_file);
+	my $command = "unzip -p $war_file $codedx_properties | grep 'version'";
+    my ($output, $status) = systemcall($command);
+	if ($status) {
+		$log->error("getViewerVersion failed for: $war_file - status: $status output: $output");
+		return $viewerversion;
+	}
+	$viewerversion = $output;
+	chomp $viewerversion;
+	$viewerversion =~ s/\s*version\s*=\s*//;
+	$viewerversion = 'codedx-' . $viewerversion . '.war';
+	return $viewerversion;
+}
+
 #############################
 #	Save Viewer Database	#
 #############################
 
-sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder, $saverunname) = @_ ;
+sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder) = @_ ;
 	my $basedir = getSwampDir();
 
+	my $datestamp = sprintf(strftime('%Y%m%d%H%M%S', localtime(time())));
 	my $savedbname = q{codedx_viewerdb.tar.gz};
-	if ($bogref->{'viewer'} eq q{ThreadFix}) {
-		$savedbname = q{threadfix_viewerdb.tar.gz};
-	}
+	my $stampeddbname = qq{codedx_viewerdb_$datestamp.tar.gz};
     my $savedbfile = "$outputfolder/$savedbname";
-
-	if ($saverunname) {
-		my $saverunfile = "$outputfolder/$saverunname";
-    	if (-r $saverunfile && ! copy($saverunfile, "$basedir/log/${vmhostname}_${saverunname}")) {
-        	$log->error("Cannot copy $saverunfile to $$basedir/log/${vmhostname}_${saverunname} : $OS_ERROR");
-    	}
-	}
-
 	if (! -r $savedbfile) {
+		$log->error("File: $savedbfile not found");
 		return 0;
 	}
-    my $sharedfolder = $bogref->{'resultsfolder'} . '/' . $bogref->{'viewer_uuid'};
-    make_path($sharedfolder);
-    if (! copy($savedbfile, $sharedfolder)) {
-        $log->error("Cannot copy $savedbfile to $sharedfolder : $OS_ERROR");
-        return 0;
+	my $viewerdbfolder = catdir(rootdir(), 'swamp', 'SCAProjects', $bogref->{'projectid'}, 'V-Runs', $bogref->{'viewer_uuid'});
+	my $viewerdbpath = catfile($viewerdbfolder, $stampeddbname);
+	if (! use_make_path($viewerdbfolder)) {
+        $log->error("Error - make_path failed for: $viewerdbfolder");
+		# this is a fatal error and store_viewer is not invoked
+		return 0;
+	}
+    if (! copy($savedbfile, $viewerdbpath)) {
+        $log->error("Error - Copy $savedbfile to $viewerdbpath failed: $OS_ERROR");
+		# this is a fatal error and store_viewer is not invoked
+		return 0;
     }
-	$log->info("Copied: $savedbfile to: $sharedfolder");
-    # MYSQL needs to own our result files folders so they can be cleaned up.
-    my ($uid, $gid) = (getpwnam('mysql'))[2, 3];
-    if (chown($uid, $gid, $sharedfolder) != 1) {
-        $log->warn("Cannot chown folder $sharedfolder to mysql user. $OS_ERROR");
-    }
-	my $viewerdbpath = $sharedfolder . '/' . $savedbname;
-    if (chown($uid, $gid, $viewerdbpath) != 1) {
-        $log->warn("Cannot chown file $viewerdbpath to mysql user. $OS_ERROR");
-    }
+	$log->info("Copied: $savedbfile to: $viewerdbpath");
+	$log->debug("saveViewerDatabase - BOG: ", sub { use Data::Dumper; Dumper($bogref); });
+	my $viewerdbchecksum = checksumFile($viewerdbpath);
+	my $viewerinstanceuuid = $bogref->{'viewer_uuid'};
+	my $viewerplatform = $bogref->{'viewerplatform'};
+	my $viewerversion = $bogref->{'viewerversion'};
+	$log->info("saveViewerDatabase - calling store_viewer with: $viewerinstanceuuid $viewerdbpath $viewerdbchecksum $viewerplatform $viewerversion");
 	if (my $dbh = database_connect()) {
 		# viewer_instance_uuid_in
 		# viewer_db_path_in
 		# viewer_db_checksum_in
+		# platform_image_in
+		# viewer_version_in
 		# return_string
-		my $query = q{CALL viewer_store.store_viewer(?, ?, ?, @r);};
+		my $query = q{CALL viewer_store.store_viewer(?, ?, ?, ?, ?, @r);};
 		my $sth = $dbh->prepare($query);
-		my $viewerinstanceuuid = $bogref->{'viewer_uuid'};
-		my $viewerdbchecksum = checksumFile($savedbfile);
-		$log->info("saveViewerDatabase - calling store_viewer with: $viewerinstanceuuid $viewerdbpath $viewerdbchecksum");
 		$sth->bind_param(1, $viewerinstanceuuid);
 		$sth->bind_param(2, $viewerdbpath);
 		$sth->bind_param(3, $viewerdbchecksum);
+		$sth->bind_param(4, $viewerplatform);
+		$sth->bind_param(5, $viewerversion);
 		$sth->execute();
 		my $result;
 		if (! $sth->err) {

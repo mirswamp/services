@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -25,11 +25,9 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::vmu_Support qw(
 	runScriptDetached
+	setHTCondorEnvironment
 	identifyScript
-	$global_swamp_config
-	getSwampConfig
 	getLoggingConfigString
-	switchExecRunAppenderLogFile
 	getSwampDir
 	timetrace_event
 	timetrace_elapsed
@@ -39,6 +37,8 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_CHECKSUM_ERROR
 	$LAUNCHPAD_FORK_ERROR
 	$LAUNCHPAD_FATAL_ERROR
+	getSwampConfig
+	$global_swamp_config
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
@@ -76,6 +76,7 @@ my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+setHTCondorEnvironment();
 identifyScript(\@PRESERVEARGV);
 
 runScriptDetached() if ($asdetached);
@@ -87,7 +88,6 @@ if (defined($list)) {
 }
 
 if (isSWAMPRunning()) {
-	switchExecRunAppenderLogFile($execrunuid);
 	$tracelog->trace("execrunuid: $execrunuid - calling doRun");
 	$log->info("Attempting to launch run $execrunuid");
 	my $event_start = timetrace_event($execrunuid, 'assessment', 'calldorun start');
@@ -102,25 +102,24 @@ if (isSWAMPRunning()) {
 	elsif ($status == $LAUNCHPAD_FORK_ERROR) {
 		$tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status - bog queued in filesystem on submit node");
 		$log->error("execrunuid: $execrunuid - doRun failed - status: $status - bog queued in filesystem on submit node");
-		my $status_message = 'HTCondor Submit Failed - BOG Queued';
-		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
-		updateRunStatus($execrunuid, $status_message, 1);
+		my $job_status_message = 'HTCondor Submit Failed - BOG Queued';
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $job_status_message);
+		updateRunStatus($execrunuid, $job_status_message, 1);
 	}
 	else {
 		$tracelog->trace("execrunuid: $execrunuid - doRun failed - status: $status execrunuid remains queued in database");
 		$log->error("execrunuid: $execrunuid - doRun failed - status: $status execrunuid remains queued in database");
-		my $status_message = 'HTCondor Submit Aborted - UUID Queued';
-		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
+		my $job_status_message = 'HTCondor Submit Aborted - UUID Queued';
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $job_status_message);
 		# updateRunStatus($execrunuid, $status_message, 1);
 	}
 }
 # SWAMP is administratively off, just add item to queue and be done.
 else { 
     if ( defined($execrunuid) ) {
-        switchExecRunAppenderLogFile($execrunuid);
-		my $status_message = 'SWAMP off - Queued';
-		updateClassAdAssessmentStatus($execrunuid, '', '', '', $status_message);
-        updateRunStatus($execrunuid, $status_message, 1);
+		my $job_status_message = 'SWAMP off - Queued';
+		updateClassAdAssessmentStatus($execrunuid, '', '', '', $job_status_message);
+        updateRunStatus($execrunuid, $job_status_message, 1);
         $log->info("SWAMP is Off at the moment. Run $execrunuid has been added to the queue.");
     }
 }

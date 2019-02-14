@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -26,18 +26,13 @@ use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::Locking qw(swamplock);
-	# switchExecRunAppenderLogFile
 use SWAMP::vmu_Support qw(
 	runScriptDetached
 	identifyScript
 	getSwampDir
-	$global_swamp_config
-	getSwampConfig
 	getLoggingConfigString
-	getUUID
 	saveProperties
 	start_process
-	stop_process
 	systemcall
 	isAssessmentRun
 	isMetricRun
@@ -48,6 +43,8 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_CHECKSUM_ERROR
 	$LAUNCHPAD_FORK_ERROR
 	$LAUNCHPAD_FATAL_ERROR
+	getSwampConfig
+	$global_swamp_config
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	setCompleteFlag
@@ -136,7 +133,7 @@ $daemon->add_method(
     }
 );
 
-@sig = ( 'int', 'int string string' );
+@sig = ( 'int', 'int string string string int' );
 $daemon->add_method(
     {
         'name'      => 'swamp.launchPad.kill',
@@ -188,19 +185,25 @@ while ((my $child_pid = wait()) != -1) {
 $log->info("$PROGRAM_NAME ($PID) leaving listen loop - exiting");
 exit 0;
 
-sub _launchpadKill { my ($server, $execrunuid, $jobid) = @_ ;
+# type - arun | mrun | vrun
+# graceful_shutdown - 0 | 1
+sub _launchpadKill { my ($server, $execrunuid, $jobid, $type, $graceful_shutdown) = @_ ;
 	my $complete_flag = 1; # terminated
 	my $retval = $LAUNCHPAD_SUCCESS;
-	# switchExecRunAppenderLogFile($execrunuid);
+	$log->info("_launchpadKill condor_rm $execrunuid $jobid $type $graceful_shutdown");
 	# issue condor_rm jobid
+	# currently the default (configured) behavior for condor_rm is
+	# viewer - graceful shutdown with timeout before hard kill
+	# metric and assessment - hard kill after short timeout
+	# in the future, to provide hard kill for viewer - use condor_vacate_job
 	my ($output, $status) = systemcall("condor_rm $jobid");
 	if ($status) {
-		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid: $status $output");
+		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid $type $graceful_shutdown: $status $output");
 		$complete_flag = 0; # terminate failed
 		$retval = $LAUNCHPAD_FATAL_ERROR;
 	}
 	elsif ($output !~ m/Job $jobid marked for removal/) {
-		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid: $output");
+		$log->error("_launchpadKill condor_rm failed for $execrunuid $jobid $type $graceful_shutdown: $output");
 		$complete_flag = 0; # terminate failed
 		$retval = $LAUNCHPAD_FATAL_ERROR;
 	}
@@ -213,7 +216,6 @@ sub _launchpadKill { my ($server, $execrunuid, $jobid) = @_ ;
 sub _launchpadStart { my ($server, $bogref) = @_ ;
 	my $status = $LAUNCHPAD_SUCCESS;
     my $execrunuid = $bogref->{'execrunid'};
-	# switchExecRunAppenderLogFile($execrunuid);
 	$tracelog->trace("_launchpadStart - execrunuid: $execrunuid from ", $server->{'peerhost'}, ':', $server->{'peerport'});
     my $bogfile = $execrunuid . '.bog';
     my $tempfile = $execrunuid . '.tmp';

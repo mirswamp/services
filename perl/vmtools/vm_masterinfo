@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.010;
 use utf8;
@@ -13,26 +13,31 @@ use Getopt::Long qw/GetOptions/;
 use Pod::Usage qw/pod2usage/;
 use English '-no_match_vars';
 use Carp qw(carp croak);
+use Log::Log4perl;
+use Log::Log4perl::Level;
+use File::Spec qw(catfile);
 
 use FindBin;
-use lib "$FindBin::Bin/lib";
+use lib ("$FindBin::Bin/..agents/lib", "$FindBin::Bin/lib",
+        "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
 use VMTools qw(
-	consoleMsg 
-	errorMsg 
-	init 
-	logMsg 
-	pkgshutdown 
 	inspectmaster
 	startVM
 	defineVM
 	listMasters
 	listVMs
-	initProjectLog
 	createImages
 	createXML
 	vmVNCDisplay
 	vmExists
 	vmState
+    checkEffectiveUser
+);
+use SWAMP::vmu_Support qw(
+    getLoggingConfigString
+    getSwampDir
+    identifyScript
+    runScriptDetached
 );
 use VMConstants;
 
@@ -54,6 +59,28 @@ GetOptions(
 if ($help) { pod2usage(1); }
 if ($man) { pod2usage( '-verbose' => 2 ); }
 
+my @PRESERVEARGV = @ARGV;
+my $debug = 0;
+my $asdetached = 0;
+
+sub logfilename {
+        return File::Spec->catfile(getSwampDir(), 'log', 'vm_masterinfo.log');
+}
+
+Log::Log4perl->init(getLoggingConfigString());
+my $log = Log::Log4perl->get_logger(q{});
+$log->level($debug ? $TRACE : $INFO);
+my $tracelog = Log::Log4perl->get_logger('runtrace');
+$tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+identifyScript(\@PRESERVEARGV);
+runScriptDetached() if ($asdetached);
+
+if ( !checkEffectiveUser() ) {
+   print {*STDERR}
+       "You should run this script as root. Ex: sudo $PROGRAM_NAME\n";
+    exit 1;
+}
+
 if ($list || $fullnames) {
     my @list = listMasters($fullnames);
     foreach (sort @list) {
@@ -61,7 +88,10 @@ if ($list || $fullnames) {
     }
     exit 0;
 }
-if ($mastername) {
+if (! defined $mastername) {
+    pod2usage('masterimage option is required.');
+}
+else {
     print inspectmaster($mastername);
 }
 

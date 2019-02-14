@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -21,6 +21,7 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 	loadProperties
 	makezip
+	getVMIPAddress
 );
 use SWAMP::vmu_ViewerSupport qw(
 	copyvruninputs
@@ -28,9 +29,6 @@ use SWAMP::vmu_ViewerSupport qw(
 );
 use SWAMP::CodeDX qw(
 	uploadanalysisrun
-);
-use SWAMP::Libvirt qw(
-	getVMIPAddress
 );
 
 # default vm and viewer
@@ -182,7 +180,7 @@ sub startVM {
 
 sub getVMIP {
 	# obtain vmip of codedx vm
-	$vmip = getVMIPAddress($global_swamp_config, $vmname);
+	$vmip = getVMIPAddress($vmname);
 	if (! $vmip) {
 		print "Error - unable to get ip address for: $vmname\n";
 		return 0;

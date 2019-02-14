@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -16,7 +16,6 @@ use English '-no_match_vars';
 use File::Spec::Functions;
 use File::Copy qw(copy move);
 use File::Basename qw(basename);
-use File::Path qw(make_path);
 use Getopt::Long qw(GetOptions);
 use IPC::Open3 qw(open3);
 use Log::Log4perl::Level;
@@ -27,27 +26,31 @@ use FindBin qw($Bin);
 use lib ("$FindBin::Bin/../perl5", "$FindBin::Bin/lib");
 
 use SWAMP::Locking qw(swamplock);
-	# switchExecRunAppenderLogFile
 use SWAMP::vmu_Support qw(
+	listJobDirs
+	getRunDirHistory
+	use_make_path
+	use_remove_tree
 	identifyScript
 	listDirectoryContents
 	systemcall
 	getSwampDir
 	getLoggingConfigString
 	loadProperties
-	getJobDir
+	constructJobDirName
     condorJobExists
-	cleanRunDir
+	identifyPreemptedJobs
 	construct_vmhostname
 	create_empty_file
 	isMetricRun
-	timetrace_event
-	timetrace_elapsed
 	getSwampConfig
 	$global_swamp_config
+	$HTCONDOR_POSTSCRIPT_FAILED
+	$HTCONDOR_POSTSCRIPT_EXIT
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
+	updateExecutionResults
 	updateRunStatus
 	setLaunchFlag
 	setSubmittedToCondorFlag
@@ -67,7 +70,6 @@ my $host;
 my $debug = 0;
 my $bogDir;
 my $runnow;
-my $HTCONDOR_POSTSCRIPT_FAILED = 44;
 
 my @PRESERVEARGV = @ARGV;
 GetOptions(
@@ -110,7 +112,7 @@ if (defined($runnow)) {
     exit 0;
 }
 
-my $launchPadSleep = 1;
+my $launchPadSleep = 2;
 my $child_done = 0;
 # set TERM signal handler for swamp service stop
 $SIG{TERM} = sub { my ($sig) = @_ ;
@@ -130,7 +132,26 @@ while (! $child_done) {
 	}
 	last if ($child_done);
 	if ($nToProcess <= 0) {
-		cleanRunDir();
+    	my $jobdirs = listJobDirs($bogDir);
+		if (scalar(@$jobdirs)) {
+			my $history = getRunDirHistory();
+    		foreach my $jobdir (@$jobdirs) {
+				last if ($child_done);
+				next if (! exists($history->{$jobdir}));
+        		$log->info("cleanRundir removing $bogDir/$jobdir");
+        		if (! use_remove_tree("$bogDir/$jobdir")) {
+            		$log->error("cleanRunDir Error - $bogDir/$jobdir remove failed");
+        		}
+    		}
+		}
+		last if ($child_done);
+		my $jobs = identifyPreemptedJobs();
+		foreach my $execrunuid (@$jobs) {
+			last if ($child_done);
+			updateClassAdAssessmentStatus($execrunuid, 'arun', '', '', 'Preempted - Waiting in HTCondor Queue');
+			updateExecutionResults($execrunuid, {'vm_password' => ''});
+		}
+		last if ($child_done);
     	sleep $launchPadSleep;
 	}
     foreach my $bogfile  (@$bogFiles) {
@@ -143,7 +164,6 @@ while (! $child_done) {
 			$log->info("BOG:\n", sub {use Data::Dumper; Dumper(\%bog);});
 			next;
 		}
-		# switchExecRunAppenderLogFile($execrunuid);
 		if ($bog{'launch_counter'} > 1) {
 			my $dupstart = time();
 			$log->info( "Checking duplicate: $execrunuid bog: $bogfile in condor queue");
@@ -161,24 +181,28 @@ while (! $child_done) {
 		# assessment run priority is 0
 		# metric run priority is -10
 		my $job_priority = 0;
-		my $vmhostname = 'aswamp';
+		my $jobtype = 'aswamp';
 		if (isMetricRun($execrunuid)) {
 			$job_priority = -10;
-			$vmhostname = 'mswamp';
+			$jobtype = 'mswamp';
 		}
 		my $user_uuid = $bog{'userid'};
 		my $projectid = $bog{'projectid'};
-		updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, 'Creating HTCondor job');
+		my $job_status_message = 'Creating HTCondor job';
+		updateClassAdAssessmentStatus($execrunuid, $jobtype, $user_uuid, $projectid, $job_status_message);
 		$log->debug("creating assessment job: $execrunuid $bogfile");
 		$tracelog->trace("execrunuid: $execrunuid creating assessment job: $bogfile");
 		my $submitfile = $execrunuid . '.sub';
-		my $jobdir = vmu_CreateHTCondorAssessmentJob($vmhostname, \%bog, $bogfile, $submitfile, $job_priority);
+		my $jobdir = vmu_CreateHTCondorAssessmentJob($jobtype, \%bog, $bogfile, $submitfile, $job_priority);
+		if (! $jobdir) {
+			$log->error("CreateHTCondorAssessmentJob failed for: $execrunuid");
+			next;
+		}
 		# submit from jobdir
 		chdir $jobdir;
-		my $error_message = 'Failed to submit to HTCondor';
 		$log->debug("starting assessment job: $execrunuid $submitfile");
 		$tracelog->trace("execrunuid: $execrunuid starting assessment job: $submitfile");
-		my ($clusterid, $start_time) = startHTCondorJob(\%bog, $submitfile);
+		my $clusterid = startHTCondorJob(\%bog, $submitfile);
 		if ($clusterid != -1) {
 			# turn database launch_flag off
 			if (! setLaunchFlag($execrunuid, 0)) {
@@ -186,16 +210,17 @@ while (! $child_done) {
 			}
 			# mark this jobdir with the clusterid
 			create_empty_file('ClusterId_' . $clusterid);
-			my $message = 'Waiting in HTCondor Queue';
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-			updateRunStatus($execrunuid, $message);
+			$job_status_message = 'Waiting in HTCondor Queue';
+			updateClassAdAssessmentStatus($execrunuid, $jobtype, $user_uuid, $projectid, $job_status_message);
+			updateRunStatus($execrunuid, $job_status_message);
 			$tracelog->trace("execrunuid: $execrunuid start succeeded");
 			$log->info("$execrunuid clusterid: $clusterid");
 		}
 		else {
+			$job_status_message = 'Failed to submit to HTCondor';
 			$log->warn('Unable to submit BOG: cannot start HTCondor job.');
-			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $error_message);
-			updateRunStatus($execrunuid, $error_message);
+			updateClassAdAssessmentStatus($execrunuid, $jobtype, $user_uuid, $projectid, $job_status_message);
+			updateRunStatus($execrunuid, $job_status_message);
 			$tracelog->trace("$execrunuid start failed");
 		}
 		# return to rundir
@@ -206,10 +231,13 @@ $log->info("ending process loop on bogDir: $bogDir ($PID)");
 $log->info("exiting ($PID)");
 exit 0;
 
-sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
+sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
     my $execrunuid = $bogref->{'execrunid'};
-	my $jobdir = getJobDir($execrunuid, $vmhostname);
-	make_path($jobdir, {'error' => \my $err});
+	my $jobdir = constructJobDirName($jobtype);
+	if (! use_make_path($jobdir)) {
+		$log->error("Error - make_path failed for: $jobdir");
+		return;
+	}
 	move $bogfile, $jobdir;
 	chdir $jobdir;
 	copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
@@ -241,26 +269,30 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 		print $fh "\n";
 		print $fh "##### Dynamic Submit File Attributes #####";
 		print $fh "\n";
+
 		if ($climits) {
 			print $fh "### Concurrency Limits\n";
 			print $fh "concurrency_limits = $climits\n";
 			print $fh "\n";
 		}
+
 		print $fh "### Executable\n";
 		print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
 		print $fh "\n";
+
 		print $fh "### Input File Transfer Settings\n";
 		print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
 		print $fh "\n";
+
 		print $fh "### Start PRE- and POST- Script Settings\n";
-		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_PreAssessment_launcher\"\n";
-		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
-		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_PostAssessment_launcher\"\n";
-		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
+		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
+		print $fh "+PreArguments = \"PreAssessment $execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
+		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
+		print $fh "+PostArguments = \"PostAssessment $execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "\n";
+
 		print $fh "### Job Priority\n";
 		print $fh "+ViewerJob = false\n";
-		print $fh "Rank = 0\n";
 		print $fh "priority = $job_priority\n";
 		print $fh "\n";
 
@@ -273,13 +305,21 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 		}
 		print $fh "+SWAMP_userid = \"$bogref->{'userid'}\"\n";
 		print $fh "+SWAMP_projectid = \"$bogref->{'projectid'}\"\n";
+		print $fh "+SWAMP_submit_jobdir = \"$jobdir\"\n";
+		print $fh "\n";
+
+		print $fh "### Job Priority Scheduling\n";
+		# group_vip_viewer | group_vip_assessment | group_viewer | group_assessment
+		print $fh "accounting_group = group_assessment\n";
+		print $fh "accounting_group_user = $bogref->{'userid'}\n";
 		print $fh "\n";
 
 		print $fh "### Queue the job\n";
 		print $fh "+SuccessPostExitCode = 0\n";
 		print $fh "max_retries = $htcondor_assessment_max_retries\n";
-		print $fh "periodic_release = HoldReasonCode == $HTCONDOR_POSTSCRIPT_FAILED && NumJobStarts <= $htcondor_assessment_max_retries\n";
-		print $fh "periodic_remove = HoldReasonCode =?= $HTCONDOR_POSTSCRIPT_FAILED && NumJobStarts > $htcondor_assessment_max_retries\n";
+		print $fh "periodic_release = HoldReasonCode == $HTCONDOR_POSTSCRIPT_FAILED && ((NumJobStarts <= $htcondor_assessment_max_retries) && (PostExitCode == $HTCONDOR_POSTSCRIPT_EXIT))\n";
+		print $fh "periodic_remove = HoldReasonCode =?= $HTCONDOR_POSTSCRIPT_FAILED && ((NumJobStarts > $htcondor_assessment_max_retries) || (PostExitCode != $HTCONDOR_POSTSCRIPT_EXIT))\n";
+		print $fh "JobMaxVacateTime = 10\n";
 		print $fh "queue\n";
 		close($fh);
 	}
@@ -290,10 +330,13 @@ sub vmu_CreateHTCondorAssessmentJob { my ($vmhostname, $bogref, $bogfile, $submi
 	return $jobdir;
 }
 
-sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
+sub vmu_CreateHTCondorViewerJob { my ($jobtype, $bogref, $bogfile, $submitfile, $job_priority) = @_ ;
     my $execrunuid = $bogref->{'execrunid'};
-    my $jobdir = getJobDir($execrunuid, $vmhostname);
-    make_path($jobdir, {'error' => \my $err});
+    my $jobdir = constructJobDirName($jobtype);
+    if (! use_make_path($jobdir)) {
+		$log->error("Error - make_path failed for: $jobdir");
+		return;
+	}
 	move $bogfile, $jobdir;
 	chdir $jobdir;
 	copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
@@ -307,21 +350,24 @@ sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfil
 		print $fh "\n";
 		print $fh "##### Dynamic Submit File Attributes #####";
 		print $fh "\n";
+
 		print $fh "### Executable\n";
 		print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
 		print $fh "\n";
+
 		print $fh "### Input File Transfer Settings\n";
 		print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
 		print $fh "\n";
+
 		print $fh "### Start PRE- and POST- Script Settings\n";
-		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_PreViewer_launcher\"\n";
-		print $fh "+PreArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
-		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_PostViewer_launcher\"\n";
-		print $fh "+PostArguments = \"$execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
+		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
+		print $fh "+PreArguments = \"PreViewer $execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
+		print $fh "+PostCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
+		print $fh "+PostArguments = \"PostViewer $execrunuid $owner \$\$(UidDomain) \$(CLUSTERID) \$(PROCID) \$\$([NumJobStarts])\"\n";
 		print $fh "\n";
+
 		print $fh "### Job Priority\n";
 		print $fh "+ViewerJob = true\n";
-		print $fh "Rank = 100\n";
 		print $fh "priority = $job_priority\n";
 		print $fh "\n";
 
@@ -329,10 +375,18 @@ sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfil
 		print $fh "+SWAMP_vrun_execrunuid = \"$execrunuid\"\n";
 		print $fh "+SWAMP_userid = \"$bogref->{'userid'}\"\n";
 		print $fh "+SWAMP_projectid = \"$bogref->{'projectid'}\"\n";
+		print $fh "+SWAMP_submit_jobdir = \"$jobdir\"\n";
 		print $fh "+SWAMP_viewerinstanceid = \"$bogref->{'viewer_uuid'}\"\n";
 		print $fh "\n";
 
+		print $fh "### Job Priority Scheduling\n";
+		# group_vip_viewer | group_vip_assessment | group_viewer | group_assessment
+		print $fh "accounting_group = group_viewer\n";
+		print $fh "accounting_group_user = $bogref->{'userid'}\n";
+		print $fh "\n";
+
 		print $fh "### Queue the job\n";
+		print $fh "JobMaxVacateTime = 1200\n";
 		print $fh "queue\n";
 		close($fh);
 	}
@@ -344,50 +398,31 @@ sub vmu_CreateHTCondorViewerJob { my ($vmhostname, $bogref, $bogfile, $submitfil
 }
 
 sub startHTCondorJob { my ($bogref, $submitfile) = @_ ;
-    my $started    = 0;
-    my $retry      = 0;
-    my $output;
-    my $status;
-    my $start_time;
-
-    while (! $started && ($retry++ < 3)) {
-        $tracelog->trace("$bogref->{'execrunid'} Calling condor_submit");
-        $log->debug("condor_submit file: $submitfile cwd: ", getcwd());
-		my $execrunuid = $bogref->{'execrunid'};
-		my $job_type = 'assessment';
-		$job_type = 'viewer' if ($execrunuid =~ m/^vrun_/);
-		my $event_start = timetrace_event($execrunuid, $job_type, 'condor submit start');
-        ($output, $status) = systemcall("condor_submit $submitfile");
-		timetrace_elapsed($execrunuid, $job_type, 'condor submit', $event_start);
-        if ($status) {
-            $log->warn("Failed to start condor job using $submitfile: $output. Trying again in 5 seconds");
-            sleep 5;
-        }
-        else {
-            $start_time = time();
-            $started = 1;
-			if (! setSubmittedToCondorFlag($bogref->{'execrunid'}, 1)) {
-				$log->warn("startHTCondorJob: ", $bogref->{'execrunid'}, " - setSubmittedToCondorFlag 1 failed");
+	my $execrunuid = $bogref->{'execrunid'};
+	my $clusterid = -1;
+	$tracelog->trace("$execrunuid Calling condor_submit");
+	$log->debug("condor_submit file: $submitfile cwd: ", getcwd());
+	my ($output, $status) = systemcall("condor_submit $submitfile");
+	if ($status) {
+		$log->warn("Failed to start condor job using $submitfile: $status [$output]");
+	}
+	else {
+		if ($output && $output =~ /submitted\ to\ cluster/sxm) {
+			$clusterid = $output;
+			$clusterid =~ s/^.*cluster\ //sxm;
+			$clusterid =~ s/\..*$//sxm;
+			$log->debug("Found cluster id <$clusterid>");
+		}
+		if ($clusterid == -1) {
+			$log->error("submit job failed - no cluster id found");
+		}
+		else {
+			if (! setSubmittedToCondorFlag($execrunuid, 1)) {
+				$log->warn("startHTCondorJob: $execrunuid - setSubmittedToCondorFlag 1 failed");
 			}
-            last;
-        }
-    }
-    if (! $started) {
-        $log->error("Failed to start condor job: $output after $retry tries");
-        $tracelog->trace("$bogref->{'execrunid'} condor_submit failed: $output after: $retry attempts");
-    }
-    my $clusterid = -1;
-    if ($output =~ /submitted\ to\ cluster/sxm) {
-        $clusterid = $output;
-        $clusterid =~ s/^.*cluster\ //sxm;
-        $clusterid =~ s/\..*$//sxm;
-        $log->debug("Found cluster id <$clusterid>");
-    }
-    if ($clusterid == -1) {
-        $log->error("submit job failed");
-    }
-    $bogref->{'clusterid'} = $clusterid;
-    return ($clusterid, $start_time);
+		}
+	}
+	return $clusterid;
 }
 
 sub logfilename {
@@ -423,17 +458,21 @@ sub runImmediate { my ($bogfile) = @_ ;
 	loadProperties($bogfile, \%bog);
 	my $execrunuid = $bog{'execrunid'};
 	$log->info("runImmediate creating viewer job: $execrunuid $bogfile");
-	my $vmhostname = 'vswamp';
-	$bog{'vmhostname'} = $vmhostname;
+	my $jobtype = 'vswamp';
+	$bog{'vmhostname'} = $jobtype;
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, "Creating HTCondor job", \%bog);
 	# viewer run priority is +10
 	my $job_priority = +10;
 	my $submitfile = $execrunuid . '.sub';
-	my $jobdir = vmu_CreateHTCondorViewerJob($vmhostname, \%bog, $bogfile, $submitfile, $job_priority);
+	my $jobdir = vmu_CreateHTCondorViewerJob($jobtype, \%bog, $bogfile, $submitfile, $job_priority);
+	if (! $jobdir) {
+		$log->error("CreateHTCondorViewerJob failed for: $execrunuid");
+		return $ret;
+	}
 	# submit from jobdir
 	chdir $jobdir;
 	$log->info("runImmediate starting viewer job: $submitfile jobdir: $jobdir");
-	my ($clusterid, $start_time) = startHTCondorJob(\%bog, $submitfile);
+	my $clusterid = startHTCondorJob(\%bog, $submitfile);
 	if ($clusterid != -1) {
 		# mark this jobdir with the clusterid
 		create_empty_file('ClusterId_' . $clusterid);

@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2018 Software Assurance Marketplace
+# Copyright 2012-2019 Software Assurance Marketplace
 
 package SWAMP::Docker;
 use 5.014;
@@ -9,8 +9,11 @@ use utf8;
 use strict;
 use warnings;
 use File::Basename;
-use File::Path qw(make_path remove_tree);
 use File::Copy qw(copy);
+use SWAMP::vmu_Support qw(
+	use_make_path
+	use_remove_tree
+);
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -29,12 +32,16 @@ BEGIN {
 sub DockerSetupInput { my ($vendor, $input, $project, $apikey, $threadfix_version, $checktimeout_frequency, $checktimeout_duration, $verbose) = @_ ;
 	if (-d $input) {
 		print "Deleting input directory\n" if ($verbose);
-		remove_tree($input)
+		if (! use_remove_tree($input)) {
+			print "Error deleting $input\n" if ($verbose);
+		}
 	}
 	my @files = `find -L . -maxdepth 1 -type f`;
 	chomp @files;
 	print "Creating input directory\n" if ($verbose);
-	make_path($input);
+	if (! use_make_path($input)) {
+		print "Error creating $input\n" if ($verbose);
+	}
 
 	# threadfix.war
 	my $warfile = File::Spec->catfile($vendor, '..', 'war', "threadfix.${threadfix_version}.war");
