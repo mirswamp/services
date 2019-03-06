@@ -1051,7 +1051,7 @@ sub _getBOGValue { my ($bogref, $key) = @_ ;
     my $ret;
     if (defined($bogref->{$key})) {
         $ret = trim($bogref->{$key});
-        $ret =~ s/null//sxm;
+		$ret =~ s/^null$//sxm;
         if (! length($ret)) {
             $ret = undef;
         }

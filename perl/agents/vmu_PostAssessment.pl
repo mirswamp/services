@@ -655,7 +655,7 @@ elsif ($have_results) {
 
 $job_status_message = 'Saving Results' . $job_status_message_suffix;
 updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
-my $results_in_db = save_results_in_database(\%bog, $execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $locSum);
+my $results_in_db = save_results_in_database(\%bog, $execrunuid, $weaknesses, $assessment_results_file, $logfile, $package_archive_file, $status_out, $first_failure_task, $locSum);
 if (! $results_in_db) {
 	$job_status_message = 'Failed to save assessment results in database' . $job_status_message_suffix;
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
