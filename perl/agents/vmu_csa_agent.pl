@@ -311,7 +311,9 @@ sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfi
 		print $fh "### Job Priority Scheduling\n";
 		# group_vip_viewer | group_vip_assessment | group_viewer | group_assessment
 		print $fh "accounting_group = group_assessment\n";
-		print $fh "accounting_group_user = $bogref->{'userid'}\n";
+		my $accounting_group_user = $bogref->{'userid'};
+		$accounting_group_user =~ s/\@/-at-/g;
+		print $fh "accounting_group_user = $accounting_group_user\n";
 		print $fh "\n";
 
 		print $fh "### Queue the job\n";
@@ -382,7 +384,9 @@ sub vmu_CreateHTCondorViewerJob { my ($jobtype, $bogref, $bogfile, $submitfile, 
 		print $fh "### Job Priority Scheduling\n";
 		# group_vip_viewer | group_vip_assessment | group_viewer | group_assessment
 		print $fh "accounting_group = group_viewer\n";
-		print $fh "accounting_group_user = $bogref->{'userid'}\n";
+		my $accounting_group_user = $bogref->{'userid'};
+		$accounting_group_user =~ s/\@/-at-/g;
+		print $fh "accounting_group_user = $accounting_group_user\n";
 		print $fh "\n";
 
 		print $fh "### Queue the job\n";
