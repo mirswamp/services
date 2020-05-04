@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -21,7 +21,6 @@ use Storable qw(nstore lock_nstore retrieve);
 
 use FindBin;
 use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
-# use lib ( "$FindBin::Bin/lib", "$FindBin::Bin/../perl5" );
 
 use SWAMP::vmu_Support qw(
 	runScriptDetached
@@ -29,8 +28,7 @@ use SWAMP::vmu_Support qw(
 	identifyScript
 	getLoggingConfigString
 	getSwampDir
-	timetrace_event
-	timetrace_elapsed
+	timing_log_assessment_timepoint
 	$LAUNCHPAD_SUCCESS
 	$LAUNCHPAD_BOG_ERROR
 	$LAUNCHPAD_FILESYSTEM_ERROR
@@ -64,35 +62,34 @@ GetOptions(
 );
 
 if ( defined($list) ) {
-    $asdetached = 0;    # Listing the queue overrides detatching self
+	listQueue(0); # list to tty
+    exit 0;
 }
 
 # This is the start of an assessment run so remove the tracelog file if extant
 my $tracelogfile = catfile(getSwampDir(), 'log', 'runtrace.log');
 truncate($tracelogfile, 0) if (-r $tracelogfile);
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
+timing_log_assessment_timepoint($execrunuid, 'launch assessment - start');
+
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
 $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @PRESERVEARGV");
+
 setHTCondorEnvironment();
 identifyScript(\@PRESERVEARGV);
 
 runScriptDetached() if ($asdetached);
 chdir($startupdir);
 
-if (defined($list)) {
-	listQueue(0); # list to tty
-    exit 0;
-}
-
 if (isSWAMPRunning()) {
 	$tracelog->trace("execrunuid: $execrunuid - calling doRun");
 	$log->info("Attempting to launch run $execrunuid");
-	my $event_start = timetrace_event($execrunuid, 'assessment', 'calldorun start');
 	my $status = doRun($execrunuid);
-	timetrace_elapsed($execrunuid, 'assessment', 'calldorun', $event_start);
 	# HTCondor submit succeeded
 	if ($status == $LAUNCHPAD_SUCCESS) {
 		$tracelog->trace("execrunuid: $execrunuid - doRun succeeded");
@@ -123,7 +120,7 @@ else {
         $log->info("SWAMP is Off at the moment. Run $execrunuid has been added to the queue.");
     }
 }
-listQueue(1); # list to log
+timing_log_assessment_timepoint($execrunuid, 'launch assessment - exit');
 exit 0;
 
 sub listQueue { my ($dolog) = @_ ;

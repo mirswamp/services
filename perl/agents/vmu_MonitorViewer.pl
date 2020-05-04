@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -30,8 +30,7 @@ use SWAMP::vmu_Support qw(
 	construct_vmhostname
 	getSwampConfig
 	$global_swamp_config
-	timetrace_event
-	timetrace_elapsed
+	timing_log_viewer_timepoint
 );
 $global_swamp_config ||= getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
@@ -153,7 +152,6 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 			$log->info("Status: $mstatus state: $state message: $message");
 			# this is where VIEWER_STATE_READY is set
 			if ($mstatus eq $FINAL_UP_STATUS) {
-				timetrace_event($execrunuid, 'viewer', $FINAL_UP_STATUS);
 				$log->info("MonitorViewer entering collector beacon mode");
 				$final_status_seen = 1;
 			}
@@ -194,7 +192,6 @@ sub monitor { my ($execrunuid, $bogref) = @_ ;
 }
 
 sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
-	my $event_start = timetrace_event($execrunuid, 'viewer', 'wait initial start');
 	my $vmip_lookup_viewer_delay = $global_swamp_config->get('vmip_lookup_viewer_delay') || 100;
 	# open vmip file and read vm ip address
 	my $mstatus;
@@ -204,7 +201,6 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
 		# check for termination
 		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
 			$log->error("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
-			timetrace_elapsed($execrunuid, 'viewer', 'wait initial max', $event_start);
 			return;
 		}
 		last if ($mstatus eq $INITIAL_STATUS);
@@ -212,12 +208,9 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
 	}
 	if ($mstatus ne $INITIAL_STATUS) {
 		$log->error("$events_file initial status not found");
-		timetrace_elapsed($execrunuid, 'viewer', 'wait initial not seen', $event_start);
 		return;
 	}
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, 'Obtaining VM IP Address', $bogref);
-	timetrace_elapsed($execrunuid, 'viewer', 'wait initial', $event_start);
-	$event_start = timetrace_event($execrunuid, 'viewer', 'get vmip start');
 	my $vmip = getVMIPAddress($vmhostname);
 	if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
 		$log->info("Obtained vmip: $vmip");
@@ -226,7 +219,6 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname) = @_ ;
 	else {
 		$log->error("Failed to obtain vmip: $vmip");
 	}
-	timetrace_elapsed($execrunuid, 'viewer', 'get vmip', $event_start);
 }
 
 ########
@@ -256,7 +248,9 @@ $SIG{TERM} = \&signal_handler;
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
 $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 $log->info("MonitorViewer: $execrunuid Begin");
@@ -267,7 +261,6 @@ identifyScript(\@ARGV);
 # my $startupdir = runScriptDetached();
 # chdir($startupdir);
 
-my $event_start = timetrace_event($execrunuid, 'viewer', 'monitor start');
 
 my %bog;
 my $bogfile = $execrunuid . '.bog';
@@ -282,5 +275,4 @@ my $message = "Viewer shutdown complete";
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, $message, \%bog);
 
 $log->info("MonitorViewer: $execrunuid Exit");
-timetrace_elapsed($execrunuid, 'viewer', 'monitor', $event_start);
 exit(0);

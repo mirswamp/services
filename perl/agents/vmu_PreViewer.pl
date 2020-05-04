@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -34,8 +34,7 @@ use SWAMP::vmu_Support qw(
 	create_empty_file
 	getSwampConfig
 	$global_swamp_config
-	timetrace_event
-	timetrace_elapsed
+	timing_log_viewer_timepoint
 );
 $global_swamp_config = getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
@@ -121,7 +120,9 @@ if (! $execrunuid) {
 }
 $logfilesuffix = $clusterid if (defined($clusterid));
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
 $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PreViewer: $execrunuid Begin");
@@ -132,7 +133,6 @@ identifyScript(\@ARGV);
 listDirectoryContents();
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
-my $event_start = timetrace_event($execrunuid, 'viewer', 'prescript start');
 
 my $inputfolder = q{input};
 mkdir($inputfolder);
@@ -189,5 +189,4 @@ else {
 }
 
 $log->info("PreViewer: $execrunuid Exit");
-timetrace_elapsed($execrunuid, 'viewer', 'prescript', $event_start);
 exit(0);

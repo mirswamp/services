@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -35,6 +35,7 @@ use SWAMP::vmu_Support qw(
 	listDirectoryContents
 	systemcall
 	getSwampDir
+	timing_log_assessment_timepoint
 	getLoggingConfigString
 	loadProperties
 	constructJobDirName
@@ -88,7 +89,9 @@ if (! defined($runnow)) {
     }
 }
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
@@ -178,6 +181,7 @@ while (! $child_done) {
 			my $duptime = time() - $dupstart;
 			$log->info("Duplicate not found: $execrunuid bog: $bogfile time: $duptime seconds");
 		}
+		timing_log_assessment_timepoint($execrunuid, 'read bog file');
 		# assessment run priority is 0
 		# metric run priority is -10
 		my $job_priority = 0;
@@ -193,6 +197,7 @@ while (! $child_done) {
 		$log->debug("creating assessment job: $execrunuid $bogfile");
 		$tracelog->trace("execrunuid: $execrunuid creating assessment job: $bogfile");
 		my $submitfile = $execrunuid . '.sub';
+		timing_log_assessment_timepoint($execrunuid, 'create condor job');
 		my $jobdir = vmu_CreateHTCondorAssessmentJob($jobtype, \%bog, $bogfile, $submitfile, $job_priority);
 		if (! $jobdir) {
 			$log->error("CreateHTCondorAssessmentJob failed for: $execrunuid");
@@ -204,6 +209,7 @@ while (! $child_done) {
 		$tracelog->trace("execrunuid: $execrunuid starting assessment job: $submitfile");
 		my $clusterid = startHTCondorJob(\%bog, $submitfile);
 		if ($clusterid != -1) {
+			timing_log_assessment_timepoint($execrunuid, 'condor job submitted');
 			# turn database launch_flag off
 			if (! setLaunchFlag($execrunuid, 0)) {
 				$log->error("$PROGRAM_NAME: $execrunuid - setLaunchFlag 0 failed");

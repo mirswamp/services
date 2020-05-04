@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 package SWAMP::vmu_ViewerSupport;
 use strict;
@@ -21,8 +21,8 @@ use SWAMP::vmu_Support qw(
 	getSwampDir 
 	checksumFile 
 	rpccall
-	database_connect
-	database_disconnect
+	job_database_connect
+	job_database_disconnect
 	getSwampConfig 
 	$global_swamp_config
 );
@@ -405,7 +405,7 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder) = @_ ;
 	my $viewerplatform = $bogref->{'viewerplatform'};
 	my $viewerversion = $bogref->{'viewerversion'};
 	$log->info("saveViewerDatabase - calling store_viewer with: $viewerinstanceuuid $viewerdbpath $viewerdbchecksum $viewerplatform $viewerversion");
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		# viewer_instance_uuid_in
 		# viewer_db_path_in
 		# viewer_db_checksum_in
@@ -424,7 +424,7 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder) = @_ ;
 		if (! $sth->err) {
 			$result = $dbh->selectrow_array('SELECT @r');
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 		if (! $result || ($result ne 'SUCCESS')) {
 			$log->error("saveViewerDatabase - error: $result");
 			return 0;

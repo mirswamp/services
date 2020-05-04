@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 package SWAMP::vmu_Support;
 use strict;
@@ -22,6 +22,7 @@ use DBI;
 use Capture::Tiny qw(:all);
 use JSON qw(from_json);
 use Time::HiRes qw(time);
+use Sys::Hostname;
 
 use parent qw(Exporter);
 our (@EXPORT_OK);
@@ -72,10 +73,10 @@ BEGIN {
 	  isAssessmentRun
 	  isMetricRun
 	  isViewerRun
-	  database_connect
-	  database_disconnect
-	  timetrace_event
-	  timetrace_elapsed
+	  job_database_connect
+	  job_database_disconnect
+	  timing_log_assessment_timepoint
+	  timing_log_viewer_timepoint
 
 	  $LAUNCHPAD_SUCCESS
 	  $LAUNCHPAD_BOG_ERROR
@@ -116,24 +117,6 @@ my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
 
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
-
-sub timetrace_event { my ($execrunuid, $job_type, $message) = @_ ;
-	my $event_start = time();
-	my $uuid = $execrunuid;
-	$uuid =~ s/^vrun_//;
-	$uuid =~ s/_.*$//;
-	Log::Log4perl->get_logger('timetrace')->trace("$uuid $job_type $message: $event_start");
-	return $event_start;
-}
-
-sub timetrace_elapsed { my ($execrunuid, $job_type, $message, $event_start) = @_ ;
-	my $event_time = time();
-	my $uuid = $execrunuid;
-	$uuid =~ s/^vrun_//;
-	$uuid =~ s/_.*$//;
-	Log::Log4perl->get_logger('timetrace')->trace("$uuid $job_type $message elapsed: ", $event_time - $event_start);
-	return $event_time;
-}
 
 sub use_make_path { my ($dir) = @_ ;
 	return -1 if (-d $dir);
@@ -1129,11 +1112,11 @@ sub _configureAgentClient {
     return $uri;
 }
 
-#############################
-#	Database Connectivity	#
-#############################
+#################################
+#	Job Database Connectivity	#
+#################################
 
-sub database_connect { my ($user, $password) = @_ ;
+sub job_database_connect { my ($user, $password) = @_ ;
 	$global_swamp_config ||= getSwampConfig();
 	my $dsnHost = $global_swamp_config->get('dbPerlDsnHost');
 	my $dsnPort = $global_swamp_config->get('dbPerlDsnPort');
@@ -1142,15 +1125,75 @@ sub database_connect { my ($user, $password) = @_ ;
 	$password ||= $global_swamp_config->get('dbPerlPass');
 	my $dbh = DBI->connect($dsn, $user, $password, {PrintError => 0, RaiseError => 0});
 	if ($DBI::err) {
-		$log->error("database_connect failed: $DBI::err error: ", $DBI::errstr);
+		$log->error("job_database_connect failed: $DBI::err error: ", $DBI::errstr);
 	}
 	return $dbh;
 }
 
-sub database_disconnect { my ($dbh) = @_ ;
-	# my ($package, $filename, $line) = caller();
-	# print "database_disconnect: $package $filename $line\n";
+sub job_database_disconnect { my ($dbh) = @_ ;
 	$dbh->disconnect();
+}
+
+#####################################
+#	Timing Database Connectivity	#
+#####################################
+
+sub _timing_database_connect { my ($user, $password) = @_ ;
+	$global_swamp_config ||= getSwampConfig();
+	my $dsnHost = $global_swamp_config->get('timingDsnHost');
+	my $dsnPort = $global_swamp_config->get('timingDsnPort');
+	my $dsn = "DBI:mysql:host=$dsnHost;port=$dsnPort";
+	$user ||= $global_swamp_config->get('timingUser');
+	$password ||= $global_swamp_config->get('timingPass');
+	my $dbh = DBI->connect($dsn, $user, $password, {PrintError => 0, RaiseError => 0});
+	if ($DBI::err) {
+		$log->error("timing_database_connect failed: $DBI::err error: ", $DBI::errstr);
+	}
+	return $dbh;
+}
+
+sub _timing_database_disconnect { my ($dbh) = @_ ;
+	$dbh->disconnect();
+}
+
+sub _timing_log_timepoint { my ($table, $execrunuid, $label) = @_ ;
+	$global_swamp_config ||= getSwampConfig();
+	my $use_timingdb = $global_swamp_config->get('useTimingDB') || '';
+	return if ($use_timingdb ne 'yes');
+	if (! $execrunuid || ! $label) {
+		$log->error("timing_log_timepoint - $table - missing execrunuid or no label");
+		return;
+	}
+	my $database = $global_swamp_config->get('timingDatabase');
+	if (my $dbh = _timing_database_connect()) {
+		my $query = qq{INSERT INTO $database.$table (execution_record_uuid, host, process, timepoint_label, timepoint) VALUES(?, ?, ?, ?, ?)};
+		my $sth = $dbh->prepare($query);
+		$sth->bind_param(1, $execrunuid);
+		my $host = hostname();
+		$sth->bind_param(2, $host);
+		my $process = basename($PROGRAM_NAME, '.pl');
+		$sth->bind_param(3, $process);
+		$sth->bind_param(4, $label);
+		my $timepoint = time();
+		$sth->bind_param(5, $timepoint);
+		$sth->execute();
+		if ($sth->err) {
+			$log->error("_timing_log_timepoint - $table $execrunuid $label - error: ", $sth->errstr);
+		}
+		_timing_database_disconnect($dbh);
+		$log->info("_timing_log_timepoint - table: $table execrunuid: $execrunuid host: $host process: $process label: $label time: $timepoint");
+	}
+	else {
+		$log->error("_timing_log_timepoint - $table $execrunuid $label - database connection failed");
+	}
+}
+
+sub timing_log_assessment_timepoint { my ($execrunuid, $label) = @_ ;
+	_timing_log_timepoint('arun_time_log', $execrunuid, $label);
+}
+
+sub timing_log_viewer_timepoint { my ($execrunuid, $label) = @_ ;
+	_timing_log_timepoint('vrun_time_log', $execrunuid, $label);
 }
 
 #################################

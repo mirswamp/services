@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -36,8 +36,7 @@ use SWAMP::vmu_Support qw(
 	create_empty_file
 	getSwampConfig
 	$global_swamp_config
-	timetrace_event
-	timetrace_elapsed
+	timing_log_assessment_timepoint
 );
 $global_swamp_config ||= getSwampConfig();
 use SWAMP::vmu_AssessmentSupport qw(
@@ -128,7 +127,10 @@ if (! $execrunuid) {
 }
 $logfilesuffix = $clusterid if (defined($clusterid));
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
+timing_log_assessment_timepoint($execrunuid, 'prescript - start');
 $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PreAssessment: $execrunuid Begin");
@@ -139,7 +141,6 @@ identifyScript(\@ARGV);
 listDirectoryContents();
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
-my $event_start = timetrace_event($execrunuid, 'assessment', 'prescript start');
 
 my $inputfolder = q{input};
 mkdir($inputfolder);
@@ -217,5 +218,5 @@ my $slot_size_start = computeDirectorySizeInBytes();
 updateExecutionResults($execrunuid, {'slot_size_start' => $slot_size_start});
 
 $log->info("PreAssessment: $execrunuid Exit");
-timetrace_elapsed($execrunuid, 'assessment', 'prescript', $event_start);
+timing_log_assessment_timepoint($execrunuid, 'prescript - exit');
 exit(0);

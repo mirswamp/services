@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -32,8 +32,7 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 	$global_swamp_config
 	getVMIPAddress
-	timetrace_event
-	timetrace_elapsed
+	timing_log_assessment_timepoint
 );
 $global_swamp_config = getSwampConfig();
 use SWAMP::vmu_AssessmentSupport qw(
@@ -216,7 +215,6 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 }
 
 sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix) = @_ ;
-	my $event_start = timetrace_event($execrunuid, 'assessment', 'wait initial start');
 	my $vmip_lookup_assessment_delay = $global_swamp_config->get('vmip_lookup_assessment_delay') || 600;
 	# open vmip file and read vm ip address
 	my $mstatus;
@@ -226,7 +224,6 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid,
 		# check for termination
 		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
 			$log->error("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
-			timetrace_elapsed($execrunuid, 'assessment', 'wait initial max', $event_start);
 			return;
 		}
 		last if ($mstatus eq $INITIAL_STATUS);
@@ -234,14 +231,11 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid,
 	}
 	if ($mstatus ne $INITIAL_STATUS) {
 		$log->error("$events_file initial status not found");
-		timetrace_elapsed($execrunuid, 'assessment', 'wait initial not seen', $event_start);
 		return;
 	}
 	# open Floodlight flow rule for licensed tools
 	my $message = 'Obtaining VM IP Address' . $job_status_message_suffix;
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-	timetrace_elapsed($execrunuid, 'assessment', 'wait initial', $event_start);
-	$event_start = timetrace_event($execrunuid, 'assessment', 'get vmip start');
 	my $vmip = getVMIPAddress($vmhostname);
 	(my $license_result, $vmip) = openFloodlightAccess($global_swamp_config, $bogref, $vmhostname, $vmip);
 	if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
@@ -251,7 +245,6 @@ sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid,
 		$log->error("Failed to obtain vmip: $vmip" . $job_status_message_suffix);
 	}
 	updateExecutionResults($execrunuid, {'vm_ip_address' => "$vmip"});
-	timetrace_elapsed($execrunuid, 'assessment', 'get vmip', $event_start);
 	return $license_result;
 }
 
@@ -288,7 +281,10 @@ $SIG{TERM} = \&signal_handler;
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 my $vmdomainname = construct_vmdomainname($owner, $uiddomain, $clusterid, $procid);
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
+timing_log_assessment_timepoint($execrunuid, 'monitor assessment - start');
 $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 $log->info("MonitorAssessment: $execrunuid Begin");
@@ -298,8 +294,6 @@ setHTCondorEnvironment();
 identifyScript(\@ARGV);
 # my $startupdir = runScriptDetached();
 # chdir($startupdir);
-
-my $event_start = timetrace_event($execrunuid, 'assessment', 'monitor start');
 
 my %bog;
 my $bogfile = $execrunuid . '.bog';
@@ -314,7 +308,9 @@ if ($numjobstarts > 0) {
 }
 
 # look for INITIAL_STATUS and then obtain vm ip address and open floodlight flow rule
+timing_log_assessment_timepoint($execrunuid, 'obtain vmip - begin');
 my $license_result = obtain_vmip($execrunuid, \%bog, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix);
+timing_log_assessment_timepoint($execrunuid, 'obtain vmip - end');
 
 # -1 vm returns status but not final
 #  0 vm returns no status
@@ -326,5 +322,5 @@ $log->info("MonitorAssessment: loop returns status: $status");
 closeFloodlightAccess($global_swamp_config, \%bog, $license_result);
 
 $log->info("MonitorAssessment: $execrunuid Exit");
-timetrace_elapsed($execrunuid, 'assessment', 'monitor', $event_start);
+timing_log_assessment_timepoint($execrunuid, 'monitor assessment - exit');
 exit(0);

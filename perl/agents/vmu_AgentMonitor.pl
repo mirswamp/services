@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -69,7 +69,9 @@ GetOptions(
     'detached'   => \$asdetached,
 );
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');

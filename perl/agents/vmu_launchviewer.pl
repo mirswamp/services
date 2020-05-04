@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use 5.014;
 use utf8;
@@ -37,8 +37,7 @@ use SWAMP::vmu_Support qw(
 	makezip
 	getSwampConfig 
 	$global_swamp_config
-	timetrace_event
-	timetrace_elapsed
+	timing_log_viewer_timepoint
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
@@ -114,7 +113,9 @@ GetOptions(
 my $tracelogfile = catfile(getSwampDir(), 'log', 'runtrace.log');
 truncate($tracelogfile, 0) if (-r $tracelogfile);
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
 my $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 my $tracelog = Log::Log4perl->get_logger('runtrace');
@@ -135,9 +136,7 @@ if ($viewer_name =~ /Native/ixsm) {
     $exitCode = doNative();
 }
 elsif ($viewer_name =~ /CodeDX/isxm) {
-	my $event_start = timetrace_event($project_uuid, 'viewer', 'launch start'); 
     $exitCode = doViewerVM();
-	timetrace_elapsed($project_uuid, 'viewer', 'launch', $event_start);
 }
 else {
     $log->error("viewer '$viewer_name' not supported.");

@@ -3,7 +3,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 use strict;
 use warnings;
@@ -36,8 +36,7 @@ use SWAMP::vmu_Support qw(
 	computeDirectorySizeInBytes
 	getSwampConfig
 	$global_swamp_config
-	timetrace_event
-	timetrace_elapsed
+	timing_log_assessment_timepoint
 	$HTCONDOR_POSTSCRIPT_EXIT
 );
 use SWAMP::vmu_AssessmentSupport qw(
@@ -529,7 +528,10 @@ if (! $execrunuid) {
 }
 $logfilesuffix = $clusterid if (defined($clusterid));
 
+# Initialize Log4perl
 Log::Log4perl->init(getLoggingConfigString());
+
+timing_log_assessment_timepoint($execrunuid, 'post script - start');
 $log = Log::Log4perl->get_logger(q{});
 $log->level($debug ? $TRACE : $INFO);
 $log->info("PostAssessment: $execrunuid Begin");
@@ -718,7 +720,6 @@ my $slot_size_end = computeDirectorySizeInBytes();
 updateExecutionResults($execrunuid, {'slot_size_end' => $slot_size_end});
 
 $log->info("PostAssessment: $execrunuid Exit $CondorExitCode");
-timetrace_event($execrunuid, 'assessment', $job_status_message);
 if (! isSwampInABox($global_swamp_config)) {
 	my $logfile = logfilename();
 	my $central_log_dir = '/swamp/working/logs';
@@ -731,4 +732,5 @@ if (! isSwampInABox($global_swamp_config)) {
 		copy($logfile, $central_log_dir);
 	}
 }
+timing_log_assessment_timepoint($execrunuid, 'post script - exit');
 exit($CondorExitCode);

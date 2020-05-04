@@ -1,7 +1,7 @@
 # This file is subject to the terms and conditions defined in
 # 'LICENSE.txt', which is part of this source code distribution.
 #
-# Copyright 2012-2019 Software Assurance Marketplace
+# Copyright 2012-2020 Software Assurance Marketplace
 
 package SWAMP::vmu_AssessmentSupport;
 use strict;
@@ -24,11 +24,12 @@ use SWAMP::vmu_Support qw(
     trim
     systemcall
     getSwampDir
+	timing_log_assessment_timepoint
     saveProperties
 	checksumFile
 	launchPadStart
-	database_connect
-	database_disconnect
+	job_database_connect
+	job_database_disconnect
 	displaynameToMastername
 	masternameToPlatform
 	isSwampInABox
@@ -200,7 +201,7 @@ sub _translateToBOG { my ($merge, $title, $hashref, $keepnulls) = @_ ;
 sub _computeBOG { my ($execrunuid) = @_ ;
 	my ($tool_path, $package_path);
 	my ($tool_version_checksum, $package_version_checksum);
-    my $dbh = database_connect();
+    my $dbh = job_database_connect();
 	my $bog_query_result;
     if ($dbh) {
         my $query = q{SELECT * FROM assessment.exec_run_view WHERE execution_record_uuid = ?};
@@ -218,7 +219,7 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 			}
         }
 		$sth->finish();
-        database_disconnect($dbh);
+        job_database_disconnect($dbh);
 	}
 	else {
 		$log->error("_computeBOG - database connection failed");
@@ -323,7 +324,7 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 sub incrementLaunchCounter { my ($execrunuid, $current) = @_ ;
 	my $success = 0;
 	return 1 if (isViewerRun($execrunuid));
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		my $database;
 		if (isAssessmentRun($execrunuid)) {
 			$database = 'assessment';	
@@ -342,7 +343,7 @@ sub incrementLaunchCounter { my ($execrunuid, $current) = @_ ;
 		else {
 			$log->error("incrementLaunchCounter $database - error: ", $sth->errstr);
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 		if (! $result || ($result < 0)) {
 			$log->error("incrementLaunchCounter $database - error: ", defined($result) ? $result : 'undefined');
 		}
@@ -362,7 +363,7 @@ sub incrementLaunchCounter { my ($execrunuid, $current) = @_ ;
 sub _setDBRunQueueFlag { my ($execrunuid, $flag_name, $flag_value) = @_ ;
 	return 1 if (isViewerRun($execrunuid));
 	my $success = 0;
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		my ($database, $table);
 		if (isAssessmentRun($execrunuid)) {
 			$database = 'assessment';
@@ -383,7 +384,7 @@ sub _setDBRunQueueFlag { my ($execrunuid, $flag_name, $flag_value) = @_ ;
 		else {
 			$success = 1;
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 	}
 	else {
 		$log->error("_setDBRunQueueFlag - database connection failed");
@@ -410,7 +411,7 @@ sub setSubmittedToCondorFlag { my ($execrunuid, $submitted) = @_ ;
 my $LAUNCH_COUNTER_THRESHOLD = 15;
 sub getLaunchExecrunuids { my ($launch_counter_begin, $launch_counter_end) = @_ ;
 	my $execrunuids;
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		my $query = q{SELECT execution_record_uuid FROM assessment.execution_record WHERE launch_flag = 1};
 		my $sth = $dbh->prepare($query);
 		if (defined($launch_counter_begin) || defined($launch_counter_end)) {
@@ -431,7 +432,7 @@ sub getLaunchExecrunuids { my ($launch_counter_begin, $launch_counter_end) = @_ 
 				$execrunuids = undef;
 			}
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 	}
 	else {
 		$log->error("getLaunchExecrunuids - database connection failed");
@@ -441,12 +442,16 @@ sub getLaunchExecrunuids { my ($launch_counter_begin, $launch_counter_end) = @_ 
 
 sub doRun { my ($execrunuid) = @_ ;
     $tracelog->trace("doRun called with execrunuid: $execrunuid");
+	timing_log_assessment_timepoint($execrunuid, 'compute bog - begin');
     my $options = _computeBOG($execrunuid);
+	timing_log_assessment_timepoint($execrunuid, 'compute bog - end');
 	# options is either a hash reference to the BOG
 	# or and enumeration of a LAUNCHPAD_*_ERROR
 	if (ref $options) {
     	$tracelog->trace("doRun - _computeBOG returned bog - calling launchPadStart");
+		timing_log_assessment_timepoint($execrunuid, 'launch pad start - begin');
 		my $retval = launchPadStart($options);
+		timing_log_assessment_timepoint($execrunuid, 'launch pad start - end');
     	$tracelog->trace("doRun - launchPadStart returned: $retval");
     	return $retval;
 	}
@@ -456,7 +461,7 @@ sub doRun { my ($execrunuid) = @_ ;
 }
 
 sub updateExecutionResults { my ($execrunid, $newrecord, $finalStatus) = @_ ;
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
     	if ($finalStatus) {
         	$newrecord->{'completion_date'} = strftime("%Y-%m-%d %H:%M:%S", gmtime(time()));
     	}
@@ -481,7 +486,7 @@ sub updateExecutionResults { my ($execrunid, $newrecord, $finalStatus) = @_ ;
 				$log->error("updateExecutionResults - error: ", $sth->errstr);
 			}
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 	}
 	else {
         $log->error("updateExecutionResults - database connection failed");
@@ -514,7 +519,7 @@ sub saveMetricSummary { my ($metric_results) = @_ ;
         $log->error('saveMetricSummary - error: hash is missing total-lines');
 		return;
     }
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		my $query = qq{UPDATE metric.metric_run SET pkg_code_lines = ?, pkg_comment_lines = ?, pkg_blank_lines = ?, pkg_total_lines = ? WHERE metric_run_uuid = ?};
 		my $sth = $dbh->prepare($query);
 		$sth->bind_param(1, $metric_results->{'code-lines'});
@@ -526,7 +531,7 @@ sub saveMetricSummary { my ($metric_results) = @_ ;
 		if ($sth->err) {
 			$log->error("saveMetricSummary - error: ", $sth->errstr);
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 	}
 	else {
 		$log->error("saveMetricSummary - database connection failed");
@@ -581,7 +586,7 @@ sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
 	$log->info('Copied: ', $assessment_results->{'logpathname'}, " to: $log_dest_path");
 	my $log_file = catfile($log_dest_path, basename($assessment_results->{'logpathname'}));
 
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		# execution_record_uuid_in
 		# assessment_result_uuid_in
 		# result_path_in
@@ -617,7 +622,7 @@ sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
 		else {
 			$log->error("saveAssessmentResult - error: ", $sth->errstr);
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 		if (! $result || ($result ne 'SUCCESS')) {
 			$log->error("saveAssessmentResult - error: $result");
 			return 0;
@@ -657,7 +662,7 @@ sub saveMetricResult { my ($bogref, $metric_results) = @_ ;
 	my $result_file = catfile($result_dest_path, basename($metric_results->{'pathname'}));
 
 	my $result = 0;
-	if (my $dbh = database_connect()) {
+	if (my $dbh = job_database_connect()) {
 		my $query = qq{UPDATE metric.metric_run SET file_host = ?, result_path = ?, result_checksum = ?, status_out = ?, status_out_error_msg = ? WHERE metric_run_uuid = ?};
 		my $sth = $dbh->prepare($query);
 		$sth->bind_param(1, 'SWAMP');
@@ -670,7 +675,7 @@ sub saveMetricResult { my ($bogref, $metric_results) = @_ ;
 		if ($sth->err) {
 			$log->error("saveMetricResult - error: ", $sth->errstr);
 		}
-		database_disconnect($dbh);
+		job_database_disconnect($dbh);
 		$result = 1;
 	}
 	else {
