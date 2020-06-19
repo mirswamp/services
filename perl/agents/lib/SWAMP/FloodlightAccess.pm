@@ -209,10 +209,6 @@ sub openFloodlightAccess { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
         $log->trace("Floodlight: $floodlight_url $floodlight_flowprefix $server_port");
         $log->trace("License Server IP: " . ($serverip || 'N/A'));
 
-        my $nameserver = $config->get('nameserver');
-        my $vmnetdomain = $config->get('vmnetdomain');
-        $log->trace("VM nameserver: $nameserver VM domain: $vmnetdomain");
-
         if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
             # second chance to get vmip on previous error
             $vmip = getVMIPAddress($vmhostname);
@@ -244,10 +240,6 @@ sub openFloodlightAccess { my ($config, $bogref, $vmhostname, $vmip) = @_ ;
     }
     # second chance to get vmip on previous error - or pass through previous success
     if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
-        my $nameserver = $config->get('nameserver');
-        my $vmnetdomain = $config->get('vmnetdomain');
-        $log->trace("VM: $nameserver $vmnetdomain ");
-
         $vmip = getVMIPAddress($vmhostname);
         if (! $vmip || $vmip =~ m/corrupt|timeout/sxm) {
             $log->error("Unable to obtain vmip for $vmhostname - error: $vmip");

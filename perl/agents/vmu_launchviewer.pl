@@ -25,9 +25,15 @@ use lib ( "$FindBin::Bin/../perl5", "$FindBin::Bin/lib" );
 
 use SWAMP::CodeDX qw(uploadanalysisrun);
 use SWAMP::PackageTypes qw($GENERIC_PKG $JAVABYTECODE_PKG);
-use SWAMP::FrameworkUtils qw(generateErrorJson saveErrorJson);
+use SWAMP::FrameworkUtils qw(
+	generateStatusOutJson 
+	addHeaderJson
+	saveStatusOutJson
+);
 use SWAMP::vmu_Support qw(
+	from_json_file_wrapper
 	use_make_path
+	use_remove_tree
 	runScriptDetached
 	setHTCondorEnvironment
 	identifyScript
@@ -38,6 +44,11 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig 
 	$global_swamp_config
 	timing_log_viewer_timepoint
+);
+use SWAMP::vmu_AssessmentSupport qw(
+	$OUTPUT_FILES_CONF_FILE_NAME
+	locate_output_files
+	parse_statusOut
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_NO_RECORD
@@ -78,6 +89,7 @@ my $platform_name;	 # SWAMP assessment platform name
 my $platform_version;# SWAMP assessment platform version
 my $start_date;		 # SWAMP project start date
 my $end_date;
+my $results_type;	 # results | warnings | errors
 
 my $package_type = $GENERIC_PKG;    # Assume its some sort of source code.
 
@@ -95,7 +107,7 @@ GetOptions(
     'package=s'             => \$package_name,
     'package_type=s'        => \$package_type,
     'project=s'             => \$project_uuid,
-    'detached!'               => \$asdetached,
+    'detached!'             => \$asdetached,
     'debug'                 => \$debug,
 	#Header info in NativeViewer
 	'package_name=s'		=> \$package_name,
@@ -107,6 +119,7 @@ GetOptions(
 	'start_date=s'			=> \$start_date,
 	'end_date=s'			=> \$end_date,
 	'config=s'				=> \$configfile,
+	'results_type=s'		=> \$results_type,
 );
 
 # This is the start of a viewer run so remove the tracelog file if extant
@@ -270,40 +283,107 @@ sub printPara {
     return;
 }
 
-sub doNativeError { my ($file, $outputdir) = @_ ;
-	$log->info("doNativeError - processing error result: $file");
-	$global_swamp_config ||= getSwampConfig($configfile);
+sub doNativeStatusOut { my ($results_type, $file, $outputdir) = @_ ;
+	my $always_generate = 1; # REMOVE - this is for debugging
+	$log->info("doNativeStatusOut - processing error file: $file results_type: $results_type outputdir: $outputdir");
 	my $retCode = 0;
-	my $JSONname  = q{failedreport.json};
-	my ( $htmlfile, $dir, $ext ) = fileparse( $file, qr/\.[^.].*/sxm );
 	if (! use_make_path($outputdir)) {
-		$log->error("Error - make_path failed for: $outputdir");
+		$log->error("Error - use_make_path failed for: $outputdir");
+		print "ERROR - use_make_path failed for: $outputdir\n";
 		$retCode = 3;
+		return $retCode;
 	}
-	elsif (copy($file, $outputdir)) {
-		$log->info("Copied $file to $outputdir ret=[${htmlfile}${ext}]");
-		my $topdir = 'out';
-		my $reportTime = ctime();
-		# save the header information and pass them into the saverepost()
-		my @header = ($package_name, $tool_name, $platform_name, $start_date, $package_version, $tool_version, $platform_version, $end_date, $reportTime);
-		$topdir = 'output' if ($file =~ m/outputdisk.tar.gz$/);
-		my $report = generateErrorJson(catfile($outputdir, $htmlfile . $ext), $topdir, @header);
-		my $savereport = catfile($outputdir, $JSONname);
-		$log->info("report - file: $savereport url: ", $global_swamp_config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
-		my $saveResult = saveErrorJson($report, $savereport);
-	    if ($saveResult == 0) {
-            $log->error("Failed to save the error report json to: $savereport");
-        }
-		# Do not remove this print statement
-		# This is the result returned to the calling program via the shell
-		$log->info("doNativeError returns: $JSONname");
-		print "${JSONname}\n";
+	if (! copy($file, $outputdir)) {
+		$log->warning("Warning - copy: $file to: $outputdir failed - download of failed results will not be available");
+	}
+	$global_swamp_config ||= getSwampConfig($configfile);
+	my ($htmlfile, $inputdir, $ext) = fileparse( $file, qr/\.[^.].*/sxm );
+	my $assessment_report_filename = 'assessment-report.json';
+	my $assessment_report_filepath = catfile($inputdir, $assessment_report_filename);
+	# if assessment-report.json does not exist
+	# and outputdisk.tar.gz exists then (this is for backward compatibility)
+	# 	unarchive it in outputdir and generate assessment-report.json
+	# 	save assessment-report.json in inputdir (this is for forward compatibility)
+	# else create failedreport.json from assessment-report.json by adding header to report
+	# save failedreport.json in outputdir for web ui
+	my $report;
+	if ($always_generate || ! -f $assessment_report_filepath || ! -r $assessment_report_filepath) {
+		if ($results_type =~ m/warnings/sxmi) {
+			$file = catfile($inputdir, 'outputdisk.tar.gz');
+		}
+		if (! -f $file || ! -r $file) {
+			$log->error("Error - $file not found");
+			print "ERROR - $file not found\n";
+			$retCode = 3;
+			return $retCode;
+		}
+		if ($file !~ m/.tar$|.tar.gz$/) {
+			$log->error("Error - $file is not a tar archive");
+			print "ERROR - $file is not a tar archive\n";
+			$retCode = 3;
+			return $retCode;
+		}
+		my $topdir = catdir($outputdir, 'out');
+		if (! -d $topdir) {
+			$log->info("Unbundling archive: $file to: $outputdir");
+			my $cmd = "tar xf $file -C $outputdir";
+			my ($output, $status) = systemcall($cmd);
+			if ($status) {
+				$log->error("Error - $cmd failed - $output $status $OS_ERROR");
+				print "ERROR - $cmd failed - $output $status $OS_ERROR\n";
+				$retCode = 3;
+				return $retCode;
+			}
+		}
+		else {
+			$log->warn("Warning - $topdir already exists");
+		}
+		my $output_files = locate_output_files($topdir, $OUTPUT_FILES_CONF_FILE_NAME);
+		my $statusOut_file = $output_files->{'statusOut'} || '';
+		my $statusOut = parse_statusOut(catfile($topdir, $statusOut_file));
+		$report = generateStatusOutJson($topdir, $output_files, $statusOut);
+		# for forward compatibility
+		my $preservereportfilepath = catfile($inputdir, 'assessment-report.json');
+		my $saveResult = saveStatusOutJson($report, $preservereportfilepath);
+		if (! $saveResult) {
+			# this is just a warning because this failure results in the backward 
+			# compatibility code being executed next time the report is requested
+			$log->warn("Unable to save the error report json to: $preservereportfilepath $OS_ERROR");
+		}
+		if (! use_remove_tree($topdir)) {
+			$log->warn("Warning - use_remove_tree failed for: $topdir");
+		}
 	}
 	else {
-		$log->error("Cannot copy $file to $outputdir $OS_ERROR");
-		print "ERROR Cannot copy $file to $outputdir $OS_ERROR\n";
-		$retCode = 3;
+		$report = from_json_file_wrapper($assessment_report_filepath);
 	}
+	my $reportTime = ctime();
+	my $header = [
+		$package_name, 
+		$package_version, 
+		$platform_name, 
+		$platform_version, 
+		$tool_name, 
+		$tool_version, 
+		$start_date, 
+		$end_date, 
+		$reportTime,
+	];
+	addHeaderJson($report, $header);
+	my $webreportname = q{failedreport.json};
+	my $webreportfilepath = catfile($outputdir, $webreportname);
+	$log->info("report - file: $webreportfilepath url: ", $global_swamp_config->get('reporturl'), ' keys: ', sub{ join ', ', (keys %$report) });
+	my $saveResult = saveStatusOutJson($report, $webreportfilepath);
+	if (! $saveResult) {
+		$log->error("Failed to save the error report json to: $webreportfilepath");
+		print "Error - cannot save $webreportfilepath\n";
+		$retCode = 3;
+		return $retCode;
+	}
+	# Do not remove this print statement
+	# This is the result returned to the calling program via the shell
+	$log->info("doNativeStatusOut prints to database call: $webreportname");
+	print "$webreportname\n";
 	return $retCode;
 }
 
@@ -357,7 +437,7 @@ sub doNativeHTML { my ($file, $outputdir) = @_ ;
 		else {
 			# Do not remove this print statement
 			# This is the result returned to the calling program via the shell
-			$log->info("doNativeHTML returns: index.html");
+			$log->info("doNativeHTML prints to database call: index.html");
 			print "index.html\n";
 		}
 	}
@@ -368,8 +448,8 @@ sub doNativeSCARF { my ($file, $tool_name) = @_ ;
 	$log->info("doNativeSCARF - tool_name: $tool_name");
 	my $retCode = 0;
 	# constructs the arguments for the JSON parsing call
-	my $JSONname   = q{nativereport.json};
-	my $JSONPath = catfile($outputdir,$JSONname);
+	my $webreportname   = q{nativereport.json};
+	my $webreportpath = catfile($outputdir,$webreportname);
 	$tool_name = checkToolStringSpace($tool_name);
 	my $toolListPath = catfile(getSwampDir(), 'etc', 'Scarf_ToolList.json');
 	my $parsingScript = catfile(getSwampDir(), 'bin', 'vmu_Scarf_CParsing');
@@ -394,7 +474,7 @@ sub doNativeSCARF { my ($file, $tool_name) = @_ ;
 	
 	# concatenate strings into a command string and pass into the system call
 	# append the assessment_start_time, assessment_end_time and report_generation_time because they are not in the SCARF file
-	my $parsingCmd = $parsingScript . ' -input_file ' . $file . ' -output_file ' . $JSONPath . ' -tool_name ' . $tool_name . ' -tool_list ' . $toolListPath . ' -metadata_path ' . $metaDataPath;
+	my $parsingCmd = $parsingScript . ' -input_file ' . $file . ' -output_file ' . $webreportpath . ' -tool_name ' . $tool_name . ' -tool_list ' . $toolListPath . ' -metadata_path ' . $metaDataPath;
 	$log->info('cwd: ', getcwd(), ' command: ', $parsingCmd);
 	my ($output, $status) = systemcall($parsingCmd);
 	$log->info('Logging from vmu_Scarf_Parsing: ', $output);
@@ -404,8 +484,8 @@ sub doNativeSCARF { my ($file, $tool_name) = @_ ;
 	else {
 		# Do not remove this print statement
 		# This is the result returned to the calling program via the shell
-		$log->info("doNativeSCARF returns: $JSONname");
-		print "${JSONname}\n";
+		$log->info("doNativeSCARF prints to database call: $webreportname");
+		print "$webreportname\n";
 	}
 	return $retCode;
 }
@@ -415,22 +495,24 @@ sub doNative {
     # my $r = printPara();
 	my $retCode = 0;
     foreach my $file (@file_path) {
-		$log->info("doNative - processing file: $file");
+		$log->info("doNative - processing file: $file results_type: $results_type");
+		# process SONATYPE results
+		if ($file =~ m/\.zip$/sxmi) {
+			$retCode = doNativeHTML($file, $outputdir);
+		}
 		# process SCARF results
-        if ($file =~ m/\.xml$/sxmi) {
+        # elsif ($file =~ m/\.xml$/sxmi) {
+        elsif ($results_type =~ m/results/sxmi) {
 			$retCode = doNativeSCARF($file, $tool_name);
             next;
         }
-		# process SONATYPE results
-		elsif ($file =~ m/\.zip$/sxmi) {
-			$retCode = doNativeHTML($file, $outputdir);
-		}
 		# process ERROR results
-		elsif ($file =~ m/\.tar\.gz$/sxmi) {
-			$retCode = doNativeError($file, $outputdir);
+		# elsif ($file =~ m/\.tar\.gz$/sxmi) {
+		elsif (($results_type =~ m/errors/sxmi) || ($results_type =~ m/warnings/sxmi)) {
+			$retCode = doNativeStatusOut($results_type, $file, $outputdir);
 		}
 		else {
-			$log->error("doNative - cannot process file: $file");
+			$log->error("doNative - cannot process file: $file results_type: $results_type");
 			$retCode = 3;
 		}
     }

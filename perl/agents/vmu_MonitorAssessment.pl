@@ -33,6 +33,8 @@ use SWAMP::vmu_Support qw(
 	$global_swamp_config
 	getVMIPAddress
 	timing_log_assessment_timepoint
+	$HTCONDOR_JOB_EVENTS_FILE
+	$HTCONDOR_JOB_EVENTS_PATH
 );
 $global_swamp_config = getSwampConfig();
 use SWAMP::vmu_AssessmentSupport qw(
@@ -48,9 +50,10 @@ $global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
-my $events_file = 'JobVMEvents.log';
-my $vmip_file = 'vmip.txt';
-my $MAX_OPEN_ATTEMPTS = 5;
+my $events_file = $HTCONDOR_JOB_EVENTS_FILE;
+my $events_path = $HTCONDOR_JOB_EVENTS_PATH;
+my $MAX_MONITOR_FIRST_OPEN_ATTEMPTS = 50;
+my $MAX_MONITOR_OPEN_ATTEMPTS = 5;
 my $RESET_WAIT_DURATION = 60 * 15; # seconds
 my $RESET_MAX_ATTEMPTS = 1;
 my $done_int = 0;
@@ -59,12 +62,14 @@ my $done_term = 0;
 my %status_seen = ();
 my $INITIAL_STATUS	= 'RUNSHSTART';
 my $FINAL_STATUS	= 'ENDASSESSMENT';
+my $IPADDR_STATUS	= 'WROTEIPADDR';
 
 my %status_messages = (
 	$INITIAL_STATUS		=> 'Starting assessment run script',
+	$IPADDR_STATUS		=> 'Wrote ip address',
 	'BEGINASSESSMENT'	=> 'Performing assessment',
 	'CONNECTEDUSERS'	=> 'Checking for connected users',
-	$FINAL_STATUS		=> 'Shutting down the VM',
+	$FINAL_STATUS		=> 'Shutting down the assessment machine',
 );
 
 # logfilesuffix is the HTCondor clusterid 
@@ -74,7 +79,9 @@ sub logfilename {
 	return $name;
 }
 
-sub send_command_to_vm { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $command) = @_ ;
+sub send_command_to_assessment_machine { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, $command) = @_ ;
+	# FIXME update this routine to properly operate on docker containers
+	return 0 if ($bogref->{'use_docker_universe'});
 	my ($output, $status) = systemcall("sudo virsh $command $vmdomainname");
 	my $success_regex = 'Domain.*is being shutdown';
 	$success_regex = 'Domain.*was reset' if ($command eq 'reset');
@@ -89,13 +96,10 @@ sub send_command_to_vm { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $
 }
 
 my $open_attempts = 0;
-sub get_next_status { my ($file, $final_status_seen) = @_ ;
+sub get_next_status { my ($file) = @_ ;
 	my $fh;
 	if (! open($fh, '<', $file)) {
 		$open_attempts += 1;
-		if (! $final_status_seen) {
-			$log->warn("Failed to open events file: $file $open_attempts");
-		}
 		return ($open_attempts, '');
 	}
 	$open_attempts = 0;
@@ -110,38 +114,69 @@ sub get_next_status { my ($file, $final_status_seen) = @_ ;
 	return ($open_attempts, '');
 }
 
-sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix) = @_ ;
+sub obtain_viewerip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix) = @_ ;
+	# open Floodlight flow rule for licensed tools
+	my $message = 'Obtaining Assessment Machine IP Address' . $job_status_message_suffix;
+	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
+	my $viewerip = getVMIPAddress($vmhostname);
+	(my $license_result, $viewerip) = openFloodlightAccess($global_swamp_config, $bogref, $vmhostname, $viewerip);
+	if ($viewerip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
+		$log->info("Obtained viewer ip address: $viewerip" . $job_status_message_suffix);
+	}
+	else {
+		$log->error("Failed to obtain viewer ip address: $viewerip" . $job_status_message_suffix);
+	}
+	updateExecutionResults($execrunuid, {'vm_ip_address' => "$viewerip"});
+	return $license_result;
+}
+
+sub monitor { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix) = @_ ;
 	my $time_start = time();
 	my $sleep_time = 5; # seconds
 	my $update_interval = 60 * 10; # seconds
 	my $any_status_seen = 0;
-	my $final_status_seen = 0;
 	my $last_status;
 	my $poll_count = 0;
 	my $reset_attempts = 0;
 	my $shutdown_sent = 0;
+	my $license_result;
+	# before first open, wait for an extended period of time
+	my $max_open_attempts = $MAX_MONITOR_FIRST_OPEN_ATTEMPTS;
     while (! $done_term) {
-		my ($open_attempts, $mstatus) = get_next_status($events_file, $final_status_seen);
+		my ($open_attempts, $mstatus) = get_next_status($events_path);
 		# check for termination
-		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
-			$log->info("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
+		if ($open_attempts > $max_open_attempts) {
+			$log->info("$events_file max open attempts exceeded: $open_attempts $max_open_attempts");
 			# void the vm_password field in the database to turn off ssh access button
 			updateExecutionResults($execrunuid, {'vm_password' => ''});
-			return 1 if ($final_status_seen);
-			return -1 if ($any_status_seen);
-			return 0;
+			# close Floodlight flow rule for licensed tools
+			closeFloodlightAccess($global_swamp_config, $bogref, $license_result);
+			my $retval = 0;
+			$retval = -1 if ($any_status_seen);
+			$log->info("MonitorAssessment: max open attempts exceeded - monitor loop returning status: $retval");
+			return $retval;
 		}
 		# any current status
 		if ($mstatus && exists($status_messages{$mstatus})) {
 			my $job_status_message = $status_messages{$mstatus} . $job_status_message_suffix;
 			updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 			if ($mstatus eq $FINAL_STATUS) {
-				$final_status_seen = 1;
 				# void the vm_password field in the database to turn off ssh access button
 				updateExecutionResults($execrunuid, {'vm_password' => ''});
-				return 1;
+				# close Floodlight flow rule for licensed tools
+				closeFloodlightAccess($global_swamp_config, $bogref, $license_result);
+				my $retval = 1;
+				$log->info("MonitorAssessment: found status - $mstatus - monitor loop returning status: $retval");
+				return $retval;
+			}
+			elsif ($mstatus eq $IPADDR_STATUS) {
+				# obtain machine ip address and open floodlight flow rule
+				$license_result = obtain_viewerip($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix);
+
 			}
 			$any_status_seen = 1;
+			# now that we have seen a status, wait less long for subsequent opens
+			$max_open_attempts = $MAX_MONITOR_OPEN_ATTEMPTS;
 			$poll_count = 0;
 			$last_status = $mstatus;
 		}
@@ -155,9 +190,9 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 		}
 		# no current status - no prior status - shutdown not yet sent
 		elsif (! $shutdown_sent) {
-			# caught INT signal - attempt to shutdown vm and continue monitor
+			# caught INT signal - attempt to shutdown machine and continue monitor
 			if ($done_int) {
-				send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
+				send_command_to_assessment_machine($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 				$shutdown_sent = 1;
 				next;
 			}
@@ -167,9 +202,9 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 				my $seconds = $time_now - $time_start;
 				my $date_now = strftime("%Y-%m-%d %H:%M:%S", localtime($time_now));
 				my $date_start = strftime("%Y-%m-%d %H:%M:%S", localtime($time_start));
-				my $job_status_message = "VM Failed - ";
+				my $job_status_message = "Viewer Machine Failed - ";
 				if ($any_status_seen) {
-					$job_status_message = "VM Started and Failed - ";
+					$job_status_message = "Viewer Machine Started and Failed - ";
 				}
 				$job_status_message .= "$date_start $date_now ($seconds)" . $job_status_message_suffix;
 				updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
@@ -183,11 +218,11 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 				if (($time_now - $time_start) > ($RESET_WAIT_DURATION * ($reset_attempts + 1))) {
 					# attempt to reset for RESET_MAX_ATTEMPTS
 					if ($reset_attempts < $RESET_MAX_ATTEMPTS) {
-						my $success = send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'reset');
+						my $success = send_command_to_assessment_machine($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'reset');
 						if (! $success) {
 							# on failure of reset -- shutdown
 							$log->error("vm: $vmdomainname reset failed - shutdown sent");
-							send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
+							send_command_to_assessment_machine($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 							$shutdown_sent = 1;
 							# now just monitor for HTCondor to terminate the controlling job
 						}
@@ -195,7 +230,7 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 					}
 					else {
 						$log->error("vm: $vmdomainname has been reset $reset_attempts times - shutdown sent");
-						send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
+						send_command_to_assessment_machine($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 						$shutdown_sent = 1;
 						# now just monitor for HTCondor to terminate the controlling job
 					}
@@ -205,47 +240,16 @@ sub monitor { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainnam
 		sleep $sleep_time;
 		$poll_count += 1;
 	}
-	# caught TERM signal - attempt to shutdown vm
+	# caught TERM signal - attempt to shutdown assessment machine
 	if ($vmdomainname) {
 		$log->info("MonitorAssessment: $execrunuid caught signal - shutdown $vmdomainname");
-		send_command_to_vm($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
+		send_command_to_assessment_machine($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $vmdomainname, 'shutdown');
 	}
 	# void the vm_password field in the database to turn off ssh access button
 	updateExecutionResults($execrunuid, {'vm_password' => ''});
-}
-
-sub obtain_vmip { my ($execrunuid, $bogref, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix) = @_ ;
-	my $vmip_lookup_assessment_delay = $global_swamp_config->get('vmip_lookup_assessment_delay') || 600;
-	# open vmip file and read vm ip address
-	my $mstatus;
-	for (my $i = 0; $i < $vmip_lookup_assessment_delay; $i++) {
-		return if ($done_term);
-		(my $open_attempts, $mstatus) = get_next_status($events_file, 0);
-		# check for termination
-		if ($open_attempts > $MAX_OPEN_ATTEMPTS) {
-			$log->error("$events_file max open attempts exceeded: $open_attempts $MAX_OPEN_ATTEMPTS");
-			return;
-		}
-		last if ($mstatus eq $INITIAL_STATUS);
-		sleep 1;
-	}
-	if ($mstatus ne $INITIAL_STATUS) {
-		$log->error("$events_file initial status not found");
-		return;
-	}
-	# open Floodlight flow rule for licensed tools
-	my $message = 'Obtaining VM IP Address' . $job_status_message_suffix;
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $message);
-	my $vmip = getVMIPAddress($vmhostname);
-	(my $license_result, $vmip) = openFloodlightAccess($global_swamp_config, $bogref, $vmhostname, $vmip);
-	if ($vmip =~ m/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/) {
-		$log->info("Obtained vmip: $vmip" . $job_status_message_suffix);
-	}
-	else {
-		$log->error("Failed to obtain vmip: $vmip" . $job_status_message_suffix);
-	}
-	updateExecutionResults($execrunuid, {'vm_ip_address' => "$vmip"});
-	return $license_result;
+	my $retval = -15;
+	$log->info("MonitorAssessment: caught TERM signal - monitor loop returning status: $retval");
+	return $retval;
 }
 
 ########
@@ -307,20 +311,14 @@ if ($numjobstarts > 0) {
 	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
 }
 
-# look for INITIAL_STATUS and then obtain vm ip address and open floodlight flow rule
-timing_log_assessment_timepoint($execrunuid, 'obtain vmip - begin');
-my $license_result = obtain_vmip($execrunuid, \%bog, $vmhostname, $user_uuid, $projectid, $job_status_message_suffix);
-timing_log_assessment_timepoint($execrunuid, 'obtain vmip - end');
+# -15 monitor receives TERM signal
+# -1  machine returns status but not final
+#  0  machine returns no status
+#  1  machine returns final status
+$log->info("MonitorAssessment: starting monitor loop");
+my $status = monitor($execrunuid, \%bog, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix);
+$log->info("MonitorAssessment: monitor loop returned status: $status");
 
-# -1 vm returns status but not final
-#  0 vm returns no status
-#  1 vm returns final status
-my $status = monitor($execrunuid, $vmhostname, $user_uuid, $projectid, $vmdomainname, $job_status_message_suffix);
-$log->info("MonitorAssessment: loop returns status: $status");
-
-# close Floodlight flow rule for licensed tools
-closeFloodlightAccess($global_swamp_config, \%bog, $license_result);
-
-$log->info("MonitorAssessment: $execrunuid Exit");
 timing_log_assessment_timepoint($execrunuid, 'monitor assessment - exit');
+$log->info("MonitorAssessment: $execrunuid Exit");
 exit(0);

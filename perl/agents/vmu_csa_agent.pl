@@ -48,6 +48,9 @@ use SWAMP::vmu_Support qw(
 	$global_swamp_config
 	$HTCONDOR_POSTSCRIPT_FAILED
 	$HTCONDOR_POSTSCRIPT_EXIT
+	$HTCONDOR_JOB_INPUT_DIR
+	$HTCONDOR_JOB_EVENTS_PATH
+	$HTCONDOR_JOB_IP_ADDRESS_PATH
 );
 use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
@@ -125,6 +128,7 @@ $SIG{TERM} = sub { my ($sig) = @_ ;
 # now unblock TERM signal in child
 sigprocmask(SIG_UNBLOCK, POSIX::SigSet->new(SIGTERM));
 
+$global_swamp_config ||= getSwampConfig();
 $log->info("starting process loop on bogDir: $bogDir ($PID)");
 while (! $child_done) {
 	# Now read all arun and mrun bog files in $bogDir
@@ -141,6 +145,7 @@ while (! $child_done) {
     		foreach my $jobdir (@$jobdirs) {
 				last if ($child_done);
 				next if (! exists($history->{$jobdir}));
+				next if ($debug); # preserve jobdir in debug mode
         		$log->info("cleanRundir removing $bogDir/$jobdir");
         		if (! use_remove_tree("$bogDir/$jobdir")) {
             		$log->error("cleanRunDir Error - $bogDir/$jobdir remove failed");
@@ -246,10 +251,15 @@ sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfi
 	}
 	move $bogfile, $jobdir;
 	chdir $jobdir;
-	copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
-	create_empty_file("delta.qcow2");
-	create_empty_file("inputdisk.qcow2");
-	create_empty_file("outputdisk.qcow2");
+	if ($bogref->{'use_docker_universe'}) {
+		copy(catfile(getSwampDir(), 'etc', 'docker_htcondor_submit'), $submitfile);
+	}
+	else {
+		copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
+		create_empty_file("delta.qcow2");
+		create_empty_file("inputdisk.qcow2");
+		create_empty_file("outputdisk.qcow2");
+	}
 
 	my $climits;
 	if (isParasoftC($bogref)) {
@@ -269,12 +279,11 @@ sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfi
 	}
 	my $submitbundle = $execrunuid . '_submitbundle.tar.gz';
 	if (open(my $fh, ">>", $submitfile)) {
-		$global_swamp_config ||= getSwampConfig();
 		my $htcondor_assessment_max_retries = $global_swamp_config->get('htcondor_assessment_max_retries') || 3;
 		my $owner = getpwuid($UID);
 		print $fh "\n";
 		print $fh "##### Dynamic Submit File Attributes #####";
-		print $fh "\n";
+		print $fh "\n\n";
 
 		if ($climits) {
 			print $fh "### Concurrency Limits\n";
@@ -282,13 +291,36 @@ sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfi
 			print $fh "\n";
 		}
 
-		print $fh "### Executable\n";
-		print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
+		print $fh "### Job events and ip address path\n";
+		print $fh "+JOB_EVENTS_PATH = \"$HTCONDOR_JOB_EVENTS_PATH\"\n";
+		print $fh "+JOB_IP_ADDRESS_PATH = \"$HTCONDOR_JOB_IP_ADDRESS_PATH\"\n";
 		print $fh "\n";
 
-		print $fh "### Input File Transfer Settings\n";
-		print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
-		print $fh "\n";
+		if ($bogref->{'use_docker_universe'}) {
+			my $docker_container = $bogref->{'platform_image'};
+			print $fh "### Docker Image\n";
+			print $fh "docker_image = " . $docker_container . "\n";
+			print $fh "\n";
+
+			print $fh "### Executable\n";
+			# print $fh "executable = $HTCONDOR_JOB_INPUT_DIR/run.sh\n";
+            # print $fh "arguments = --type=docker\n";
+			print $fh "executable = /bin/bash\n";
+            print $fh "arguments = \"-c 'ulimit -n 1024 && $HTCONDOR_JOB_INPUT_DIR/run.sh --type=docker'\"\n";
+
+			print $fh "### Input File Transfer Settings\n";
+			print $fh "transfer_input_files = $submitbundle\n";
+			print $fh "\n";
+		}
+		else {
+			print $fh "### Executable\n";
+			print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
+			print $fh "\n";
+
+			print $fh "### Input File Transfer Settings\n";
+			print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
+			print $fh "\n";
+		}
 
 		print $fh "### Start PRE- and POST- Script Settings\n";
 		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
@@ -327,7 +359,7 @@ sub vmu_CreateHTCondorAssessmentJob { my ($jobtype, $bogref, $bogfile, $submitfi
 		print $fh "max_retries = $htcondor_assessment_max_retries\n";
 		print $fh "periodic_release = HoldReasonCode == $HTCONDOR_POSTSCRIPT_FAILED && ((NumJobStarts <= $htcondor_assessment_max_retries) && (PostExitCode == $HTCONDOR_POSTSCRIPT_EXIT))\n";
 		print $fh "periodic_remove = HoldReasonCode =?= $HTCONDOR_POSTSCRIPT_FAILED && ((NumJobStarts > $htcondor_assessment_max_retries) || (PostExitCode != $HTCONDOR_POSTSCRIPT_EXIT))\n";
-		print $fh "JobMaxVacateTime = 10\n";
+		print $fh "job_max_vacate_time = 60\n";
 		print $fh "queue\n";
 		close($fh);
 	}
@@ -347,11 +379,15 @@ sub vmu_CreateHTCondorViewerJob { my ($jobtype, $bogref, $bogfile, $submitfile, 
 	}
 	move $bogfile, $jobdir;
 	chdir $jobdir;
-	copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
-	create_empty_file("delta.qcow2");
-	create_empty_file("inputdisk.qcow2");
-	create_empty_file("outputdisk.qcow2");
-
+	if ($bogref->{'use_docker_universe'}) {
+		copy(catfile(getSwampDir(), 'etc', 'docker_htcondor_submit'), $submitfile);
+	}
+	else {
+		copy(catfile(getSwampDir(), 'etc', 'vmu_htcondor_submit'), $submitfile);
+		create_empty_file("delta.qcow2");
+		create_empty_file("inputdisk.qcow2");
+		create_empty_file("outputdisk.qcow2");
+	}
 	my $submitbundle = $execrunuid . '_submitbundle.tar.gz';
 	if (open(my $fh, ">>", $submitfile)) {
 		my $owner = getpwuid($UID);
@@ -359,13 +395,33 @@ sub vmu_CreateHTCondorViewerJob { my ($jobtype, $bogref, $bogfile, $submitfile, 
 		print $fh "##### Dynamic Submit File Attributes #####";
 		print $fh "\n";
 
-		print $fh "### Executable\n";
-		print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
+		print $fh "### Job events and ip address path\n";
+		print $fh "+JOB_EVENTS_PATH = \"$HTCONDOR_JOB_EVENTS_PATH\"\n";
+		print $fh "+JOB_IP_ADDRESS_PATH = \"$HTCONDOR_JOB_IP_ADDRESS_PATH\"\n";
 		print $fh "\n";
 
-		print $fh "### Input File Transfer Settings\n";
-		print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
-		print $fh "\n";
+		if ($bogref->{'use_docker_universe'}) {
+			my $docker_container = $bogref->{'platform_image'};
+            print $fh "### Docker Image\n";
+            print $fh "docker_image = " . $docker_container . "\n";
+            print $fh "\n";
+
+            print $fh "### No Executable\n";
+            print $fh "\n";
+
+            print $fh "### Input File Transfer Settings\n";
+            print $fh "transfer_input_files = $submitbundle\n";
+            print $fh "\n";
+		}
+		else {
+			print $fh "### Executable\n";
+			print $fh "executable = " . construct_vmhostname($execrunuid, '$(CLUSTERID)', '$(PROCID)') . "\n";
+			print $fh "\n";
+
+			print $fh "### Input File Transfer Settings\n";
+			print $fh "transfer_input_files = delta.qcow2, inputdisk.qcow2, outputdisk.qcow2, $submitbundle\n";
+			print $fh "\n";
+		}
 
 		print $fh "### Start PRE- and POST- Script Settings\n";
 		print $fh "+PreCmd = \"../../opt/swamp/bin/vmu_perl_launcher\"\n";
@@ -396,7 +452,7 @@ sub vmu_CreateHTCondorViewerJob { my ($jobtype, $bogref, $bogfile, $submitfile, 
 		print $fh "\n";
 
 		print $fh "### Queue the job\n";
-		print $fh "JobMaxVacateTime = 1200\n";
+		print $fh "job_max_vacate_time = 1200\n";
 		print $fh "queue\n";
 		close($fh);
 	}

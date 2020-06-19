@@ -16,9 +16,6 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 	$global_swamp_config
 );
-use SWAMP::FrameworkUtils qw(
-	generateMongoJson
-);
 our (@EXPORT_OK);
 BEGIN {
     require Exporter;
@@ -61,7 +58,7 @@ sub _mongoSaveAssessmentResult { my ($db_name, $assessment_results) = @_ ;
         }
         # process ERROR results and insert it into MongoDB
         elsif ($file =~ m/\.tar\.gz$/sxmi) {
-            $retCode = insertErrorReportToDB($dbh, $file, $uuid);
+            $retCode = _insertErrorReportToDB($dbh, $uuid, $assessment_results->{'report'});
             if ($retCode == 0) {
                 $log->error("mongoSaveAssessmentResult - Fail inserting $file into MongoDB");
             }
@@ -124,17 +121,15 @@ sub insertScarfToDB { my ($dbh, $scarf_file, $uuid) = @_;
 	return 0;
 }
 
-sub insertErrorReportToDB { my ($dbh, $error_file, $uuid) = @_ ;
+sub _insertErrorReportToDB { my ($dbh, $uuid, $report) = @_ ;
 	my $topdir = 'out';
-	$topdir = 'output' if ($error_file =~ m/outputdisk.tar.gz$/);
-	if (-r $error_file && $dbh) {
+	if ($dbh) {
 		eval {
-			my $report = generateMongoJson($error_file, $topdir);
 			my $coll = $dbh->get_collection($uuid);
 			$coll->insert_one($report);
 		};
 		if ($@) {
-			$log->error("insertErrorReportToDB - error: $@");
+			$log->error("_insertErrorReportToDB - error: $@");
 			return 0;
 		}
 		return 1;

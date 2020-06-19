@@ -25,6 +25,14 @@ use SWAMP::vmu_Support qw(
 	job_database_disconnect
 	getSwampConfig 
 	$global_swamp_config
+	$HTCONDOR_JOB_INPUT_DIR
+	$HTCONDOR_JOB_OUTPUT_DIR
+	$HTCONDOR_JOB_INPUT_MOUNT
+	$HTCONDOR_JOB_OUTPUT_MOUNT
+	$HTCONDOR_JOB_IP_ADDRESS_FILE
+	$HTCONDOR_JOB_EVENTS_FILE
+	$HTCONDOR_JOB_IP_ADDRESS_TTY
+	$HTCONDOR_JOB_EVENTS_TTY
 );
 
 use parent qw(Exporter);
@@ -41,18 +49,28 @@ BEGIN {
 		$VIEWER_STATE_TERMINATING
 		$VIEWER_STATE_TERMINATED
 		$VIEWER_STATE_TERMINATE_FAILED
-		createrunscript
+		createvrunscript
 		copyvruninputs
+		copyuserdatabase
 		getViewerVersion
 		saveViewerDatabase
 		updateClassAdViewerStatus
 		getViewerStateFromClassAd
 		launchViewer
+		identifyViewer
     );
 }
 
 my $log = Log::Log4perl->get_logger(q{});
 my $tracelog = Log::Log4perl->get_logger('runtrace');
+
+sub identifyViewer { my ($bogref) = @_ ;
+	$log->info('Execrunuid: ', $bogref->{'execrunid'}, "\n",
+		'  Platform: ', $bogref->{'platform_identifier'}, "\n",
+		'  Type: ', $bogref->{'platform_type'}, "\n",
+		'  Image: ', $bogref->{'platform_image'}
+	);
+}
 
 #########################
 #	HTCondor ClassAd	#
@@ -118,7 +136,7 @@ sub getViewerStateFromClassAd { my ($project_uuid, $viewer_name) = @_ ;
     my $command = qq{condor_status $poolarg -any -af:V, Name SWAMP_vmu_viewer_state SWAMP_vmu_viewer_status SWAMP_vmu_viewer_name SWAMP_vmu_viewer_vmip SWAMP_vmu_viewer_apikey SWAMP_vmu_user_uuid SWAMP_vmu_viewer_projectid SWAMP_vmu_viewer_instance_uuid SWAMP_vmu_viewer_url_uuid -constraint \"isString(SWAMP_vmu_viewer_status)\"};
     my ($output, $status) = systemcall($command);
     if ($status) { 
-        my $error_message = "condor_status $poolarg failed - status: $status output: $output";
+        my $error_message = "<$command> failed - $status $output";
         $log->error($error_message);
         return {'error' => $error_message};
     }
@@ -153,12 +171,17 @@ sub getViewerStateFromClassAd { my ($project_uuid, $viewer_name) = @_ ;
 #############################
 
 sub _set_var { my ($name, $value, $file) = @_ ;
-    my ($output, $status) = systemcall("echo $name=$value >> $file");
+    my ($output, $status) = systemcall("echo $name=\"$value\" >> $file");
 	if ($status) {
-        $log->error("Cannot set $name=$value in: $file $OS_ERROR");
+        $log->error("Cannot set $name=\"$value\" in: $file $OS_ERROR");
 		return 0;
 	}
 	return 1;
+}
+
+sub _set_env_var { my ($name, $value, $file) = @_ ;
+	my $retval = _set_var('export ' . $name, $value, $file);
+	return $retval;
 }
 
 #	Common Files
@@ -166,52 +189,97 @@ sub _set_var { my ($name, $value, $file) = @_ ;
 #	checktimeout.pl
 #	swamp-shutdown-service
 
-sub createrunscript { my ($bogref, $dest) = @_ ;
+sub createvrunscript { my ($bogref, $dest) = @_ ;
     my $ret    = 1;
-
+	$global_swamp_config ||= getSwampConfig();
     my $basedir = getSwampDir();
 
-	# set CHECKTIMEOUT_FREQUENCY in run.sh
-	# set PROJECT in run.sh
-	# set APIKEY in run.sh
-	# cat vrun.sh into run.sh
-	my $vrunsh = "$basedir/thirdparty/codedx/swamp/vrun.sh";
-	my $inputvrunsh = "${dest}/run.sh";
-	$global_swamp_config ||= getSwampConfig();
-	my $checktimeout_frequency = $global_swamp_config->get('vruntimeout_frequency') // '10';
-	$ret = 0 if (! _set_var('CHECKTIMEOUT_FREQUENCY', $checktimeout_frequency, $inputvrunsh));
-	$ret = 0 if (! _set_var('PROJECT', $bogref->{'urluuid'}, $inputvrunsh));
-    my ($output, $status) = systemcall("cat $vrunsh >> $inputvrunsh");
-	if ($status) {
-        $log->error("Cannot add: $vrunsh to: $inputvrunsh $OS_ERROR");
+	my $CHECKTIMEOUT_FREQUENCY = $global_swamp_config->get('vruntimeout_frequency') // '10';
+	my $CHECKTIMEOUT_DURATION = $global_swamp_config->get('vruntimeout_duration') // '28800';
+	my $CHECKTIMEOUT_LASTLOG = $global_swamp_config->get('vruntimeout_lastlog') // '3600'; 
+
+	# initialize values for vm universe
+	# specify the run.sh template for vm universe
+	my $vrunsh = "$basedir/thirdparty/codedx/swamp/vmu_vrun_nobake.sh";
+	if ($bogref->{'use_baked_viewer'}) {
+		$vrunsh = "$basedir/thirdparty/codedx/swamp/vmu_vrun.sh";
+	}
+	# specify the run-params.sh script location for setting up environment
+	my $runparamssh = catfile($dest, 'run-params.sh');
+	my $JOB_INPUT_DIR = $HTCONDOR_JOB_INPUT_MOUNT;
+	my $JOB_OUTPUT_DIR = $HTCONDOR_JOB_OUTPUT_MOUNT;
+	my $SWAMP_EVENT_FILE = $HTCONDOR_JOB_EVENTS_TTY;
+	my $IP_ADDR_FILE = $HTCONDOR_JOB_IP_ADDRESS_TTY;
+	my $MACHINE_SHUTDOWN_COMMAND = "'/sbin/shutdown -h now'";
+
+	# initialize for docker universe
+	if ($bogref->{'use_docker_universe'}) {
+		# specify the run.sh template for docker universe
+		$vrunsh = "$basedir/thirdparty/codedx/swamp/docker_vrun_nobake.sh";
+		if ($bogref->{'use_baked_viewer'}) {
+			$vrunsh = "$basedir/thirdparty/codedx/swamp/docker_vrun.sh";
+		}
+		# specify the run-params.sh script location for setting up environment
+		$runparamssh = 'run-params.sh';
+		$JOB_INPUT_DIR = catfile('$_CONDOR_SCRATCH_DIR', $HTCONDOR_JOB_INPUT_DIR);
+		$JOB_OUTPUT_DIR = catfile('$_CONDOR_SCRATCH_DIR', $HTCONDOR_JOB_OUTPUT_DIR);
+		$SWAMP_EVENT_FILE = catfile($JOB_OUTPUT_DIR, $HTCONDOR_JOB_EVENTS_FILE);
+		$IP_ADDR_FILE = catfile($JOB_OUTPUT_DIR, $HTCONDOR_JOB_IP_ADDRESS_FILE);
+		$MACHINE_SHUTDOWN_COMMAND = "'supervisorctl shutdown'";
+	}
+
+	# generic values
+	my $SWAMP_LOG_FILE = catfile($JOB_OUTPUT_DIR, 'run.out');
+	my $TOMCAT_LOG_DIR = '/opt/tomcat/logs';
+	my $SKIPPED_BUNDLE = catfile($JOB_OUTPUT_DIR, 'skippedbundle');
+	my $VIEWER_STARTEPOCH_FILE = catfile($JOB_OUTPUT_DIR, 'run.epoch');
+
+	# set environment variables in $runparamssh
+	$ret = 0 if (! _set_env_var('PROJECT', $bogref->{'urluuid'}, $runparamssh));
+	$ret = 0 if (! _set_env_var('APIKEY', $bogref->{'apikey'}, $runparamssh));
+	$ret = 0 if (! _set_env_var('JOB_INPUT_DIR', $JOB_INPUT_DIR, $runparamssh));
+	$ret = 0 if (! _set_env_var('JOB_OUTPUT_DIR', $JOB_OUTPUT_DIR, $runparamssh));
+	$ret = 0 if (! _set_env_var('SWAMP_EVENT_FILE', $SWAMP_EVENT_FILE, $runparamssh));
+	$ret = 0 if (! _set_env_var('IP_ADDR_FILE', $IP_ADDR_FILE, $runparamssh));
+
+	$ret = 0 if (! _set_env_var('SWAMP_LOG_FILE', $SWAMP_LOG_FILE, $runparamssh));
+	$ret = 0 if (! _set_env_var('TOMCAT_LOG_DIR', $TOMCAT_LOG_DIR, $runparamssh));
+	$ret = 0 if (! _set_env_var('SKIPPED_BUNDLE', $SKIPPED_BUNDLE, $runparamssh));
+
+    $ret = 0 if (! _set_env_var('VIEWER', $bogref->{'viewer'}, $runparamssh));
+
+    $ret = 0 if (! _set_env_var('VIEWER_STARTEPOCH_FILE', $VIEWER_STARTEPOCH_FILE, $runparamssh));
+	$ret = 0 if (! _set_env_var('CHECKTIMEOUT_FREQUENCY', $CHECKTIMEOUT_FREQUENCY, $runparamssh));
+    $ret = 0 if (! _set_env_var('CHECKTIMEOUT_DURATION', $CHECKTIMEOUT_DURATION, $runparamssh));
+    $ret = 0 if (! _set_env_var('CHECKTIMEOUT_LASTLOG', $CHECKTIMEOUT_LASTLOG, $runparamssh));
+    $ret = 0 if (! _set_env_var('MACHINE_SHUTDOWN_COMMAND', $MACHINE_SHUTDOWN_COMMAND, $runparamssh));
+
+	# run.sh, checketimeout* and docker-viewer-management-service are already in the baked viewer
+	return $ret if ($bogref->{'use_baked_viewer'});
+
+	# copy run.sh to input directory run.sh
+	my $inputvrunsh = catfile($dest, "run.sh");
+	if (! copy($vrunsh, $inputvrunsh)) {
+		$log->error("Cannot add $vrunsh to $inputvrunsh $OS_ERROR");
+		$ret = 0;
+	}
+	chmod 0755, $inputvrunsh;
+
+	# copy vrunchecktimeout to input directory
+	my $file = "$basedir/thirdparty/common/checktimeout";
+	if (! copy($file, $dest)) {
+		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 
-	# set VIEWER in checktimeout
-	# set CHECKTIMEOUT_DURATION in checktimeout
-	# set CHECKTIMEOUT_LASTLOG in checktimeout
-	# copy checktimeout to vm input directory
-	my $checktimeout = "$basedir/thirdparty/common/vrunchecktimeout";
-	my $inputchecktimeout = "${dest}/checktimeout";
-	$ret = 0 if (! _set_var('VIEWER', $bogref->{'viewer'}, $inputchecktimeout));
-	my $checktimeout_duration = $global_swamp_config->get('vruntimeout_duration') // '28800';
-	$ret = 0 if (! _set_var('CHECKTIMEOUT_DURATION', $checktimeout_duration, $inputchecktimeout));
-	my $checktimeout_lastlog = $global_swamp_config->get('vruntimeout_lastlog') // '3600';
-	$ret = 0 if (! _set_var('CHECKTIMEOUT_LASTLOG', $checktimeout_lastlog, $inputchecktimeout));
-    ($output, $status) = systemcall("cat $checktimeout >> $inputchecktimeout");
-	if ($status) {
-        $log->error("Cannot add: $checktimeout to: $inputchecktimeout $OS_ERROR");
-		$ret = 0;
-	}
-
-	# copy checktimeout.pl to vm input directory
-	my $file = "$basedir/thirdparty/common/checktimeout.pl";
+	# copy checktimeout.pl to input directory
+	$file = "$basedir/thirdparty/common/checktimeout.pl";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	
-	# copy swamp-shutdown-service to vm input directory
+	# copy swamp-shutdown-service to input directory
 	$file = "$basedir/thirdparty/common/swamp-shutdown-service";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
@@ -235,60 +303,56 @@ sub createrunscript { my ($bogref, $dest) = @_ ;
 #	checktimeout.pl
 #	logback.xml
 #	codedx.props
-#	codedx_viewerdb.tar.gz
 
 sub copyvruninputs { my ($bogref, $dest) = @_ ;
 	my $ret = 1;
 	my $basedir = getSwampDir();
-	# copy codedx.war to vm input directory
+	# copy codedx.war to input directory
 	my $file = "$basedir/thirdparty/codedx/vendor/codedx.war";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
-	# copy empty codedx database sql script to vm input directory
+	# copy empty codedx database sql script to input directory
 	$file = "$basedir/thirdparty/codedx/swamp/emptydb-codedx.sql";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
-	# copy empty mysql database sql script to vm input directory
+	# copy empty mysql database sql script to input directory
 	$file = "$basedir/thirdparty/codedx/swamp/emptydb-mysql-codedx.sql";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
-	# copy flushprivs.sql to vm input directory
+	# copy flushprivs.sql to input directory
 	$file = "$basedir/thirdparty/common/flushprivs.sql";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
-	# copy resetdb-codedx.sql to vm input directory
+	# copy resetdb-codedx.sql to input directory
 	$file = "$basedir/thirdparty/codedx/swamp/resetdb-codedx.sql";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
 	
-	# set PROJECT in backup_viewerdb.sh
-	# cat codedx_viewerdb.sh into backup_viewerdb.sh
+	# copy codedx_backup_viewerdb.sh to backup_viewerdb.sh
 	my $codedx_viewerdbsh = "$basedir/thirdparty/codedx/swamp/codedx_viewerdb.sh";
 	my $inputbackup_viewerdbsh = "${dest}/backup_viewerdb.sh";
-	$ret = 0 if (! _set_var('PROJECT', $bogref->{'urluuid'}, $inputbackup_viewerdbsh));
-    my ($output, $status) = systemcall("cat $codedx_viewerdbsh >> $inputbackup_viewerdbsh");
-	if ($status) {
-        $log->error("Cannot add: $codedx_viewerdbsh to: $inputbackup_viewerdbsh $OS_ERROR");
+	if (! copy($codedx_viewerdbsh, $inputbackup_viewerdbsh)) {
+		$log->error("Cannot copy $codedx_viewerdbsh to $inputbackup_viewerdbsh $OS_ERROR");
 		$ret = 0;
 	}
 	
-	# copy logback.xml to vm input directory
+	# copy logback.xml to input directory
 	$file = "$basedir/thirdparty/codedx/swamp/logback.xml";
 	if (! copy($file, $dest)) {
 		$log->error("Cannot copy $file to $dest $OS_ERROR");
 		$ret = 0;
 	}
-	# copy codedx.props to vm input directory
+	# copy codedx.props to input directory
 	# set swa.admin.system-key in codedx.props
 	my $codedxprops = "$basedir/thirdparty/codedx/swamp/codedx.props";
 	my $inputcodedxprops = "${dest}/codedx.props";
@@ -298,24 +362,36 @@ sub copyvruninputs { my ($bogref, $dest) = @_ ;
 	}
 	$ret = 0 if (! _set_var('swa.admin.system-key', $bogref->{'apikey'}, $inputcodedxprops));
 	
+    return $ret;
+}
+
+#	codedx_viewerdb.tar.gz
+
+sub copyuserdatabase { my ($bogref, $dest) = @_ ;
     # It is OK to not specify a db_path, this just means it has never been persisted
+	my $ret = 1;
 	my $db_path = $bogref->{'db_path'};
     if (defined($db_path)) {
+		$log->info("copyuserdatabase - user database: $db_path");
 		if (! -r $db_path) {
-			$log->error("file: $db_path not found");
+			$log->error("copyuserdatabase - file: $db_path not found or not readable");
+			$ret = 0;
 		}
 		else {
-			my ($output, $status) = systemcall("tar -C $dest -xzf $db_path");
+			my ($output, $status, $error_output) = systemcall("tar -C $dest -xzf $db_path");
 			if ($status) {
-				# Error, but non-fatal.
-				$log->warn("untar failed: $db_path to $dest error: <$output>");
+				$log->error("copyuserdatabase - untar failed: $db_path to $dest output: <$output> error: <$error_output>");
+				$ret = 0;
 			}
 			else {
-				$log->info("untar succeeded: $db_path to $dest");
+				$log->info("copyuserdatabase - untar succeeded: $db_path to $dest");
 			}
 		}
     }
-    return $ret;
+	else {
+		$log->info("copyuserdatabase - no user database specified");
+	}
+	return $ret;
 }
 
 #####################
@@ -361,7 +437,7 @@ sub getViewerVersion { my ($bogref) = @_ ;
 	my $command = "unzip -p $war_file $codedx_properties | grep 'version'";
     my ($output, $status) = systemcall($command);
 	if ($status) {
-		$log->error("getViewerVersion failed for: $war_file - status: $status output: $output");
+		$log->error("getViewerVersion <$command> failed - $status $output");
 		return $viewerversion;
 	}
 	$viewerversion = $output;
@@ -389,7 +465,7 @@ sub saveViewerDatabase { my ($bogref, $vmhostname, $outputfolder) = @_ ;
 	my $viewerdbfolder = catdir(rootdir(), 'swamp', 'SCAProjects', $bogref->{'projectid'}, 'V-Runs', $bogref->{'viewer_uuid'});
 	my $viewerdbpath = catfile($viewerdbfolder, $stampeddbname);
 	if (! use_make_path($viewerdbfolder)) {
-        $log->error("Error - make_path failed for: $viewerdbfolder");
+        $log->error("Error - make_path $viewerdbfolder failed");
 		# this is a fatal error and store_viewer is not invoked
 		return 0;
 	}

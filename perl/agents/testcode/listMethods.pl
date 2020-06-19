@@ -28,10 +28,10 @@ sub listMethods { my ($client) = @_ ;
 
 my $config = getSwampConfig();
 my $host = $config->get('agentMonitorHost');
-my $lport = $config->get('agentMonitorPort');
-my $amport = $config->get('agentMonitorJobPort');
+my $amport = $config->get('agentMonitorPort');
+my $lpport = $config->get('launchPadPort');
 
-my $lclient = RPC::XML::Client->new("http://$host:$lport");
+my $lclient = RPC::XML::Client->new("http://$host:$lpport");
 my $amclient = RPC::XML::Client->new("http://$host:$amport");
 listMethods($lclient);
 listMethods($amclient);

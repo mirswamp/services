@@ -37,6 +37,10 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 	$global_swamp_config
 	timing_log_assessment_timepoint
+	$HTCONDOR_JOB_INPUT_DIR
+	$HTCONDOR_JOB_OUTPUT_DIR
+	$HTCONDOR_JOB_IP_ADDRESS_PATH
+	$HTCONDOR_JOB_EVENTS_PATH
 );
 $global_swamp_config ||= getSwampConfig();
 use SWAMP::vmu_AssessmentSupport qw(
@@ -49,7 +53,6 @@ use SWAMP::vmu_AssessmentSupport qw(
 	updateClassAdAssessmentStatus
 );
 
-$global_swamp_config ||= getSwampConfig();
 my $log;
 my $tracelog;
 my $execrunuid;
@@ -73,13 +76,12 @@ sub populateInputDirectory { my ($bogref, $inputfolder) = @_ ;
 		$log->error("populateInputDirectory - copyInputs failed with $inputfolder");
 		$retval = 0;
 	}
-	$log->debug("Adding arun.sh to $inputfolder");
-	copy(catfile(getSwampDir(), 'bin', 'arun.sh'), catfile($inputfolder, 'run.sh'));
 	$result = createAssessmentConfigs($bogref, $inputfolder, $builderUser, $builderPassword);
 	if (! $result) {
 		$log->error("populateInputDirectory - createAssessmentConfigs failed with $inputfolder");
 		$retval = 0;
 	}
+	chmod 0755, catfile($inputfolder, 'run.sh'); 
 	listDirectoryContents($inputfolder);
 	return $retval;
 }
@@ -106,7 +108,6 @@ sub extractBogFile { my ($execrunuid, $outputfolder) = @_ ;
 sub exit_prescript_with_error {
 	if ($log) {
 		$log->info("Exiting $PROGRAM_NAME ($PID) with error");
-		$log->info("Unlinking delta, input, and output disks for HTCondor");
 	}
 	unlink 'delta.qcow2' if (-e 'delta.qcow2');
 	unlink 'inputdisk.qcow2' if (-e 'inputdisk.qcow2');
@@ -142,9 +143,9 @@ listDirectoryContents();
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
-my $inputfolder = q{input};
+my $inputfolder = $HTCONDOR_JOB_INPUT_DIR;
 mkdir($inputfolder);
-my $outputfolder = q{output};
+my $outputfolder = $HTCONDOR_JOB_OUTPUT_DIR;
 mkdir($outputfolder);
 
 my $job_status_message_suffix = '';
@@ -153,15 +154,15 @@ if ($numjobstarts > 0) {
 	$job_status_message_suffix = " retry($numjobstarts/$htcondor_assessment_max_retries)";
 }
 
-my $job_status_message = 'Unable to Start VM' . $job_status_message_suffix;
+my $job_status_message = 'Unable to Start ' . $job_status_message_suffix;
 my $bogref = extractBogFile($execrunuid, $outputfolder);
 if (! $bogref) {
 	$log->error("extractBogFile failed for: $execrunuid");
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, 'null', 'null', $job_status_message);
 	exit_prescript_with_error();
 }
-
 identifyAssessment($bogref);
+
 my $user_uuid = $bogref->{'userid'} || 'null';
 my $projectid = $bogref->{'projectid'} || 'null';
 
@@ -171,22 +172,30 @@ if (! $status) {
 	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 	exit_prescript_with_error();
 }
-my $imagename = createQcow2Disks($bogref, $inputfolder, $outputfolder);
-if (! $imagename) {
-	$log->error("createQcow2Disks failed for: $execrunuid");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
-	exit_prescript_with_error();
+
+my $platform_image = $bogref->{'platform_image'};
+if (! $bogref->{'use_docker_universe'}) {
+	if (! createQcow2Disks($platform_image, $inputfolder, $outputfolder)) {
+		$log->error("createQcow2Disks failed for: $execrunuid $platform_image");
+		updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
+		exit_prescript_with_error();
+	}
+	if (! patchDeltaQcow2ForInit($platform_image, $vmhostname)) {
+		$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $platform_image $vmhostname");
+		updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
+		exit_prescript_with_error();
+	}
+
+	create_empty_file($HTCONDOR_JOB_EVENTS_PATH);
+	create_empty_file($HTCONDOR_JOB_IP_ADDRESS_PATH);
+	$log->info("Starting virtual machine for: $execrunuid $platform_image $vmhostname");
+	$job_status_message = 'Starting virtual machine' . $job_status_message_suffix;
 }
-if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
-	$log->error("patchDeltaQcow2ForInit failed for: $execrunuid $imagename $vmhostname");
-	updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
-	exit_prescript_with_error();
+else {
+	$log->info("Starting docker container for: $execrunuid $platform_image $vmhostname");
+	$job_status_message = 'Starting docker container' . $job_status_message_suffix;
 }
 
-create_empty_file('JobVMEvents.log');
-create_empty_file('vmip.txt');
-$log->info("Starting virtual machine for: $execrunuid $imagename $vmhostname");
-$job_status_message = 'Starting virtual machine' . $job_status_message_suffix;
 updateClassAdAssessmentStatus($execrunuid, $vmhostname, $user_uuid, $projectid, $job_status_message);
 updateExecutionResults($execrunuid, {
 	'status'						=> $job_status_message,
@@ -194,13 +203,14 @@ updateExecutionResults($execrunuid, {
 	'vm_hostname'					=> $vmhostname,
 	'vm_username'					=> $builderUser,
 	'vm_password'					=> $builderPassword,
-	'vm_image'						=> $imagename,
+	'vm_image'						=> $platform_image,
 	'tool_filename'					=> $bogref->{'toolpath'},
 	'run_date'						=> strftime("%Y-%m-%d %H:%M:%S", gmtime(time())),
 });
 
 listDirectoryContents();
-$log->info("Starting vmu_MonitorAssessment for: $execrunuid $imagename $vmhostname");
+
+$log->info("Starting vmu_MonitorAssessment for: $execrunuid $platform_image $vmhostname");
 if (my $pid = fork()) {
 	# Parent
 	$log->info("vmu_MonitorAssessment $execrunuid pid: $pid");

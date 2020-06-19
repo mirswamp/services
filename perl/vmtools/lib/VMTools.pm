@@ -20,7 +20,6 @@ use lib ("$FindBin::Bin/lib", "$FindBin::Bin/../perl5", "/opt/swamp/perl5");
 # TODO: currently relies upon module existing in /opt/swamp/perl5, consider
 # packaging VMTools such that you don't have to rely on an absolute path
 use SWAMP::vmu_Support qw(
-    insertIntoInit 
     getLoggingConfigString
     systemcall
 );
@@ -428,7 +427,7 @@ sub createImages {
         my $osimage = $imagename;
         $osimage =~ s/sysprep//msg;
         $osimage =~ s/wkstn//msg;
-        ( $ostype, $status ) = insertIntoInit( $osimage, $script, $runshcmd, $vmname, $imagename );
+        ( $ostype, $status ) = SWAMP::vmu_Support::_insertIntoInit( $osimage, $script, $runshcmd, $vmname, $imagename );
         if ( $status == 1 ) {    # error already emitted
             return $status;
         }

@@ -34,6 +34,8 @@ use SWAMP::vmu_Support qw(
 	construct_vmhostname
 	getUUID
 	launchPadStart
+	platformIdentifierToImage
+	isDCPlatform
 	$LAUNCHPAD_SUCCESS
     $LAUNCHPAD_BOG_ERROR
     $LAUNCHPAD_FILESYSTEM_ERROR
@@ -45,7 +47,6 @@ use SWAMP::vmu_Support qw(
 );
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_LAUNCHING
-	getViewerStateFromClassAd
 	updateClassAdViewerStatus
 );
 
@@ -128,8 +129,14 @@ sub _launchViewer { my ($server, $options) = @_ ;
 	# This is now the URL for the VM instead of projectid.
 	# It needs to persist for THIS VM, but be unique next time.
 	$options->{'urluuid'} = qq{proxy-}.uri_escape(getUUID()); 
-	$options->{'platform'} = $global_swamp_config->get('master.viewer');
+	$options->{'platform_identifier'} = $global_swamp_config->get('master.viewer');
+	$options->{'platform_type'} = $global_swamp_config->get('master.viewer.type');
+	$options->{'platform_type'} = 'VM' if (! $options->{'platform_type'});
+	$options->{'platform_image'} = platformIdentifierToImage($options);
 	$options->{'vmhostname'} = 'vswamp';
+	$options->{'use_docker_universe'} = isDCPlatform($options->{'platform_type'});
+	# FIXME this is temporary for switching on use_baked_viewer
+	$options->{'use_baked_viewer'} = 1;
 	$log->info("_launchViewer: invoking launchPadStart options: ", sub {use Data::Dumper; Dumper($options);});
 	updateClassAdViewerStatus($options->{'execrunid'}, $VIEWER_STATE_LAUNCHING, 'Launching viewer', $options);
 	if ((my $status = launchPadStart($options)) != $LAUNCHPAD_SUCCESS) {

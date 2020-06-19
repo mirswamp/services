@@ -167,7 +167,7 @@ my @binfiles = glob("vmu_*.pl");
 my @libfiles = glob("lib/SWAMP/*.pm");
 my @viewercommonfiles = glob("../../../deployment/Common/*");
 my @viewercodedxfiles = glob("../../../deployment/SecureDecisions/*");
-my @otherfiles = qw(arun.sh vmu_perl_launcher vmu_swamp_monitor);
+my @otherfiles = qw(vmu_perl_launcher vmu_swamp_monitor);
 
 my $bin_dst = '/opt/swamp/bin';
 my $lib_dst = '/opt/swamp/perl5/SWAMP';
@@ -211,6 +211,7 @@ handle_files($tpcs_dst, [@viewercodedxfiles]);
 handle_file('../../../deployment/swamp/scripts/swampd-common', '/etc/init.d/swamp');
 # condor submit
 handle_file('../../../deployment/swamp/config/vmu_swampinabox_htcondor_submit', '/opt/swamp/etc/vmu_htcondor_submit');
+handle_file('../../../deployment/swamp/config/docker_swampinabox_htcondor_submit', '/opt/swamp/etc/docker_htcondor_submit');
 handle_file('../../../deployment/swamp/config/libvirt_swamp_script.awk', '/opt/swamp/libexec/condor/libvirt_swamp_script.awk');
 # log4perl
 handle_file('../../../deployment/swamp/config/log4perl.conf', '/opt/swamp/etc/log4perl.conf');

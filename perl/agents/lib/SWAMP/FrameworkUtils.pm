@@ -10,430 +10,589 @@ use strict;
 use warnings;
 use English '-no_match_vars';
 use File::Basename qw(basename dirname);
-use File::Spec qw(catfile);
-use XML::LibXML;
-use XML::LibXSLT;
-use SWAMP::vmu_Support qw(getSwampDir);
-use JSON;
-# required for MongoDB
-use MongoDB;
-use parent qw(Exporter);
+use File::Spec::Functions;
+use XML::Simple;
+use JSON qw(to_json);
 
+use SWAMP::vmu_Support qw(
+	trim
+	getSwampDir
+	systemcall
+);
+
+use parent qw(Exporter);
 our (@EXPORT_OK);
 BEGIN {
     require Exporter;
-    @EXPORT_OK = qw(generateErrorJson saveErrorJson generateMongoJson);
-}
-
-my $stdDivPrefix = q{ } x 2;
-my $stdDivChars  = q{-} x 10;
-my $stdDiv       = "$stdDivPrefix$stdDivChars";
-
-# statusOutObj = ReadStatusOut(filename)
-#
-# ReadStatusOut returns a hash containing the parsed status.out file.
-#
-# A status.out file consists of task lines in the following format with the
-# names of these elements labeled
-#
-#     PASS: the-task-name (the-short-message)           40.186911s
-#
-#     |     |              |                            |        |
-#     |     task           shortMsg                     dur      |
-#     status                                               durUnit
-#
-# Each task may also optional have a multi-line message (the msg element).
-# The number of spaces before the divider are removed from each line and the
-# line-feed is removed from the last line of the message
-#
-#     PASS: the-task-name (the-short-message)           40.186911s
-#       ----------
-#       line A
-#       line A+1
-#       ----------
-# The returned hash contains a hash for each task.  The key is the name of the
-# task.  If there are duplicate task names, duplicate keys are named using the
-# scheme <task-name>#<unique-number>.
-#
-# The hash for each task contains the following keys
-#
-#   status    - one of PASS, FAIL, SKIP, or NOTE
-#   task      - name of the task
-#   shortMsg  - shortMsg or undef if not present
-#   msg       - msg or undef if not present
-#   dur       - duration is durUnits or undef if not present
-#   durUnit   - durUnits: 's' is for seconds
-#   linenum   - line number where task started in file
-#   name      - key used in hash (usually the same as task)
-#   text      - unparsed text
-#
-# Besides a hash for each task, the hash function returned from ReadStatusOut
-# also contains the following additional hash elements:
-#
-#   #order     - reference to an array containing references to the task hashes
-#                in the order they appeared in the status.out file
-#   #errors    - reference to an array of errors in the status.out file
-#   #warnings  - reference to an array of warnings in the status.out file
-#   #filename  - filename read
-#
-# If there are no errors or warnings (the arrays are 0 length), then exists can
-# be used to check for the existence of a task.  The following would correctly
-# check if that run succeeded:
-#
-# my $s = ReadStatusOut($filename)
-# if (!@{$s->{'#errors'}} && !@{$s->{'#warnings'}})  {
-#     if (exists $s->{all} && $s->{all}{status} eq 'PASS')  {
-#         print "success\n";
-#     }  else  {
-#         print "no success\n";
-#     }
-# }  else  {
-#     print "bad status.out file\n";
-# }
-#
-#
-sub ReadStatusOut { my ($lines) = @_ ;
-	my %status = (
-		'#order'	=> [],
-		'#errors'	=> [],
-		'#warnings'	=> [],
+    @EXPORT_OK = qw(
+		generateStatusOutJson
+		addHeaderJson
+		saveStatusOutJson
 	);
-	my $lineNum = 0;
-	my $msgLineNum;
-	# required fields
-	my ($name, $status);
-	while ($lineNum < scalar(@$lines)) {
-		my $line = $lines->[$lineNum];
-		# optional fields
-		
-        my ($shortMsg, $msg, $dur, $durUnit);
-		if ($line =~ m/^[A-Z]+\:/) {
-			($status, my $rest) = split '\:', $line, 2;
-			($name, $rest) = split ' ', $rest, 2;
-            if ($rest && ($rest =~ m/^\(.*\)/)) {
-				($shortMsg, $rest) = split '\)', $rest, 2;
-				$shortMsg =~ s/^\(//;
+}
+
+# if specific error files are larger than this value in bytes
+# they will be initially collapsed in the error report
+my $MAX_INITIAL_COLLAPSE_SIZE = 2048;
+
+sub _addSourceFiles { my ($topdir, $output_files) = @_;
+	my $source_compiles_file = q{source-compiles.xml};
+	if (defined($output_files->{'buildConf'}->{'source-compiles'})) {
+		$source_compiles_file = $output_files->{'buildConf'}->{'source-compiles'};
+	}
+	elsif (defined($output_files->{'buildConf'}->{'no-build-failures'})) {
+		$source_compiles_file = $output_files->{'buildConf'}->{'no-build-failures'};
+	}
+	my $source_xml;
+	my $source_compiles_path = catfile($topdir, $source_compiles_file);
+	# source-compiles.xml should be at the topdir level
+	# if it is not there, look in the build archive
+	if (-f $source_compiles_path && -r $source_compiles_path) {
+		$source_xml = $source_compiles_path;
+	}
+	else {
+		my $archive_content = _addArchiveFileContent($topdir, $output_files, 'buildConf', $source_compiles_file);
+		return if (! $archive_content || !exists($archive_content->{'content'}));
+		$source_xml = $archive_content->{'content'};
+	}
+	my $success_source_files = [];
+	my $fail_source_files = [];
+	my $parsed_xml = eval {XMLin($source_xml);};
+	if (defined($parsed_xml)) {
+		foreach my $source (@{$parsed_xml->{'source-compile'}}) {
+			my $source_file = $source->{'source-file'};
+			my $exit_code = $source->{'exit-code'};
+			if (! $exit_code) {
+				push @$success_source_files, $source_file;
 			}
-			if ($rest && ($rest =~ m/^(\d+(?:\.\d+)?)([a-zA-Z]*)\s*.*$/)) {
-				($dur, $durUnit) = ($1, $2);
+			else {
+				my $output = $source->{'output'};
+				push @$fail_source_files, $source_file . "\n" . $output;
 			}
-			# look ahead for msg
-			$msgLineNum = $lineNum + 1;
-			my $inMsgLine = 0;
-			while ($msgLineNum < scalar(@$lines)) {
-				my $nextLine = $lines->[$msgLineNum];
-				last if ($nextLine =~ m/^[A-Z]+\:/);
-				if ($nextLine !~ m/^\s*$/) {
-					# msg start marker
-					if ($nextLine eq $stdDiv) {
-						$inMsgLine = ! $inMsgLine;
-						if (! $inMsgLine) {
-							$msgLineNum += 1;
-							last;
-						}
-					}
-					# add line to msg
-					elsif ($inMsgLine) {
-						$msg .= $nextLine;
-					}
+		}
+	}
+	my $source_files = {
+		'success'	=> $success_source_files,
+		'fail'		=> $fail_source_files,
+	};
+	return $source_files;
+}
+
+sub _addStatusMessage { my ($statusOut) = @_;
+	my $first_failure = $statusOut->{'meta'}->{'first_failure'};
+	my $short_message = $statusOut->{'status'}->{$first_failure}->{'short'};
+	my $long_message = $statusOut->{'status'}->{$first_failure}->{'long'};
+	my $content;
+	# both short and long message exists
+	if (defined($short_message) && defined($long_message)) {
+		$content = $short_message . "\n" . $long_message;
+	}
+	# only short message exists
+	elsif (defined($short_message)) {
+		$content = $short_message;
+	}
+	# only long message exists
+	elsif (defined($long_message)) {
+		$content = $long_message;
+	}
+	# neither short nor long message exists
+	else {
+		$content = q{Internal Error};
+	}
+	return $content;
+}
+
+my $archiveFileKeys = {
+	'buildConf'			=> {
+		'archive'	=> 'build-archive',
+		'dir'		=> 'build-dir',
+		'alt-dir'	=> 'build-root-dir',
+	},
+	'resultsConf'		=> {
+		'archive'	=> 'results-archive',
+		'dir'		=> 'results-dir',
+	},
+	'parsedResultsConf'	=> {
+		'archive'	=> 'parsed-results-archive',
+		'dir'		=> 'parsed-results-dir',
+	}
+};
+
+sub _contentFileFromArchive { my ($archive, $file) = @_ ;
+	my $command = qq{tar -O -xzf $archive $file};
+	my ($output, $status, $error_output) = systemcall($command, 1);
+	return if ($status);
+	return $output;
+}
+
+sub _addArchiveFileContent { my ($topdir, $output_files, $archive_key, $filename_or_key) = @_ ;
+	return if (! defined($output_files->{$archive_key}));
+	my $archive = $output_files->{$archive_key}->{$archiveFileKeys->{$archive_key}->{'archive'}};
+	my $dir = $output_files->{$archive_key}->{$archiveFileKeys->{$archive_key}->{'dir'}};
+	if (! $dir && defined($archiveFileKeys->{$archive_key}->{'alt-dir'})) {
+		$dir = $output_files->{$archive_key}->{$archiveFileKeys->{$archive_key}->{'alt-dir'}};
+	}
+	return if (! $archive || ! $dir);
+	$archive = catfile($topdir, $archive);
+	# first look for filename_or_key as key in archive hash
+	my $output_filename = $output_files->{$archive_key}->{$filename_or_key};
+	# if not found in archive hash then assume it is a filename
+	$output_filename = $filename_or_key if (! defined($output_filename));
+	# file path starts from dir
+	$output_filename = catfile($dir, $output_filename);
+	my $content = _contentFileFromArchive($archive, $output_filename);
+	return if (! $content);
+	my $retval = {
+		'name'		=> $output_filename,
+		'content'	=> $content,
+	};
+	return $retval;
+}
+
+sub _addFlatFileContent { my ($topdir, $output_files, $filename_or_key) = @_ ;
+	# first look for filename_or_key as key in top level hash
+	my $output_filename = $output_files->{$filename_or_key};
+	# if not found in top level hash then assume it is a filename
+	$output_filename = $filename_or_key if (! defined($output_filename));
+	# file path starts from topdir
+	$output_filename = catfile($topdir, $output_filename);
+	if (open(my $fh, '<', $output_filename)) {
+		my $content = do { local $/; <$fh> };
+		close($fh);
+		my $retval = {
+			'name'		=> $output_filename,
+			'content'	=> $content,
+		};
+		return $retval;
+	}
+	return;
+}
+
+sub _addFileContent { my ($topdir, $output_files, $archive_key, $filename_or_key) = @_ ;
+	# look in top level of output_files
+	if (! $archive_key) {
+		my $retval = _addFlatFileContent($topdir, $output_files, $filename_or_key);
+		return $retval;
+	}
+	# descend into archive_key level of output_files if specified
+	my $retval = _addArchiveFileContent($topdir, $output_files, $archive_key, $filename_or_key);
+	return $retval;
+}
+
+sub _addFailedAssessment { my ($topdir, $output_files, $assessment) = @_ ;
+	if ((
+			# execution-successful element extant and matches true
+			defined($assessment->{'execution-successful'}) && 
+			($assessment->{'execution-successful'} !~ m/true/i)
+		) ||
+		(
+			# execution-successful element not extant and exit-code != 0
+			! defined($assessment->{'execution-successful'}) && 
+			(defined($assessment->{'exit-code'}) && ($assessment->{'exit-code'} != 0))
+		)) {
+		my $retval = [];
+		if (defined($assessment->{'stdout'})) {
+			my $content = _addFileContent($topdir, $output_files, 'resultsConf', $assessment->{'stdout'});
+			push @$retval, $content if ($content);
+		}
+		if (defined($assessment->{'stderr'})) {
+			my $content = _addFileContent($topdir, $output_files, 'resultsConf', $assessment->{'stderr'});
+			push @$retval, $content if ($content);
+		}
+		return $retval if (scalar(@$retval));
+	}
+	return;
+}
+
+sub _addAssessFiles { my ($topdir, $output_files) = @_;
+	return if (! defined($output_files->{'resultsConf'}));
+	my $assessment_summary_file = q{assessment_summary.xml};
+	if (defined($output_files->{'resultsConf'}->{'assessment-summary-file'})) {
+		$assessment_summary_file = $output_files->{'resultsConf'}->{'assessment-summary-file'};
+	}
+	my $archive_content = _addArchiveFileContent($topdir, $output_files, 'resultsConf', $assessment_summary_file);
+	return if (! $archive_content || ! defined($archive_content->{'content'}));
+	my $content_xml = eval {XMLin($archive_content->{'content'});};
+	return if (! $content_xml);
+	my $assessments = $content_xml->{'assessment-artifacts'}->{'assessment'};
+	return if (! $assessments);
+	my $retval = [];
+	if (ref $assessments eq q{ARRAY}) {
+		foreach my $assessment (@$assessments) {
+			my $contents = _addFailedAssessment($topdir, $output_files, $assessment);
+			foreach my $content ($contents) {
+				push @$retval, $content if ($content);
+			}
+		}
+	}
+	elsif (ref $assessments eq q{HASH}) {
+		my $content = _addFailedAssessment($topdir, $output_files, $assessments);
+		$retval = $content if ($content);
+	}
+	return $retval if (scalar(@$retval));
+	return;
+}
+
+#############################################
+#	Framework Task Specific Error Messages	#
+#############################################
+
+# assess					long				build_assess.out, assessment_summary.xml
+# build						long				build_stdout.out, build_stderr.out
+# build-archive									build_assess.out
+# chdir-build-dir			long
+# chdir-config-dir			long
+# chdir-package-dir			long
+# configure					long				config_stdout.out, config_stderr.out
+# fetch-pkg-dependencies	long
+# flow-typed									flow_typed_stdout1.out, flow_typed_stderr1.out
+# gem-unpack									gem_unpack.out, gem_unpack.err
+# install-os-dependencies						build_assess.out
+# install-pip-dependencies						pip_install.out, pip_install.err
+# no-build-setup			short				source-compiles.xml
+# package-unarchive			long				build_assess.out
+# parse-results									resultparser_stdout.out, resultparser_stderr.out
+# read-gem-spec									gem-name-err.spec
+# setup						short, long			run.out
+# swamp-maven-plugin-install long
+# tool-package-compatibility short, long
+# tool-runtime-compatibility short, long
+# validate-package			long
+
+sub _addErrorFiles { my ($topdir, $output_files, $statusOut) = @_;
+	return if (! defined($statusOut->{'meta'}->{'first_failure'}));
+
+	# assess
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{assess}) {
+		my $assess_summary = _addAssessFiles($topdir, $output_files);
+		return $assess_summary;
+	}
+
+	my $retval = [];
+
+	# build
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{build}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'buildConf', 'build-stdout-file');
+		if (! $stdout) {
+			$stdout = _addFileContent($topdir, $output_files, 'buildConf', 'build_stdout.out');
+			if (! $stdout) {
+				$stdout = _addFileContent($topdir, $output_files, 'buildConf', 'build.out');
+			}
+		}
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'build-stderr-file');
+		if (! $stderr) {
+			$stderr = _addFileContent($topdir, $output_files, 'buildConf', 'build_stderr.out');
+			if (! $stderr) {
+				$stderr = _addFileContent($topdir, $output_files, 'buildConf', 'build.err');
+			}
+		}
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# build-archive, package-unarchive
+	# buildAssessOut is added categorically
+
+	# configure
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{configure}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'buildConf', 'config-stdout-file');
+		if (! $stdout) {
+			$stdout = _addFileContent($topdir, $output_files, 'buildConf', 'config_stdout.out');
+			if (! $stdout) {
+				$stdout = _addFileContent($topdir, $output_files, 'buildConf', 'configure_stdout.out');
+				if (! $stdout) {
+					$stdout = _addFileContent($topdir, $output_files, 'buildConf', 'config.out');
 				}
-				$msgLineNum += 1;
 			}
-			$status{$name} = {
-				'status'   => $status,
-				'name'     => $name,
-				'task'     => $name,
-				'shortMsg' => $shortMsg,
-				'msg'      => $msg,
-				'dur'      => $dur,
-				'durUnit'  => $durUnit,
-				'linenum'  => $lineNum,
-				'text'     => $line,
+		}
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'config-stderr-file');
+		if (! $stderr) {
+			$stderr = _addFileContent($topdir, $output_files, 'buildConf', 'config_stderr.out');
+			if (! $stderr) {
+				$stderr = _addFileContent($topdir, $output_files, 'buildConf', 'configure_stderr.out');
+			}
+		}
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# flow-typed
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{flow-typed}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'resultsConf', 'flow-typed_stdout1.out');
+		my $stderr = _addFileContent($topdir, $output_files, 'resultsConf', 'flow-typed_stderr1.out');
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# gem-install
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{gem-install}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'buildConf', 'gem_install.out');
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'gem_install.err');
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# gem-unpack
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{gem-unpack}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'buildConf', 'gem_unpack.out');
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'gem_unpack.err');
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# install-os-dependencies
+	# buildAssessOut is added categorically
+
+	# install-pip-dependencies
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{install-pip-dependencies}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'buildConf', 'pip_install.out');
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'pip_install.err');
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# parse-results
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{parse-results}) {
+		my $stdout = _addFileContent($topdir, $output_files, 'parsedResultsConf', 'resultparser-stdout-file');
+		my $stderr = _addFileContent($topdir, $output_files, 'parsedResultsConf', 'resultparser-stderr-file');
+		push @$retval, $stdout if ($stdout);
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# read-gem-spec									
+	if ($statusOut->{'meta'}->{'first_failure'} eq q{read-gem-spec}) {
+		my $stderr = _addFileContent($topdir, $output_files, 'buildConf', 'gem-name-err.spec');
+		push @$retval, $stderr if ($stderr);
+		return if (! scalar(@$retval));
+		return $retval;
+	}
+
+	# setup
+	# runOut is added categorically
+
+	return;
+}
+
+my $doNotCollapse = {
+	'buildAssessOut'	=> {
+		'all'						=> 1,
+		'assess'					=> 1,
+		'build-archive'				=> 1,
+		'package-archive'			=> 1,
+		'install-os-dependencies'	=> 1,
+	},
+	'runOut'			=> {
+		'setup'						=> 1,
+	},
+};
+
+sub _should_collapse { my ($statusOut, $key) = @_ ;
+	# sourceFiles + all_pass + no_build + source_files > compilable
+	if ($key eq q{sourceFiles}) {
+		return JSON::false if (
+			$statusOut->{'meta'}->{'all_pass'} &&
+			$statusOut->{'meta'}->{'no_build'} &&
+			$statusOut->{'meta'}->{'source_files'} > $statusOut->{'meta'}->{'compilable'}
+		);
+	}
+	return JSON::true if (! defined($statusOut->{'meta'}->{'first_failure'}));
+	# buildAssessOut + asssess | build-archive | package-archive | install-os-dependencies
+	# runOut + setup
+	my $first = $statusOut->{'meta'}->{'first_failure'};
+	return JSON::false if (defined($doNotCollapse->{$key}->{$first}));
+	return JSON::true;
+}
+
+#################################################
+#	Framework Task Specific Warning Messages	#
+#################################################
+
+# assess			status SKIP short no files
+# no-build-setup	source-files > compilable
+
+sub generateStatusOutJson { my ($topdir, $output_files, $statusOut) = @_ ;
+	my $status_list = [];
+	if ($statusOut) {
+
+		# status message
+		my ($name, $content, $anchor);
+		# include specific warning
+		if (defined($statusOut->{'meta'}->{'all_pass'}) && ($statusOut->{'meta'}->{'all_pass'})) {
+			if ($statusOut->{'meta'}->{'no_build'} && ($statusOut->{'meta'}->{'source_files'} > $statusOut->{'meta'}->{'compilable'})) {
+				$name = q{no-build-setup};
+				$content = qq{Source files: $statusOut->{'meta'}->{'source_files'} > Compilable: $statusOut->{'meta'}->{'compilable'}};
+				$anchor = qq{task-warn-no-build-setup-pass};
+			}
+			elsif (($statusOut->{'status'}->{'assess'}->{'status'} eq q{SKIP}) && $statusOut->{'meta'}->{'no_files'}) {
+				$name = q{assess};
+				$content = q{No files found to assess};
+				$anchor = qq{task-warn-assess-skip};
+			}
+			else {
+				$name = q{Success};
+				$content = q{No warnings or errors found.};
+				$anchor = qq{task-def-all};
+			}
+		}
+		# OR include specific error
+		elsif (defined($statusOut->{'meta'}->{'first_failure'})) {
+			$name = $statusOut->{'meta'}->{'first_failure'};
+			$content = _addStatusMessage($statusOut);
+			$anchor = qq{task-debug-$statusOut->{'meta'}->{'first_failure'}};
+		}
+		# assessment failed and there is no first failure
+		else {
+			$name = q{all};
+			$content = q{Internal Error}; 
+			$anchor = q{task-debug-all};
+		}
+		if (defined($name) && defined($content) && defined($anchor)) {
+			push @$status_list, {
+				'name'		=> $name,
+				'content'	=> $content,
+				'collapsed'	=> JSON::false,
+				'anchor'	=> $anchor,
 			};
-			push @{ $status{'#order'} }, $status{$name};
+		} 
+
+		# categorically include statusOut
+		if (defined($output_files->{'statusOut'})) {
+			my $content = $statusOut->{'content'};
+			# strip the optional duration and duration unit from all lines
+			$content =~ s/\s+\d+\.?\d*(?:s|ms|ns)?\s*$//gms;
+			push @$status_list, {
+				'name'		=> $output_files->{'statusOut'},
+				'content'	=> $content,
+				'collapsed'	=> JSON::false,
+			};
 		}
-		$lineNum = $msgLineNum;
-	}
-	return \%status;
-}
 
-sub generateMongoJson { my ($tarball, $topdir) = @_;
-    my %report; 
-    my $skip = 1;
-	if ($skip) {	
-	#load and save the status out
-	my ($statusOut, $status) = loadStatusOut($tarball, $topdir);
-	$report{'status_out'} = $statusOut;
-
-	if ($status) {
-		#include specific error
-		$report{'error_message'} = addErrorNote($status);
-		my $string;
-        my $nOut;
-        my $nErr;
-        #$report{'no-build'} = addBuildfailures($status, $tarball, $topdir);
-        ($nOut, $string) = addStdout($status, $tarball);
-
-		#load and save the stdout
-		if ($nOut > 0) {
-            $report{'stdout'} = $string;
-        }
-		#load and save the stderr
-		($nErr, $string) = addStderror($status, $tarball);
-        if ($nErr > 0) {
-            $report{'stderr'} = $string;
-        }
-		#load and save the versions
-		 $string = rawTar($tarball, qq{$topdir/versions.txt});
-        if ($string) {
-        	$report{'version_information'} = $string
+		# categorically include source file list
+		# Source files should be part of the report for all assessments, not just no-build
+		if (defined($statusOut->{'meta'}->{'no_build'})) {
+			my $source_files = _addSourceFiles($topdir, $output_files);
+			if ($source_files) {
+        		push @$status_list, {
+					'name'		=> q{Source Files},
+					'content'	=> $source_files,
+					'collapsed'	=> _should_collapse($statusOut, 'sourceFiles'),
+				};
+			}
 		}
-	}
+
+		# include the appropriate error files based on the first failed task
+		# typically an stdout and stderr from the relevant archive
+		# some tasks will have only one file
+		# the assess task specifically my have a file for each tool executed
+        my $error_files = _addErrorFiles($topdir, $output_files, $statusOut);
+		if ($error_files) {
+			foreach my $error_file (@$error_files) {
+				my $collapsed = JSON::true;
+				$collapsed = JSON::false if (length($error_file->{'content'}) < $MAX_INITIAL_COLLAPSE_SIZE);
+				push @$status_list, {
+					'name'		=> $error_file->{'name'},
+					'content'	=> $error_file->{'content'},
+					'collapsed'	=> $collapsed,
+				};
+			}
+		}
+		
+		# categorically include buildAssessOut
+		if (defined($output_files->{'buildAssessOut'})) {
+			my $content = _addFileContent($topdir, $output_files, undef, 'buildAssessOut');
+			$content = $content->{'content'} if ($content);
+			push @$status_list, {
+				'name'		=> $output_files->{'buildAssessOut'},
+				'content'	=> $content,
+				'collapsed'	=> _should_collapse($statusOut, 'buildAssessOut') || $error_files,
+			};
+		}
+
+		# categorically include runOut
+		if (defined($output_files->{'runOut'})) {
+			my $content = _addFileContent($topdir, $output_files, undef, 'runOut');
+			$content = $content->{'content'} if ($content);
+			push @$status_list, {
+				'name'		=> $output_files->{'runOut'},
+				'content'	=> $content,
+				'collapsed'	=> _should_collapse($statusOut, 'runOut'),
+			};
+		}
+		
+		# include versions
+		my $versions_file = catfile($topdir, q{versions.txt});
+		if (-f -r $versions_file) {
+			my $cmd = qq{cat $versions_file};
+			my ($output, $status) = systemcall($cmd);
+			if (! $status) {
+        		push @$status_list, {
+					'name'		=> q{Component Versions},
+					'content'	=> $output,
+					'collapsed'	=> JSON::false,
+				};
+			}
+		}
     }
-	return \%report
-    
-}
-
-# Read all the accessment error report from outputdisk.tar.gz,
-# and store all of them into a perl dictionary.
-sub generateErrorJson {
-	my ($tarball, $topdir, @metadata) = @_;
-
-	my %report;
-	#save all the metadata
-	$report{'package_name'} = $metadata[0];
-	$report{'package_version'} = $metadata[4];
-	$report{'platform_name'} = $metadata[2];
-	$report{'platform_version'} = $metadata[6]; 
-	$report{'tool_name'} = $metadata[1];
-	$report{'tool_version'} = $metadata[5];
-	$report{'assessment_start_ts'} = $metadata[3];
-	$report{'assessment_end_ts'} = $metadata[7];
-	$report{'report_generation_ts'} = $metadata[8]; 
-	my $skip = 1;
-	if ($skip) {	
-	#load and save the status out
-	my ($statusOut, $status) = loadStatusOut($tarball, $topdir);
-	$report{'status_out'} = $statusOut;
-
-	if ($status) {
-		#include specific error
-		$report{'error_message'} = addErrorNote($status);
-		my $string;
-        my $nOut;
-        my $nErr;
-        #$report{'no-build'} = addBuildfailures($status, $tarball, $topdir);
-        ($nOut, $string) = addStdout($status, $tarball);
-
-		#load and save the stdout
-		if ($nOut > 0) {
-            $report{'stdout'} = $string;
-        }
-		#load and save the stderr
-		($nErr, $string) = addStderror($status, $tarball);
-        if ($nErr > 0) {
-            $report{'stderr'} = $string;
-        }
-		#load and save the versions
-		 $string = rawTar($tarball, qq{$topdir/versions.txt});
-        if ($string) {
-        	$report{'version_information'} = $string
+	else {
+		
+		# status message
+		push @$status_list, {
+			'name'		=> q{Status Not Found},
+			'content'	=> q{Unable to determine the final status of the assessment.},
+			'collapsed'	=> JSON::false,
+			'anchor'	=> q{#_missing-or-invalid-status-out-file},
+		};
+		
+		# include versions
+		my $versions_file = catfile($topdir, q{versions.txt});
+		if (-f -r $versions_file) {
+			my $cmd = qq{cat $versions_file};
+			my ($output, $status) = systemcall($cmd);
+			if (! $status) {
+        		push @$status_list, {
+					'name'		=> q{Component Versions},
+					'content'	=> $output,
+					'collapsed'	=> JSON::false,
+				};
+			}
 		}
 	}
-    }
-	return \%report
+	my $report = {
+		'status'	=> $status_list,
+	};
+	return $report;
 }
 
-# Convert a perl dictionary representing the accessment error report infomation into a string, 
-# and then save it on the disk.
-sub saveErrorJson {
-	my ( $report, $filename) = @_;
-	my $json_text = encode_json ($report);
+sub addHeaderJson { my ($report, $header) = @_ ;
+	$report->{'assessment_start_ts'} = $header->[6];
+	$report->{'assessment_end_ts'} = $header->[7];
+	$report->{'report_generation_ts'} = $header->[8]; 
+}
+
+sub saveStatusOutJson { my ( $report, $filename) = @_;
+	my $json_string = to_json($report);
 	my $fh;
-	if ( !open $fh, '>', $filename ) {
+	if (! open $fh, '>', $filename) {
 		return 0;
 	}
-	# prints the converted json text into the Json file
-	print $fh $json_text;
+	# prints the converted json string into the Json file
+	print $fh $json_string;
 	close $fh;
 	return 1;
-}
-
-sub loadStatusOut { my ($tarball, $topdir) = @_ ;
-    my $statusOut = rawTar($tarball, qq{$topdir/status.out});
-    if ($statusOut) {
-		my $lines = [split "\n", $statusOut];
-		my $status = ReadStatusOut($lines);
-		return ($statusOut, $status);
-    }
-    return;
-}
-
-#load the accessment time from the swamp_run.out file in the outputdisk.tar.gz
-sub loadTimeOut{my ($tarball, $topdir) = @_ ;
-    my $swampOut = rawTar($tarball, qq{$topdir/swamp_run.out});
-    my $lines = [split "\n", $swampOut];
-    my $lineNum = 0;
-    while ($lineNum < scalar(@$lines)) {
-        my $currline = $lines->[$lineNum];
-        if($currline eq "========================== date"){
-            return $lines->[$lineNum + 1];
-        }
-        $lineNum = $lineNum + 1;
-    }
-    return;
-}
-
-# addErrorNote will return an array of array with format [[task1, msg1],[task2, msg2]],
-# or a string if no error detected or unable to parse status.out.
-sub addErrorNote { my ($s) = @_;
-    my $note;
-    my @notelist;
-    if ( !@{ $s->{'#errors'} } && !@{ $s->{'#warnings'} } ) {
-        if ( exists $s->{'all'} && $s->{'all'}{'status'} eq 'PASS' ) {
-            $note  = "No errors detected";
-        }
-        else {
-            my $errCnt   = scalar @{ $s->{'#errors'} };
-            my $warnCnt  = scalar @{ $s->{'#warnings'} };
-            $note = "(errors: $errCnt, warnings: $warnCnt)\n";
-            foreach my $t ( @{ $s->{'#order'} } ) {
-                my $status   = $t->{'status'};
-                my $taskName = $t->{'task'};
-
-                if ( $taskName ne q{all} && $status eq q{FAIL} ) {
-                    my @currErrorString;
-                    push @currErrorString, $taskName;
-                    if (defined($t->{'msg'})) {
-                        push @currErrorString, $t->{msg};
-                    }
-                    else {
-                        push @currErrorString, "No error message found";
-                    }
-                    push @notelist, \@currErrorString;
-                }
-            }
-        }
-        return \@notelist;
-    }
-    else {
-        $note = q{Unable to parse status.out};
-    }
-    return $note;
-}
-
-sub tarTarTOC {
-    my $tarball = shift;
-    my $subfile = shift;
-    my ( $output, $status ) =
-      ( $_ = qx {tar -O -xzf $tarball $subfile | tar tzvf - 2>/dev/null}, $CHILD_ERROR >> 8 );
-    if ($status) {
-        return;
-    }
-    else {
-        return split( /\n/sxm, $output );
-    }
-}
-
-sub tarCat{
-    my $tarball = shift;
-    my $subfile = shift;
-    my $file = shift;
-    my ( $output, $status ) =
-      ( $_ = qx {tar -O -xzf $tarball $subfile | tar -O -xzf - $file 2>/dev/null}, $CHILD_ERROR >> 8 );
-    if ($status) {
-        return;
-    }
-    else {
-        return $output;
-    }
-}
-sub tarTOC {
-    my $tarball = shift;
-    my ( $output, $status ) = ( $_ = qx {tar -tzvf $tarball 2>/dev/null}, $CHILD_ERROR >> 8 );
-    if ($status) {
-        return;
-    }
-    else {
-        return split( /\n/sxm, $output );
-    }
-}
-sub addBuildfailures { my ($status_out, $tarball, $topdir) = @_;
-    my @files = tarTOC($tarball);
-    foreach (@files) {
-        if (/source-compiles.xml/xsm) {
-            my $rawxml = rawTar($tarball, qq{$topdir/source-compiles.xml});
-            my $xslt = XML::LibXSLT->new();
-            my $source;
-            my $success = eval { $source = XML::LibXML->load_xml( 'string' => $rawxml ); };
-            my $xsltfile =  File::Spec->catfile( getSwampDir(), 'etc', 'no-build.xslt' );
-            if ( defined($success) ) {
-                my $style_doc  = XML::LibXML->load_xml( 'location' => "$xsltfile", 'no_cdata' => 1 );
-                my $stylesheet = $xslt->parse_stylesheet($style_doc);
-                my $result = $stylesheet->transform($source);
-                return $result->toString();
-            }
-        }
-    }
-    return;
-}
-
-sub addStdout { my ($status_out, $tarball) = @_;
-    return findFiles($tarball, q{(build_stdout|configure_stdout|resultparser.log)});
-
-}
-
-sub addStderror { my ($status, $tarball) = @_;
-    return findFiles($tarball, q{(build_stderr|configure_stderr)});
-}
-
-sub findFiles { my ($tarball, $pattern) = @_;
-    my $string;
-    my @files=tarTOC($tarball);
-    my $nFound = 0;
-    foreach (@files) {
-        if (/.tar.gz$/sxm) {
-            chomp;
-            my @line=split(q{ }, $_);
-            my $files = getFiles($tarball, $pattern, $line[-1]);
-            if ($files) {
-                $string .= $files;
-                $nFound++;
-            }
-        }
-    }
-    return ($nFound, $string);
-}
-
-sub getFiles { my ($tarball, $pattern, $subfile) = @_;
-    my @files = tarTarTOC( $tarball, $subfile );
-    my $str;
-    foreach (@files) {
-        if (/$pattern/sxm) {
-            if (/swa_tool/sxm) {
-                next;
-            }
-            chomp;
-            my @line = split( q{ }, $_ );
-            $str .= "FILE: $line[-1] from $subfile\n";
-            $str .= tarCat( $tarball, $subfile, $line[-1] );
-        }
-    }
-    return $str;
-}
-
-sub addGenericError { my ($tarball) = @_;
-    return q{Unable to determine the final status of the assessment.};
-}
-
-sub rawTar { my ($tarball, $file) = @_ ;
-    my ( $output, $status ) = ( $_ = qx {tar -O -xzf $tarball $file 2>/dev/null}, $CHILD_ERROR >> 8 );
-    if ($status) {
-		return;
-    }
-    else {
-		return $output;
-    }
 }
 
 1;

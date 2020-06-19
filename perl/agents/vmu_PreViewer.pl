@@ -35,14 +35,20 @@ use SWAMP::vmu_Support qw(
 	getSwampConfig
 	$global_swamp_config
 	timing_log_viewer_timepoint
+	$HTCONDOR_JOB_INPUT_DIR
+	$HTCONDOR_JOB_OUTPUT_DIR
+	$HTCONDOR_JOB_IP_ADDRESS_PATH
+	$HTCONDOR_JOB_EVENTS_PATH
 );
 $global_swamp_config = getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
 	$VIEWER_STATE_LAUNCHING
-	createrunscript 
+	createvrunscript 
 	copyvruninputs 
+	copyuserdatabase
 	getViewerVersion
 	updateClassAdViewerStatus
+	identifyViewer
 );
 
 $global_swamp_config ||= getSwampConfig();
@@ -63,14 +69,20 @@ sub logfilename {
 }
 
 sub populateInputDirectory { my ($bogref, $inputfolder) = @_ ;
-	my $result = copyvruninputs($bogref, $inputfolder);
-	if (! $result) {
-		$log->error("populateInputDirectory - copyvruninputs failed with $inputfolder");
-		return 0;
+	if (! $bogref->{'use_baked_viewer'}) {
+		my $result = copyvruninputs($bogref, $inputfolder);
+		if (! $result) {
+			$log->error("populateInputDirectory - copyvruninputs failed with $inputfolder");
+			return 0;
+		}
 	}
-	$result = createrunscript($bogref, $inputfolder);
+	my $result = copyuserdatabase($bogref, $inputfolder);
 	if (! $result) {
-		$log->error("populateInputDirectory - createrunscript failed with $inputfolder");
+		$log->error("populateInputDirectory - copyuserdatabase failed with $inputfolder");
+	}
+	$result = createvrunscript($bogref, $inputfolder);
+	if (! $result) {
+		$log->error("populateInputDirectory - createvrunscript failed with $inputfolder");
 		return 0;
 	}
 	return 1;
@@ -88,10 +100,10 @@ sub extractBogFile { my ($execrunuid, $bogfile, $inputfolder) = @_ ;
 	return \%bog;
 }
 
-sub preserveBogFile { my ($bogfile, $bogref, $imagename, $inputfolder) = @_ ;
+sub preserveBogFile { my ($bogfile, $bogref, $platform_image, $inputfolder) = @_ ;
 	my $viewerversion = getViewerVersion($bogref);
 	$bogref->{'viewerversion'} = $viewerversion;
-	$bogref->{'viewerplatform'} = $imagename;
+	$bogref->{'viewerplatform'} = $platform_image;
 	saveProperties($bogfile, $bogref);
 	copy($bogfile, $inputfolder);
 }
@@ -134,9 +146,9 @@ listDirectoryContents();
 
 my $vmhostname = construct_vmhostname($execrunuid, $clusterid, $procid);
 
-my $inputfolder = q{input};
+my $inputfolder = $HTCONDOR_JOB_INPUT_DIR;
 mkdir($inputfolder);
-my $outputfolder = q{output};
+my $outputfolder = $HTCONDOR_JOB_OUTPUT_DIR;
 mkdir($outputfolder);
 
 my $error_message = 'Unable to Start VM';
@@ -148,6 +160,7 @@ if (! $bogref) {
 	exit_prescript_with_error();
 }
 $bogref->{'vmhostname'} = $vmhostname;
+identifyViewer($bogref);
 
 my $status = populateInputDirectory($bogref, $inputfolder);
 if (! $status) {
@@ -155,26 +168,32 @@ if (! $status) {
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
 	exit_prescript_with_error();
 }
-my $imagename = createQcow2Disks($bogref, $inputfolder, $outputfolder);
-if (! $imagename) {
-	$log->error("createQcow2Disks failed for: $execrunuid");
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit_prescript_with_error();
+my $platform_image = $bogref->{'platform_image'};
+if (! $bogref->{'use_docker_universe'}) {
+	if (! createQcow2Disks($platform_image, $inputfolder, $outputfolder)) {
+		$log->error("createQcow2Disks failed for: $execrunuid $platform_image");
+		updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
+		exit_prescript_with_error();
+	}
+	if (! $bogref->{'use_baked_viewer'}) {
+		if (! patchDeltaQcow2ForInit($platform_image, $vmhostname)) {
+			$log->error("patchDeltaQcow2ForInit failed for: $platform_image $vmhostname");
+			updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
+			exit_prescript_with_error();
+		}
+	}
+	create_empty_file($HTCONDOR_JOB_EVENTS_PATH);
+	create_empty_file($HTCONDOR_JOB_IP_ADDRESS_PATH);
+	$log->info("Starting virtual machine for: $execrunuid $platform_image $vmhostname");
+	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, "Starting VM", $bogref);
 }
-if (! patchDeltaQcow2ForInit($imagename, $vmhostname)) {
-	$log->error("patchDeltaQcow2ForInit failed for: $imagename $vmhostname");
-	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, $error_message, $bogref);
-	exit_prescript_with_error();
+else {
+	$log->info("Starting docker container for: $execrunuid $platform_image $vmhostname");
+	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, "Starting DC", $bogref);
 }
-preserveBogFile($bogfile, $bogref, $imagename, $inputfolder);
-
-create_empty_file('JobVMEvents.log');
-create_empty_file('vmip.txt');
-$log->info("Starting virtual machine for: $execrunuid $imagename $vmhostname");
-updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_LAUNCHING, "Starting VM", $bogref);
-
+preserveBogFile($bogfile, $bogref, $platform_image, $inputfolder);
 listDirectoryContents();
-$log->info("Starting vmu_MonitorViewer for: $execrunuid $imagename $vmhostname");
+$log->info("Starting vmu_MonitorViewer for: $execrunuid $platform_image $vmhostname");
 if (my $pid = fork()) {
 	# Parent
 	$log->info("vmu_MonitorViewer $execrunuid pid: $pid");

@@ -7,13 +7,9 @@ package SWAMP::vmu_AssessmentSupport;
 use strict;
 use warnings;
 use English '-no_match_vars';
-use RPC::XML;
-use RPC::XML::Client;
-use Date::Parse qw(str2time);
 use Log::Log4perl;
-use Archive::Tar;
 use File::Basename qw(basename);
-use File::Copy qw(move copy);
+use File::Copy qw(copy);
 use File::Spec::Functions;
 use POSIX qw(strftime);
 
@@ -25,17 +21,20 @@ use SWAMP::vmu_Support qw(
     systemcall
     getSwampDir
 	timing_log_assessment_timepoint
+	loadProperties
     saveProperties
 	checksumFile
 	launchPadStart
 	job_database_connect
 	job_database_disconnect
-	displaynameToMastername
-	masternameToPlatform
+	platformIdentifierToImage
+	imageToPlatformIdentifier
 	isSwampInABox
 	isAssessmentRun
 	isMetricRun
 	isViewerRun
+	isDCPlatform
+	isVMPlatform
 	$LAUNCHPAD_SUCCESS
 	$LAUNCHPAD_BOG_ERROR
 	$LAUNCHPAD_FILESYSTEM_ERROR
@@ -44,6 +43,10 @@ use SWAMP::vmu_Support qw(
 	$LAUNCHPAD_FATAL_ERROR
     getSwampConfig
 	$global_swamp_config
+	$HTCONDOR_JOB_IP_ADDRESS_FILE
+	$HTCONDOR_JOB_EVENTS_FILE
+	$HTCONDOR_JOB_IP_ADDRESS_TTY
+	$HTCONDOR_JOB_EVENTS_TTY
 );
 use SWAMP::PackageTypes qw(
     $C_CPP_PKG_STRING
@@ -63,6 +66,7 @@ use SWAMP::PackageTypes qw(
 	$DOT_NET_PKG_STRING
 );
 
+our $OUTPUT_FILES_CONF_FILE_NAME = 'output_files.conf';
 use parent qw(Exporter);
 our (@EXPORT_OK);
 BEGIN {
@@ -87,6 +91,10 @@ BEGIN {
       copyAssessmentInputs
       createAssessmentConfigs
       needsFloodlightAccessTool
+	  $OUTPUT_FILES_CONF_FILE_NAME
+	  locate_output_files
+	  parse_statusOut
+	  parse_statusOutLines
 	  isClocTool
 	  isSonatypeTool
       isRubyTool
@@ -133,37 +141,40 @@ sub builderPassword {
 }
 
 sub identifyAssessment { my ($bogref) = @_ ;
-    $log->info("Execrunuid: $bogref->{'execrunid'}");
-    $log->info("Package: $bogref->{'packagename'} $bogref->{'packagepath'}");
-    $log->info("Tool: $bogref->{'toolname'} $bogref->{'toolpath'}");
-    $log->info("Platform: $bogref->{'platform'}");
+	$log->info('Execrunuid: ', $bogref->{'execrunid'}, "\n",
+		'  Package: ', $bogref->{'packagename'}, ' ',  $bogref->{'packagepath'}, "\n",
+		'  Tool: ', $bogref->{'toolname'}, ' ',  $bogref->{'toolpath'}, "\n",
+		'  Platform: ', $bogref->{'platform_identifier'}, "\n",
+		'  Type: ', $bogref->{'platform_type'}, "\n",
+		'  Image: ', $bogref->{'platform_image'}
+	);
 }
 
 my $bogtranslator = {
 	'platforms'	=> {
-		'platform_path'		=> 'platform',
+		'platform_identifier'		=> 'platform_identifier',
 	},
 	'tools'		=> {
-		'tool_name'			=> 'toolname',
-		'tool_path'			=> 'toolpath',
-		'version_string'	=> 'tool-version',
+		'tool_name'					=> 'toolname',
+		'tool_path'					=> 'toolpath',
+		'version_string'			=> 'tool-version',
 	},
 	'packages'	=> {
-		'package_name' 		=> 'packagename', 			
-		'package_version' 	=> 'packageversion', 			
+		'package_name' 				=> 'packagename', 			
+		'package_version' 			=> 'packageversion', 			
 		'package_build_settings'	=> 'packagebuild_settings',
-		'build_target' 		=> 'packagebuild_target',		
-		'build_system' 		=> 'packagebuild_system',		
-		'build_dir' 		=> 'packagebuild_dir',		
-		'build_opt' 		=> 'packagebuild_opt',		
-		'build_cmd' 		=> 'packagebuild_cmd',		
-		'config_opt' 		=> 'packageconfig_opt',		
-		'config_dir' 		=> 'packageconfig_dir',		
-		'config_cmd' 		=> 'packageconfig_cmd',		
-		'package_path' 		=> 'packagepath',			
-		'source_path' 		=> 'packagesourcepath',		
-		'build_file' 		=> 'packagebuild_file',		
-		'package_type' 		=> 'packagetype',			
+		'build_target' 				=> 'packagebuild_target',		
+		'build_system' 				=> 'packagebuild_system',		
+		'build_dir' 				=> 'packagebuild_dir',		
+		'build_opt' 				=> 'packagebuild_opt',		
+		'build_cmd' 				=> 'packagebuild_cmd',		
+		'config_opt' 				=> 'packageconfig_opt',		
+		'config_dir' 				=> 'packageconfig_dir',		
+		'config_cmd' 				=> 'packageconfig_cmd',		
+		'package_path' 				=> 'packagepath',			
+		'source_path' 				=> 'packagesourcepath',		
+		'build_file' 				=> 'packagebuild_file',		
+		'package_type' 				=> 'packagetype',			
 		'bytecode_class_path'		=> 'packageclasspath',		
 		'bytecode_aux_class_path'	=> 'packageauxclasspath',		
 		'bytecode_source_path'		=> 'packagebytecodesourcepath',	
@@ -171,11 +182,11 @@ my $bogtranslator = {
 		'android_redo_build'		=> 'android_redo_build', 		# boolean converted to string
 		'use_gradle_wrapper'		=> 'use_gradle_wrapper', 		# boolean converted to string
 		'android_lint_target'		=> 'android_lint_target',		
-		'language_version'	=> 'language_version', 		
-		'maven_version'		=> 'maven_version', 			
+		'language_version'			=> 'language_version', 		
+		'maven_version'				=> 'maven_version', 			
 		'android_maven_plugin'		=> 'android_maven_plugin', 		
-		'package_language'	=> 'package_language', 		
-		'exclude_paths'		=> 'exclude_paths',
+		'package_language'			=> 'package_language', 		
+		'exclude_paths'				=> 'exclude_paths',
 	},
 };
 
@@ -228,6 +239,7 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 	if (! $bog_query_result) {
 		return $LAUNCHPAD_BOG_ERROR;
 	}
+	$log->debug('bog_query_result: ', sub { use Data::Dumper; Dumper($bog_query_result); });
 
 	$global_swamp_config ||= getSwampConfig();
 	my $compute_bog_checksums = $global_swamp_config->get('computeBOGChecksums');
@@ -302,21 +314,52 @@ sub _computeBOG { my ($execrunuid) = @_ ;
 	_translateToBOG($bog, 'packages', $bog_query_result, 1);
 	
 	# translate database platform value to framework platform value
-	if (! $bog->{'platform'}) {
-		$log->error("no platform in database record");
+	if (! $bog->{'platform_identifier'}) {
+		$log->error("no platform identifier in database record");
 		return $LAUNCHPAD_BOG_ERROR;
 	}
-	my $qcow = displaynameToMastername($bog->{'platform'});
-	if (! $qcow) {
-		$log->error("no qcow file for ", $bog->{'platform'});
+	# read preferred assessment platform type from config
+	my $preferred_platform_type = $global_swamp_config->get('preferred_platform_type');
+	# if preferred assessment platform type is not specified default to VM
+	if (! $preferred_platform_type) {
+		$log->warn('no preferred_platform_type in config - defaulting to VM');
+		$preferred_platform_type = 'VM';
+	}
+	# if preferred assessment platform type is incorrectly specified default to VM
+	elsif (! isDCPlatform($preferred_platform_type) && ! isVMPlatform($preferred_platform_type)) {
+		$log->warn("preferred_platform_type incorrectly specified in config $preferred_platform_type - defaulting to VM");
+		$preferred_platform_type = 'VM';
+	}
+	$log->info('initial platform_identifier: ', $bog->{'platform_identifier'}, " preferred_platform_type: $preferred_platform_type");
+	# search for preferred platform type image
+	$bog->{'platform_type'} = $preferred_platform_type;
+	my $platform_image = platformIdentifierToImage($bog);
+	# if preferred platform type is not found search for alternate platform type
+	if (! $platform_image) {
+		$log->warn("preferred platform type image file not found for: ", $bog->{'platform_identifier'});
+		if (isDCPlatform($preferred_platform_type)) {
+			$preferred_platform_type = 'VM';
+		}
+		else {
+			$preferred_platform_type = 'DC';
+		}
+		$bog->{'platform_type'} = $preferred_platform_type;
+		$platform_image = platformIdentifierToImage($bog);
+		if (! $platform_image) {
+			$log->error("no image file for ", $bog->{'platform_identifier'});
+			return $LAUNCHPAD_BOG_ERROR;
+		}
+	}
+	$bog->{'use_docker_universe'} = isDCPlatform($bog->{'platform_type'});
+	$log->info('use_docker_universe: ', $bog->{'use_docker_universe'});
+	$bog->{'platform_image'} = $platform_image;
+	my $platform_identifier = imageToPlatformIdentifier($platform_image);
+	if (! $platform_identifier) {
+		$log->error("no platform component in $platform_image for ", $bog->{'platform_identifier'});
 		return $LAUNCHPAD_BOG_ERROR;
 	}
-	my $platform = masternameToPlatform($qcow);
-	if (! $platform) {
-		$log->error("no platform component in $qcow for ", $bog->{'platform'});
-		return $LAUNCHPAD_BOG_ERROR;
-	}
-	$bog->{'platform'} = $platform;
+	$bog->{'platform_identifier'} = $platform_identifier;
+	$log->info('final platform_identifier: ', $bog->{'platform_identifier'});
 	
     return $bog;
 }
@@ -446,10 +489,9 @@ sub doRun { my ($execrunuid) = @_ ;
     my $options = _computeBOG($execrunuid);
 	timing_log_assessment_timepoint($execrunuid, 'compute bog - end');
 	# options is either a hash reference to the BOG
-	# or and enumeration of a LAUNCHPAD_*_ERROR
+	# or an enumeration of a LAUNCHPAD_*_ERROR
 	if (ref $options) {
     	$tracelog->trace("doRun - _computeBOG returned bog - calling launchPadStart");
-		timing_log_assessment_timepoint($execrunuid, 'launch pad start - begin');
 		my $retval = launchPadStart($options);
 		timing_log_assessment_timepoint($execrunuid, 'launch pad start - end');
     	$tracelog->trace("doRun - launchPadStart returned: $retval");
@@ -539,7 +581,7 @@ sub saveMetricSummary { my ($metric_results) = @_ ;
 }
 
 sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
-    if (!defined($assessment_results->{'pathname'})) {
+    if (! defined($assessment_results->{'pathname'})) {
         $log->error('saveAssessmentResult - error: hash is missing pathname');
         return 0;
     }
@@ -556,15 +598,16 @@ sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
 
 	my $result_dest_path = catdir(rootdir(), 'swamp', 'SCAProjects', $project_uuid, 'A-Results', $assessment_result_uuid);
 	if (! use_make_path($result_dest_path)) {
-        $log->error("Error - make_path failed for: $result_dest_path");
+        $log->error("Error - make_path $result_dest_path failed");
         return 0;
 	}
 	my $log_dest_path = catdir(rootdir(), 'swamp', 'SCAProjects', $project_uuid, 'A-Logs', $assessment_result_uuid);
 	if (! use_make_path($log_dest_path)) {
-        $log->error("Error - make_path failed for: $log_dest_path");
+        $log->error("Error - make_path $log_dest_path failed");
         return 0;
 	}
 
+	# assessment results
 	if (! copy($assessment_results->{'pathname'}, $result_dest_path)) {
         $log->error('saveAssessmentResult - copy ', $assessment_results->{'pathname'}, " to $result_dest_path failed: $OS_ERROR");
         return 0;
@@ -572,12 +615,33 @@ sub saveAssessmentResult { my ($bogref, $assessment_results) = @_ ;
 	$log->info('Copied: ', $assessment_results->{'pathname'}, " to: $result_dest_path");
 	my $result_file = catfile($result_dest_path, basename($assessment_results->{'pathname'}));
 
+	# out_archive
+	# if the out_archive was already specified as the 
+	# assessment result pathname do not save it twice
+	if ($assessment_results->{'out_archive'} ne $assessment_results->{'pathname'}) {
+		if (! copy($assessment_results->{'out_archive'}, $result_dest_path)) {
+        	$log->warn('saveAssessmentResult - copy ', $assessment_results->{'out_archive'}, " to $result_dest_path failed: $OS_ERROR");
+		}
+		else {
+			$log->info('Copied: ', $assessment_results->{'out_archive'}, " to: $result_dest_path");
+		}
+	}
+
+	# source archive
 	if (! copy($assessment_results->{'sourcepathname'}, $result_dest_path)) {
         $log->error('saveAssessmentResult - copy ', $assessment_results->{'sourcepathname'}, " to $result_dest_path failed: $OS_ERROR");
         return 0;
 	}
 	$log->info('Copied: ', $assessment_results->{'sourcepathname'}, " to: $result_dest_path");
 	my $source_file = catfile($result_dest_path, basename($assessment_results->{'sourcepathname'}));
+
+	# assessment report
+	# currently does not go into database
+	if (! copy($assessment_results->{'reportpath'}, $result_dest_path)) {
+        $log->error('saveAssessmentResult - copy ', $assessment_results->{'reportpath'}, " to $result_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $assessment_results->{'reportpath'}, " to: $result_dest_path");
 
 	if (! copy($assessment_results->{'logpathname'}, $log_dest_path)) {
         $log->error('saveAssessmentResult - copy ', $assessment_results->{'logpathname'}, " to $log_dest_path failed: $OS_ERROR");
@@ -650,16 +714,37 @@ sub saveMetricResult { my ($bogref, $metric_results) = @_ ;
 
 	my $result_dest_path = catdir(rootdir(), 'swamp', 'store', 'SCAPackages', 'Metrics', $metric_results->{'execrunid'});
 	if (! use_make_path($result_dest_path)) {
-        $log->error("Error - make_path failed for: $result_dest_path");
+        $log->error("Error - make_path $result_dest_path failed");
         return 0;
 	}
 
+	# assessment results
 	if (! copy($metric_results->{'pathname'}, $result_dest_path)) {
         $log->error('saveMetricResult - copy ', $metric_results->{'pathname'}, " to $result_dest_path failed: $OS_ERROR");
         return 0;
 	}
 	$log->info('Copied: ', $metric_results->{'pathname'}, " to: $result_dest_path");
 	my $result_file = catfile($result_dest_path, basename($metric_results->{'pathname'}));
+
+	# out_archive
+	# if the out_archive was already specified as the 
+	# metric result pathname do not save it twice
+	if ($metric_results->{'out_archive'} ne $metric_results->{'pathname'}) {
+		if (! copy($metric_results->{'out_archive'}, $result_dest_path)) {
+        	$log->warn('saveMetricResult - copy ', $metric_results->{'out_archive'}, " to $result_dest_path failed: $OS_ERROR");
+		}
+		else {
+			$log->info('Copied: ', $metric_results->{'out_archive'}, " to: $result_dest_path");
+		}
+	}
+
+	# assessment report
+	# currently does not go into database
+	if (! copy($metric_results->{'reportpath'}, $result_dest_path)) {
+        $log->error('saveMetricResult - copy ', $metric_results->{'reportpath'}, " to $result_dest_path failed: $OS_ERROR");
+        return 0;
+	}
+	$log->info('Copied: ', $metric_results->{'reportpath'}, " to: $result_dest_path");
 
 	my $result = 0;
 	if (my $dbh = job_database_connect()) {
@@ -688,60 +773,48 @@ sub saveMetricResult { my ($bogref, $metric_results) = @_ ;
 #   CopyAssessmentInputs    #
 #############################
 
-# first check for files with platform in the path
-# if none found
-# then check for files with noarch in the path
-# if symbolic links are found, pass back to caller
-# and call again recursively - nested links are not handled
-sub _copy_tool_files { my ($tar, $files, $platform, $dest) = @_ ;
-    my $retval = [];
-    my $found = 0;
-    foreach my $file (@{$files}) {
-        next if ($file->name =~ m/\/$/sxm);
-         next if ($file->name !~ m/$platform/sxm);
-         if ($file->is_symlink) {
-             push @{$retval}, $file;
-             next;
-         }
-         my $filename = basename($file->name);
-        $log->debug("_copy_tool_files - extract: $file->name to $dest/$filename");
-         $tar->extract_file($file->name, "$dest/$filename");
-        $found = 1;
-    }
-    if (! $found) {
-        foreach my $file (@{$files}) {
-            next if ($file->name =~ m/\/$/sxm);
-            next if ($file->name !~ m/noarch/sxm);
-            my $filename = basename($file->name);
-            $log->debug("_copy_tool_files - extract: $file->name to $dest/$filename");
-            $tar->extract_file($file->name, "$dest/$filename");
+sub copyInput { my ($inputpath, $platform_identifier, $dest, $os_dependencies) = @_ ;
+    my $platform_identifier_start = $platform_identifier;
+    my $inputdir = catdir($inputpath, $platform_identifier, 'in-files');
+    if (! -d $inputdir) {
+        $platform_identifier = 'noarch';
+        $inputdir = catdir($inputpath, $platform_identifier, 'in-files');
+        if (! -d $inputdir) {
+            $log->error("copyInput error - neither ", $platform_identifier_start, " nor $platform_identifier found in $inputpath");
+            return 0;
         }
     }
-    return $retval;
-}
-
-sub _copyInputsTools { my ($bogref, $dest) = @_ ;
-    my $tar = Archive::Tar->new($bogref->{'toolpath'}, 1);
-    my @files = $tar->get_files();
-    # if tool bundle uses symbolic link for this platform handle that here
-    my $links = _copy_tool_files($tar, \@files, $bogref->{'platform'}, $dest);
-    foreach my $link (@{$links}) {
-        _copy_tool_files($tar, \@files, $link->linkname, $dest);
+    my $inputfiles_glob = catfile($inputdir, '*');
+    my $cmd = "cp $inputfiles_glob $dest";
+    my ($output, $status, $error_output) = systemcall($cmd);
+    if ($status) {
+        $log->error("copyInput error - $cmd failed - $status $output $error_output");
+        return 0;
     }
-    if (-r "$dest/os-dependencies-tool.conf") {
-        $log->debug("Adding $dest/os-dependencies-tool.conf");
-        system("cat $dest/os-dependencies-tool.conf >> $dest/os-dependencies.conf");
-    }
-    # merge tool-os-dependencies.conf into os-dependencies.conf if extant
-    if (-r "$dest/tool-os-dependencies.conf") {
-        $log->debug("Adding $dest/tool-os-dependencies.conf");
-        system("cat $dest/tool-os-dependencies.conf >> $dest/os-dependencies.conf");
+    $inputdir = catdir($inputpath, $platform_identifier, 'swamp-conf');
+    if (-d $inputdir) {
+        $inputfiles_glob = catfile($inputdir, '*');
+        $cmd = "cp $inputfiles_glob $dest";
+        ($output, $status, $error_output) = systemcall($cmd, 1);
+        if ($status) {
+            $log->warn("copyInput warning - $cmd failed - $status $output $error_output");
+        }
+		my $dependencies_files_glob = '*os-dependencies*.conf';
+		my @dependencies = `find $inputdir -type f -name $dependencies_files_glob`;
+		chomp @dependencies;
+		foreach my $dependencies_file (@dependencies) {
+			$cmd = "cat $dependencies_file >> $os_dependencies";
+			($output, $status, $error_output) = systemcall($cmd, 1);
+			if ($status) {
+				$log->warn("copyInput warning - $cmd failed - $status $output $error_output");
+			}
+		}
     }
     return 1;
 }
 
 sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
-    if (!defined($bogref->{'packagepath'})) {
+    if (! defined($bogref->{'packagepath'})) {
         $log->error($bogref->{'execrunid'}, "BOG is missing packagepath specification.");
         return 0;
     }
@@ -749,7 +822,7 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         $log->error($bogref->{'execrunid'}, ' package: ', $bogref->{'packagepath'}, ' not readable.');
 		return 0;
 	}
-    if (!defined( $bogref->{'toolpath'})) {
+    if (! defined( $bogref->{'toolpath'})) {
         $log->error($bogref->{'execrunid'}, "BOG is missing toolpath specification.");
         return 0;
     }
@@ -757,154 +830,67 @@ sub copyAssessmentInputs { my ($bogref, $dest) = @_ ;
         $log->error($bogref->{'execrunid'}, ' tool: ', $bogref->{'toolpath'}, ' not readable.');
 		return 0;
 	}
-	my $status;
-	eval {
-		$status = _copyInputsTools($bogref, $dest);
-	};
-	if ($@ || ! $status) {
-		$log->error("_copyInputsTools failed for: ", $bogref->{'toolpath'}, ' status: ', defined($status) ? $status : 'no status',  " eval result: $@");
+    my $basedir = getSwampDir();
+	# resultant os-dependencies file
+	my $os_dependencies = catfile($dest, 'os-dependencies.conf');
+
+	# copy assessment tool to the input destination directory
+    my $toolpath = $bogref->{'toolpath'};
+    $toolpath =~ s/\.gz$//;
+    $toolpath =~ s/\.tar$//;
+    my $platform_identifier = $bogref->{'platform_identifier'};
+    my $result = copyInput($toolpath, $platform_identifier, $dest, $os_dependencies);
+
+    # copy services.conf to the input destination directory
+	my $file = catfile($basedir, 'etc', 'services.conf');
+    if (! copy($file, $dest)) {
+        $log->error($bogref->{'execrunid'}, "Cannot copy $file to $dest $OS_ERROR");
+        return 0;
+    }
+
+	# copy the package archive to the input destination directory
+	if (! copy($bogref->{'packagepath'}, $dest)) {
+		$log->error($bogref->{'execrunid'}, "Cannot read packagepath $bogref->{'packagepath'} $OS_ERROR");
 		return 0;
 	}
-	
-    my $basedir = getSwampDir();
-    # copy services.conf to the input destination directory
-	my $servicesconf = catfile($basedir, 'etc', 'services.conf');
-    if (! copy($servicesconf, $dest)) {
-        $log->error($bogref->{'execrunid'}, "Cannot copy $servicesconf to $dest $OS_ERROR");
-        return 0;
-    }
-	
-    # Copy the package tarball into VM input folder from the SAN.
-    if (! copy($bogref->{'packagepath'}, $dest)) {
-        $log->error($bogref->{'execrunid'}, "Cannot read packagepath $bogref->{'packagepath'} $OS_ERROR");
-        return 0;
-    }
 
-    _addUserDepends($bogref, "$dest/os-dependencies.conf");
-    my $file = "$basedir/thirdparty/resultparser.tar";
-    _deployTarball($file, $dest);
-    # Add result parser's *-os-dependencies.conf to the mix, and merge for uniqueness
-    if (-r "$dest/os-dependencies-parser.conf") {
-        $log->debug("Adding $dest/os-dependencies-parser.conf");
-        system("cat $dest/os-dependencies-parser.conf >> $dest/os-dependencies.conf");
-    }
+	# copy package dependency list to the input destination directory
+	my $user_dependencies = catfile($dest, 'user-os-dependencies.conf');
+	_addUserDepends($bogref, $user_dependencies, $os_dependencies);
 
-    if (! _copyFramework($bogref, $basedir, $dest)) {
-        return 0;
-    }
+	# copy result parser to the input destination directory
+    my $resultparserpath = catdir($basedir, 'thirdparty', 'resultparser');
+    $result &&= copyInput($resultparserpath, $platform_identifier, $dest, $os_dependencies);
 
-    return 1;
-}
-
-sub _deployTarByPlatform { my ($tarfile, $compressed, $dest, $platform) = @_ ;
-    $log->debug("_deployTarByPlatform - tarfile: $tarfile platform: $platform dest: $dest");
-    my $iter = Archive::Tar->iter($tarfile, $compressed, {'filter' => qr/$platform/sxm});
-    my $member = $iter->();
-    if (! $member) {
-        $iter = Archive::Tar->iter($tarfile, $compressed, {'filter' => qr/noarch/sxm});
-        $member = $iter->();
-    }
-    if (! $member) {
-        $log->error("_deployTarByPlatform - $platform and noarch not found in $tarfile");
-    }
-    while ($member) {
-        if ($member->is_dir) {
-            $member = $iter->();
-            next;
-        }
-        if ($member->is_symlink) {
-            my $linkname = $member->linkname;
-            $linkname =~ s/^(?:\.\.\/)*//sxm;
-            my $link = Archive::Tar->iter($tarfile, $compressed, {'filter' => qr/$linkname/sxm})->();
-            if ($link->is_dir) {
-                $linkname = $link->name;
-                my $linkiter = Archive::Tar->iter($tarfile, $compressed, {'filter' => qr/$linkname/sxm});
-                while (my $linkmember = $linkiter->()) {
-                    if ($linkmember->is_dir) {
-                        $member = $iter;
-                        next;
-                    }
-                    my $basename = basename($linkmember->name);
-                    my $destname = $dest . qq{/}. $basename;
-                    if ($linkmember->name =~ m/swamp-conf\/sys-os-dependencies.conf/sxm) {
-                        $destname = $dest . qq{/os-dependencies-framework.conf};
-                    }
-                    $log->debug("_deployTarByPlatform - extract symlink dir: $destname to $dest");
-                    $linkmember->extract($destname);
-                }
-            }
-            else {
-                my $basename = basename($link->name);
-                my $destname = $dest . qq{/}. $basename;
-                if ($link->name =~ m/swamp-conf\/sys-os-dependencies.conf/sxm) {
-                    $destname = $dest . qq{/os-dependencies-framework.conf};
-                }
-                $log->debug("_deployTarByPlatform - extract symlink file: $destname to $dest");
-                $link->extract($destname);
-            }
-        }
-        else {
-            my $basename = basename($member->name);
-            my $destname = $dest . qq{/}. $basename;
-            if ($member->name =~ m/swamp-conf\/sys-os-dependencies.conf/sxm) {
-                $destname = $dest . qq{/os-dependencies-framework.conf};
-            }
-            $log->debug("_deployTarByPlatform - extract file: $destname to $dest");
-            $member->extract($destname);
-        }
-        $member = $iter->();
-    }
-    return;
-}
-
-sub _copyFramework { my ($bogref, $basedir, $dest) = @_ ;
-    my $file;
+	# copy assessment framework to the input destination directory
     if (isJavaPackage($bogref)) {
-        $file = "$basedir/thirdparty/java-assess.tar";
-    }
+        $file = 'java-assess';
+    }        
     elsif (isRubyPackage($bogref)) {
-        $file = "$basedir/thirdparty/ruby-assess.tar";
-    }
+        $file = 'ruby-assess';
+    }        
     elsif (isCPackage($bogref)) {
-        $file = "$basedir/thirdparty/c-assess.tar";
-    }
+        $file = 'c-assess';
+    }        
     elsif (isScriptPackage($bogref) || isPythonPackage($bogref) || isDotNetPackage($bogref)) {
-        $file = "$basedir/thirdparty/script-assess.tar";
-    }
-    my $compressed = 0;
-    if (! -r $file) {
-		$file .= '.gz';
-		$compressed = 1;
-    	if (! -r $file) {
-        	$log->error($bogref->{'execrunid'}, "Cannot see assessment toolchain $file");
-        	return 0;
-		}
-    }
-    my $platform = $bogref->{'platform'} . qq{/};
-	$log->info("using framework: $file $compressed on platform: $platform");
-    _deployTarByPlatform($file, $compressed, $dest, $platform);
-    if (-r "$dest/os-dependencies-framework.conf") {
-        $log->debug("Adding $dest/os-dependencies-framework.conf");
-        system("cat $dest/os-dependencies-framework.conf >> $dest/os-dependencies.conf");
-    }
-
-    # remove empty os-dependencies file
-    if (-z "$dest/os-dependencies.conf") {
-        unlink("$dest/os-dependencies.conf");
-    }
+        $file = 'script-assess';
+    }        
     else {
-        _mergeDependencies("$dest/os-dependencies.conf");
+        $log->error('copyAssessmentInputs error - packagetype: ', $bogref->{'packagetype'});
+        return 0;
     }
+    my $frameworkpath = catdir($basedir, 'thirdparty', $file);
+    $result &&= copyInput($frameworkpath, $platform_identifier, $dest, $os_dependencies);
 
-    # Preserve the provided run.sh, we'll invoke it from our run.sh
-    if (-r "$dest/run.sh") {
-        $log->debug("renaming $dest/run.sh");
-        if (! move( "$dest/run.sh", "$dest/_run.sh")) {
-            $log->error($bogref->{'execrunid'}, "Cannot move run.sh to _run.sh in $dest");
-			return 0;
-        }
-    }
-    return 1;
+	# remove or merge os-dependencies in the input destination directory
+	if (-z $os_dependencies) {
+		unlink($os_dependencies);
+	}
+	else {
+		_mergeDependencies($os_dependencies);
+	}
+
+    return $result;
 }
 
 sub needsFloodlightAccessTool { my ($bogref) = @_ ;
@@ -1026,11 +1012,27 @@ sub isDotNetPackage { my ($bogref) = @_ ;
 
 sub createAssessmentConfigs { my ($bogref, $dest, $user, $password) = @_ ;
     my $goal = q{build+assess+parse};
-    if (! saveProperties("$dest/run-params.conf", {
-        'SWAMP_USERNAME' => $user,
-        'SWAMP_USERID' => '9999',
-        'SWAMP_PASSWORD'=> $password}
-    )) {
+	my $run_params_hash = {
+        	'SWAMP_USERNAME'		=> $user,
+        	'SWAMP_USERID'			=> '9999',
+        	'SWAMP_GROUPNAME'		=> $user,
+        	'SWAMP_GROUPID'			=> '9999',
+        	'SWAMP_PASSWORD'		=> $password,
+			'DELAY_SHUTDOWN_UNTIL'	=> 1,
+			'CAPTURE_FILES'			=> "'/var/log/messages /var/log/boot.log'",
+			'CAPTURE_ARCHIVE'		=> 'joboslog.tar.gz',
+	};
+	if ($bogref->{'use_docker_universe'}) {
+		$run_params_hash->{'SWAMP_USERID'} = $REAL_USER_ID;
+		$run_params_hash->{'SWAMP_GROUPID'} = $REAL_GROUP_ID + 0; # convert list to scalar
+		$run_params_hash->{'SWAMP_EVENT_FILE'} = $HTCONDOR_JOB_EVENTS_FILE;
+		$run_params_hash->{'IP_ADDR_FILE'} = $HTCONDOR_JOB_IP_ADDRESS_FILE;
+	}
+	else {
+		$run_params_hash->{'SWAMP_EVENT_FILE'} = $HTCONDOR_JOB_EVENTS_TTY;
+		$run_params_hash->{'IP_ADDR_FILE'} = $HTCONDOR_JOB_IP_ADDRESS_TTY;
+	}
+    if (! saveProperties("$dest/run-params.conf", $run_params_hash)) {
         $log->warn($bogref->{'execrunid'}, " Cannot save run-params.conf");
     }
     my $runprops = {'goal' => $goal};
@@ -1202,7 +1204,7 @@ sub _createUserConf { my ($bogref, $dest) = @_ ;
 }
 
 sub _mergeDependencies { my ($file) = @_ ;
-    $log->debug("_mergeDependencies - file: $file");
+    $log->info("_mergeDependencies - file: $file");
     if (open (my $fd, '<', $file)) {
         my %map;
         while (<$fd>) {
@@ -1213,7 +1215,7 @@ sub _mergeDependencies { my ($file) = @_ ;
         }
         close($fd);
         if (open(my $fd, '>', $file)) {
-            foreach my $key (keys %map) {
+            foreach my $key (sort keys %map) {
                 print $fd "$key=$map{$key}\n";
             }
             close($fd);
@@ -1222,52 +1224,34 @@ sub _mergeDependencies { my ($file) = @_ ;
     return;
 }
 
-sub _addUserDepends { my ($bogref, $destfile) = @_ ;
+sub _addUserDepends { my ($bogref, $user_dependencies, $os_dependencies) = @_ ;
     my $dep = trim($bogref->{'packagedependencylist'});
 	if (! $dep || ($dep eq q{null})) {
         $log->info("addUserDepends - No packagedependencylist in BOG");
         return;
     }
-    if (open(my $fh, '>>', $destfile)) {
-        $log->info("addUserDepends - opened $destfile");
-        print $fh "dependencies-$bogref->{'platform'}=$bogref->{'packagedependencylist'}\n";
-        if (! close($fh)) {
-            $log->warn("adduserDepends - Error closing $destfile: $OS_ERROR");
+    if (open(my $fh, '>', $user_dependencies)) {
+        $log->info("addUserDepends - opened $user_dependencies");
+		my $platform_identifier = $bogref->{'platform_identifier'};
+		if ($platform_identifier =~ m/^android-/i) {
+			$platform_identifier =~ s/^android-//;
+		}
+        print $fh "dependencies-${platform_identifier}=$bogref->{'packagedependencylist'}\n";
+        if (close($fh)) {
+			my $cmd = "cat $user_dependencies >> $os_dependencies";
+			my ($output, $status, $error_output) = systemcall($cmd, 1);
+			if ($status) {
+				$log->error("addUserDepends warning - $cmd failed - $status $output $error_output");
+			}
         }
+		else {
+            $log->error("addUserDepends - Error closing $user_dependencies $OS_ERROR");
+		}
     }
     else {
-        $log->error("addUserDepends - Cannot append to $destfile :$OS_ERROR");
+        $log->error("addUserDepends - Cannot create $user_dependencies :$OS_ERROR");
     }
     return;
-}
-
-sub _parserDeploy { my ($opts) = @_;
-    my $member = $opts->{'member'};
-    my $tar = $opts->{'archive'};
-    my $dest = $opts->{'dest'};
-    if ($member =~ /parser-os-dependencies.conf/sxm) {
-        $log->debug("_parserDeploy - extract: $member to $dest/os-dependencies-parser.conf");
-        $tar->extract_file($member, "$dest/os-dependencies-parser.conf");
-    }
-    if ($member =~ /in-files/sxm) {
-        my $filename = basename($member);
-        $log->debug("_parserDeploy - extract: $member to $dest/$filename");
-        $tar->extract_file($member, "$dest/$filename");
-    }
-    return;
-}
-
-sub _deployTarball { my ($tarfile, $dest) = @_ ;
-    my $tar = Archive::Tar->new($tarfile, 1);
-    my @list = $tar->list_files();
-    my %options = ('archive' => $tar, 'dest' => $dest);
-    foreach my $member (@list) {
-        # Skip directory
-        next if ($member =~ /\/$/sxm);
-        $options{'member'} = $member;
-        _parserDeploy(\%options);
-    }
-    return 1;
 }
 
 #########################
@@ -1275,7 +1259,7 @@ sub _deployTarball { my ($tarfile, $dest) = @_ ;
 #########################
 
 sub updateClassAdAssessmentStatus { my ($execrunuid, $vmhostname, $user_uuid, $projectid, $status) = @_ ;
-    $log->info("Status: $status");
+    $log->info("Updating Class Ad Status: $status");
 	my $poolarg = q();
 	$global_swamp_config ||= getSwampConfig();
 	if (! isSwampInABox($global_swamp_config)) {
@@ -1294,6 +1278,237 @@ EOF
     if ($stat) {
         $log->error("Error - condor_advertise returns: $output $stat");
     }
+}
+
+#################################
+#	Assessment Result Output	#
+#################################
+
+sub parse_statusOutLines { my ($statusOut_lines) = @_ ;
+	my $statusOutContent = trim(join "\n", @$statusOut_lines);
+	my $statusOut = {};
+	my $tasks = [];
+	
+	# per task collected values
+	my $long_message_delimiter_found = 0;
+	my $long_message;
+	my $long_message_task_name;
+
+	# meta collected values
+	my $first_failure_task_name;
+	my $weaknesses;
+	my $no_files;
+	my $no_build;
+	my $source_files;
+	my $compilable;
+	my $retry;
+	my $all_pass;
+	my $pass_count = 0;
+	my $fail_count = 0;
+	my $skip_count = 0;
+	my $note_count = 0;
+
+	foreach my $line (@$statusOut_lines) {
+		# task record
+		if ($line =~ m/^\s*
+		(PASS|FAIL|SKIP|NOTE)\:	# status
+		\s+([a-zA-Z0-9_-]+)		# task
+		(?:\s+\((.*)\))?		# optional short message
+		(?:\s+(-?\d+\.?\d*))?	# optional duration
+		(s|ms|ns)?				# optional units		
+		\s*$/x) {
+			my ($status, $task_name, $short_message, $duration, $units) = ($1, $2, $3, $4, $5);
+			$statusOut->{$task_name} = {
+				'task'		=> $task_name,
+				'status'	=> $status,
+				'short'		=> $short_message,
+				'duration'	=> $duration,
+				'units'		=> $units,
+			};
+			push @$tasks, $task_name;
+			if ($status eq 'PASS') {
+				$pass_count += 1;
+				$all_pass = 1 if ($task_name eq 'all');
+			}
+			elsif ($status eq 'FAIL') {
+				$fail_count += 1;
+				$first_failure_task_name = $task_name if (! $first_failure_task_name);
+				$all_pass = 0 if ($task_name eq 'all');
+			}
+			elsif ($status eq 'SKIP') {
+				$skip_count += 1;
+				$no_files = 1 if ($task_name eq 'assess');
+			}
+			elsif ($status eq 'NOTE') {
+				$note_count += 1;
+				$retry = 1 if ($task_name eq 'retry');
+			}
+			if ($task_name eq 'parse-results') {
+				if ($short_message =~ m/weaknesses\s*:\s*(\d+)/sxm) {
+					$weaknesses = $1;
+				}
+			}
+			elsif ($task_name eq 'no-build-setup') {
+				if ($short_message =~ m/source-files\s*:\s*(\d+).*compilable\s*:\s*(\d+)/xsm) {
+					$no_build = 1;
+					$source_files = $1;
+					$compilable = $2;
+				}
+			}
+			$long_message_task_name = $task_name;
+		}
+		# long message delimiter
+		elsif ($line =~ m/^\s*\-+\s*$/) {
+			if (! $long_message_delimiter_found) {
+				$long_message_delimiter_found = 1;
+			}
+			else {
+				$statusOut->{$long_message_task_name}->{'long'} = $long_message;
+				$long_message_delimiter_found = 0;
+				$long_message = undef;
+			}
+		}
+		# long message content
+		else {
+			$long_message .= $line . "\n";
+		}
+	}
+	my $statusOutMeta = {
+		'tasks'			=> $tasks,
+		'first_failure'	=> $first_failure_task_name,
+		'weaknesses'	=> $weaknesses,
+		'no_files'		=> $no_files,
+		'no_build'		=> $no_build,
+		'source_files'	=> $source_files,
+		'compilable'	=> $compilable,
+		'retry'			=> $retry,
+		'all_pass'		=> $all_pass,
+		'pass_count'	=> $pass_count,
+		'fail_count'	=> $fail_count,
+		'skip_count'	=> $skip_count,
+		'note_count'	=> $note_count,
+	};
+	return {
+		'status'	=> $statusOut, 
+		'meta'		=> $statusOutMeta, 
+		'content'	=> $statusOutContent,
+	};
+}
+
+sub parse_statusOut { my ($statusOut_file) = @_ ;
+	if (! $statusOut_file) {
+		$log->error("parse_statusOut - statusOut_file not specified");
+		return;
+	}
+	if (! -f $statusOut_file || ! -r $statusOut_file) {
+		$log->error("parse_statusOut - $statusOut_file is not a file or is not readable");
+		return;
+	}
+	my $fh;
+	if (! open($fh, '<', $statusOut_file)) {
+		$log->error("parse_statusOut - open: $statusOut_file failed");
+		return;
+	}
+	my @lines = <$fh>;
+	close($fh);
+	chomp @lines;
+	return parse_statusOutLines(\@lines);
+}
+
+my $common_output_files = [qw(buildConf parsedResultsConf resultsConf)];
+my $default_output_files = {
+	'buildAssessOut'	=> 'build_assess.out',
+	'buildConf'			=> 'build.conf', 			# use common
+	'captureArchive'	=> 'capture.tar.gz',
+	'envSh'				=> 'env.sh',
+	'parsedResultsConf'	=> 'parsed_results.conf',	# use common
+	'resultsConf'		=> 'results.conf',			# use common
+	'runOut'			=> 'run.out',
+	'statusOut'			=> 'status.out',
+};
+
+sub locate_output_files { my ($outputfolder, $output_files_config_file) = @_ ;
+	# top level
+	$output_files_config_file = catfile($outputfolder, $output_files_config_file);
+	my $output_files = {};
+	# if output file list configuration file is not present then use defaults
+	# log use of defaults
+	if (! -r $output_files_config_file) {
+		$output_files = $default_output_files;
+		$log->info("locate_output_files - no $output_files_config_file - using default values");
+	}
+	else {
+		# if output file list configuration cannot be loaded then use defaults
+		# issue a warning
+		if (! loadProperties($output_files_config_file, $output_files)) {
+			$output_files = $default_output_files;
+			$log->warn("locate_output_files - $output_files_config_file error - using default values");
+		}
+	}
+	foreach my $key (keys %$output_files) {
+		if (! -r catfile($outputfolder, $output_files->{$key})) {
+			delete $output_files->{$key};
+		}
+	}
+	foreach my $key (@$common_output_files) {
+		if (! defined($output_files->{$key}) && defined($default_output_files->{$key}) && -r catfile($outputfolder, $default_output_files->{$key})) {
+			$output_files->{$key} = $default_output_files->{$key};
+		}
+	}
+	# buildConf
+	my $build_output_files = {};
+	if (_loadConfig($outputfolder, $output_files, 'buildConf', $build_output_files)) {
+		# preserve the file name for buildConf
+		$output_files->{'buildConfFile'} = $output_files->{'buildConf'};
+		$output_files->{'buildConf'} = $build_output_files;
+	}
+	# resultsConf
+	my $results_output_files = {};
+	if (_loadConfig($outputfolder, $output_files, 'resultsConf', $results_output_files)) {
+		# preserve the file name for resultsConf
+		$output_files->{'resultsConfFile'} = $output_files->{'resultsConf'};
+		$output_files->{'resultsConf'} = $results_output_files;
+	}
+	# parsedResultsConf
+	my $parsed_results_output_files = {};
+	if (_loadConfig($outputfolder, $output_files, 'parsedResultsConf', $parsed_results_output_files)) {
+		# preserve the file name for parsedResultsConf
+		$output_files->{'parsedResultsConfFile'} = $output_files->{'parsedResultsConf'};
+		$output_files->{'parsedResultsConf'} = $parsed_results_output_files;
+	}
+	return $output_files;
+}
+
+sub _loadConfig { my ($outputfolder, $output_files, $config_key, $result) = @_ ;
+	if (! $config_key) {
+		$log->error("_loadConfig config_key not specified");
+		return;
+	}
+	if (! defined($output_files->{$config_key})) {
+		$log->warn("_loadConfig $config_key not found in output_files");
+		return;
+	}
+	my $configfile = catfile($outputfolder, $output_files->{$config_key});
+	if (! -f $configfile || ! -r $configfile) {
+		$log->error("_loadConfig - $config_key: $configfile not found");
+		return;
+	}
+	my $config = $result;
+	if (ref $config eq ref {}) {
+		my $status = loadProperties($configfile, $config);
+	}
+	else {
+		$config = loadProperties($configfile);
+	}
+	if (! defined($config)) {
+		$log->error("_loadConfig - $config_key: failed to read $configfile");
+		return;
+	}
+	if (! scalar(keys %$config)) {
+		$log->error("_loadConfig - $config_key: $configfile is empty");
+		return;
+	}
+	return $config;
 }
 
 1;

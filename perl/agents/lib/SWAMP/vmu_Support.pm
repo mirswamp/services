@@ -36,6 +36,7 @@ BEGIN {
 	  listDirectoryContents
 	  computeDirectorySizeInBytes
 	  from_json_wrapper
+	  from_json_file_wrapper
 	  trim
       systemcall
 	  getSwampDir
@@ -46,8 +47,8 @@ BEGIN {
 	  saveProperties
 	  createQcow2Disks
 	  patchDeltaQcow2ForInit
-	  displaynameToMastername
-	  masternameToPlatform
+	  platformIdentifierToImage
+	  imageToPlatformIdentifier
 	  checksumFile
 	  rpccall
 	  constructJobDirName
@@ -73,6 +74,8 @@ BEGIN {
 	  isAssessmentRun
 	  isMetricRun
 	  isViewerRun
+	  isVMPlatform
+	  isDCPlatform
 	  job_database_connect
 	  job_database_disconnect
 	  timing_log_assessment_timepoint
@@ -93,6 +96,19 @@ BEGIN {
 	  $global_swamp_config
 	  $HTCONDOR_POSTSCRIPT_FAILED
 	  $HTCONDOR_POSTSCRIPT_EXIT
+
+	  $HTCONDOR_JOB_INPUT_DIR
+	  $HTCONDOR_JOB_OUTPUT_DIR
+	  $HTCONDOR_JOB_INPUT_MOUNT
+	  $HTCONDOR_JOB_OUTPUT_MOUNT
+
+	  $HTCONDOR_JOB_IP_ADDRESS_FILE
+	  $HTCONDOR_JOB_IP_ADDRESS_PATH
+	  $HTCONDOR_JOB_IP_ADDRESS_TTY
+
+	  $HTCONDOR_JOB_EVENTS_FILE
+	  $HTCONDOR_JOB_EVENTS_PATH
+	  $HTCONDOR_JOB_EVENTS_TTY
     );
 }
 
@@ -112,6 +128,24 @@ our $RUNTYPE_MRUN	= 3;
 our $HTCONDOR_POSTSCRIPT_FAILED = 44;
 our $HTCONDOR_POSTSCRIPT_EXIT = 5;
 
+# generic values
+our $HTCONDOR_JOB_IP_ADDRESS_FILE = q{job_ip_address.txt};
+our $HTCONDOR_JOB_EVENTS_FILE = q{job_events.log};
+
+# path values for exec node condor scratch directory
+# path values for docker universe framework are the same
+our $HTCONDOR_JOB_INPUT_DIR = q{in};
+our $HTCONDOR_JOB_OUTPUT_DIR = q{out};
+our $HTCONDOR_JOB_IP_ADDRESS_PATH = catfile($HTCONDOR_JOB_OUTPUT_DIR, $HTCONDOR_JOB_IP_ADDRESS_FILE);
+our $HTCONDOR_JOB_EVENTS_PATH = catfile($HTCONDOR_JOB_OUTPUT_DIR, $HTCONDOR_JOB_EVENTS_FILE);
+
+# path values for vm universe framework
+# from libvirt_swamp_script.awk
+our $HTCONDOR_JOB_INPUT_MOUNT = q{/mnt/in};
+our $HTCONDOR_JOB_OUTPUT_MOUNT = q{/mnt/out};
+our $HTCONDOR_JOB_EVENTS_TTY = '/dev/ttyS1';
+our $HTCONDOR_JOB_IP_ADDRESS_TTY = '/dev/ttyS2';
+
 my $DEFAULT_CONFIG = catfile(getSwampDir(), 'etc', 'swamp.conf');
 my $MASTER_IMAGE_PATH = '/swamp/platforms/images/';
 
@@ -127,7 +161,7 @@ sub use_make_path { my ($dir) = @_ ;
 			my ($file, $message) = %$diag;
 			$error_string .= $file . ' ' . $message . ' ';
 		}
-		$log->error("Error - $dir make_path failed - result: $result error: $error_string");
+		$log->error("Error - make_path $dir failed - result: $result error: $error_string");
 		return 0;
 	}
 	return $result;
@@ -142,7 +176,7 @@ sub use_remove_tree { my ($dir) = @_ ;
 			my ($file, $message) = %$diag;
 			$error_string .= $file . ' ' . $message . ' ';
 		}
-		$log->error("Error - $dir remove_tree failed - result: $result error: $error_string");
+		$log->error("Error - remove_tree $dir failed - result: $result error: $error_string");
 		return 0;
 	}
 	return $result;
@@ -154,7 +188,7 @@ sub getVMIPAddress { my ($vmhostname) = @_ ;
 	my $vmip_lookup_sleep = $global_swamp_config->get('vmip_lookup_sleep') || 1;
 	my $vmip_lookup_attempts = $global_swamp_config->get('vmip_lookup_attempts') || 10;
 	for (my $i = 0; $i < $vmip_lookup_attempts; $i++) {
-		if (open(my $fh, '<', 'vmip.txt')) {
+		if (open(my $fh, '<', $HTCONDOR_JOB_IP_ADDRESS_PATH)) {
 			$vmip = <$fh>;
 			close($fh);
 			if ($vmip) {
@@ -316,6 +350,14 @@ sub runType { my ($execrunuid) = @_ ;
 	return $RUNTYPE_ARUN;
 }
 
+sub isDCPlatform { my ($platform_type) = @_ ;
+	return ($platform_type =~ m/^DC$/sxim);
+}
+
+sub isVMPlatform { my ($platform_type) = @_ ;
+	return ($platform_type =~ m/^VM$/sxim);
+}
+
 sub from_json_wrapper { my ($json_string) = @_ ;
 	my $json;
 	eval {
@@ -323,15 +365,25 @@ sub from_json_wrapper { my ($json_string) = @_ ;
 	};
 	if ($@) {
 		$log->warn('from_json_wrapper - string: ', defined($json_string) ? $json_string : 'undef', " error: $@");
-		return undef;
+		return;
 	}
 	return $json;
 }
 
+sub from_json_file_wrapper { my ($file) = @_ ;
+	if (open(my $fh, '<', $file)) {
+		my $json_string = do { local $/; <$fh> };
+		close($fh);
+		my $json = from_json_wrapper($json_string);
+		return $json;
+	}
+	return;
+}
+
 sub trim { my ($string) = @_ ;
 	if (defined($string)) {
-    	$string =~ s/^\s+//sxm;
-    	$string =~ s/\s+$//sxm;
+    	$string =~ s/^\s+//;
+    	$string =~ s/\s+$//;
 	}
     return $string;
 }
@@ -370,6 +422,9 @@ sub _getHTCondorSubmitNode { my ($condor_manager) = @_ ;
 					chomp $submit_node;
 				}
 			}
+			else {
+				$log->error("_getHTCondorSubmitNode <$cmd> failed - $status $output");
+			}
 		}
 	}
 	return $submit_node;
@@ -382,29 +437,31 @@ sub getHTCondorJobId { my ($execrunuid) = @_ ;
 	if ($condor_manager && $submit_node) {
 		$cmd .= qq( -name $submit_node -pool $condor_manager);
 	}
-	$cmd .= qq( -constraint \'regexp(\"$execrunuid\", SWAMP_arun_execrunuid) || regexp(\"$execrunuid\", SWAMP_mrun_execrunuid) || regexp(\"$execrunuid\", SWAMP_vrun_execrunuid)\' -af Cmd SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid SWAMP_viewerinstanceid);
+	$cmd .= qq( -constraint \'regexp(\"$execrunuid\", SWAMP_arun_execrunuid) || regexp(\"$execrunuid\", SWAMP_mrun_execrunuid) || regexp(\"$execrunuid\", SWAMP_vrun_execrunuid)\' -af GlobalJobId SWAMP_arun_execrunuid SWAMP_mrun_execrunuid SWAMP_vrun_execrunuid SWAMP_viewerinstanceid);
 	my ($output, $status) = systemcall($cmd);
 	if ($status) {
-		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $status $output");
+		$log->error("getHTCondorJobId <$cmd> failed for $execrunuid - $status $output");
 		return;
 	}
-	if ($output !~ m/^.swamp\-\d+\-\d+/) {
-		$log->error("getHTCondorJobId condor_q failed for $execrunuid: $output");
+	if ($output !~ m/^.*\#(\d+\.\d+)\#/) {
+		$log->error("getHTCondorJobId <$cmd> failed for $execrunuid - $output");
 		return;
 	}
+	my $jobid = $1;
 	chomp $output;
-	my ($type_clusterid_procid, $arun_execrunuid, $mrun_execrunuid, $vrun_execrunuid, $viewer_instanceuid) = split ' ', $output;
-	my ($type, $clusterid, $procid) = split '-', $type_clusterid_procid;
-	$type =~ s/swamp/run/;
-	my $jobid = $clusterid . '.' . $procid;
+	my (undef, $arun_execrunuid, $mrun_execrunuid, $vrun_execrunuid, $viewer_instanceuid) = split ' ', $output;
 	my $returned_execrunuid = 'undefined';
-	if ($type eq 'arun') {
+	my $type = 'undefined';
+	if ($arun_execrunuid ne 'undefined') {
+		$type = 'arun';
 		$returned_execrunuid = $arun_execrunuid;
 	}
-	elsif ($type eq 'mrun') {
+	elsif ($mrun_execrunuid ne 'undefined') {
+		$type = 'mrun';
 		$returned_execrunuid = $mrun_execrunuid;
 	}
-	elsif ($type eq 'vrun') {
+	elsif ($vrun_execrunuid ne 'undefined') {
+		$type = 'vrun';
 		$returned_execrunuid = $vrun_execrunuid;
 	}
 	return ($jobid, $type, $returned_execrunuid, $viewer_instanceuid);
@@ -423,6 +480,9 @@ sub HTCondorJobStatus { my ($jobid) = @_ ;
 		if ($output) {
 			return $output;
 		}
+	}
+	else {
+		$log->error("HTCondorJobStatus <$cmd> failed - $status $output");
 	}
 	return;
 }
@@ -649,6 +709,7 @@ sub saveProperties { my ($file, $hashref, $comment) = @_ ;
             print $fh "# $comment\n";
         }
         foreach my $key (sort keys %{$hashref}) {
+			next if (! defined($hashref->{$key}));
 			my $propstring = _getPropString($key, $hashref->{$key});
             print $fh "$propstring\n";
         }
@@ -749,55 +810,69 @@ sub systemcall { my ($command, $silent) = @_;
 			$log->error("systemcall - error: $msg");
 		}
 	}
-    return ($stdout, $exit);
+    return ($stdout, $exit, $stderr);
 }
 
-sub masternameToPlatform { my ($qcow_name) = @_ ;
-	if (! $qcow_name) {
-		$log->error("No qcow file name specified");
+sub imageToPlatformIdentifier { my ($platform_image) = @_ ;
+	if (! $platform_image) {
+		$log->error("No platform image file name specified");
 		return '';
 	}
-	my $platform = basename($qcow_name);
-	$platform =~ s/^condor-//;
-	$platform =~ s/-master-\d+.qcow2$//;
-	if (! $platform) {
-		$log->error("Could not translate $qcow_name to platform");
+	my $platform_identifier = basename($platform_image);
+	$platform_identifier =~ s/^.*condor-//;
+	$platform_identifier =~ s/-master-.*$//;
+	if (! $platform_identifier) {
+		$log->error("Could not translate $platform_image to platform identifier");
 		return '';
 	}
-	return $platform;
+	return $platform_identifier;
 }
 
-sub displaynameToMastername { my ($platform) = @_ ;
-	if (! $platform) {
-		$log->error("No platform specified");
+sub platformIdentifierToImage { my ($bogref) = @_ ;
+	if (! $bogref->{'platform_identifier'}) {
+		$log->error("No platform identifier specified");
 		return '';
 	}
-	$log->trace("displaynameToMastername - platform: $platform");
-	$platform =~ s/\.minorversion\-/\.\*\-/;
-	my $findcmd = "find $MASTER_IMAGE_PATH -maxdepth 1 -name \"*$platform*\"";
-	$log->trace("displaynameToMastername - find command: $findcmd");
+	if (! $bogref->{'platform_type'}) {
+		$log->error("No platform type specified");
+		return '';
+	}
+	my $platform_identifier = $bogref->{'platform_identifier'};
+	my $platform_type = $bogref->{'platform_type'};
+	$log->trace("platformIdentifierToImage - platform_identifier: $platform_identifier platform_type: $platform_type");
+	$platform_identifier =~ s/\.minorversion\-/\.\*\-/;
+	my $findcmd = "find $MASTER_IMAGE_PATH -maxdepth 1 -name \"*$platform_identifier*\"";
+	if (isDCPlatform($platform_type)) {
+		$findcmd = "docker images | grep 'swamp/'";
+		# TEMPORARY patch for 1.35 since this command executes on the data node as the mysql user
+		if (-r '/opt/swamp/etc/swamp_docker_images.txt') {
+			$findcmd = 'cat /opt/swamp/etc/swamp_docker_images.txt';
+		}
+	}
+	$log->trace("platformIdentifierToImage - find command: $findcmd");
     my ($output, $status) = systemcall($findcmd);
     if ($status) {
-        $log->error("Cannot find images in: $MASTER_IMAGE_PATH for: $platform");
+        $log->error("Cannot find images in: $MASTER_IMAGE_PATH for: $platform_identifier");
         return '';
     }
     my @files = split "\n", $output;
     my $latest_timestamp = 0;
-    my $imagename = '';
+    my $platform_image = '';
     foreach my $file (@files) {
-        if ($file =~ m/^${MASTER_IMAGE_PATH}condor-$platform-master-(.*).qcow2$/mxs) {
+        if ($file =~ m/condor-${platform_identifier}-master-(\d+)/mxs) {
             my $timestamp = $1;
             if ($timestamp > $latest_timestamp) {
-                $imagename = $file;
+                $platform_image = $file;
+				$platform_image =~ s/\s+.*$//;
                 $latest_timestamp = $timestamp;
             }
         }
     }
-	if (! $imagename) {
-		$log->error("Cannot find image for: $platform");
+	if (! $platform_image) {
+		$log->error("Cannot find image for: $platform_identifier");
 		return '';
 	}
-    return $imagename;
+    return $platform_image;
 }
 
 sub _handleDebian { my ($opts) = @_;
@@ -844,9 +919,9 @@ sub _handleEL {
     my $osbits   = 'unknown';
 
     if ( ! ( $osimage =~ /([a-z]+)-([0-9.]+)-([36][24])/ ) ) {
-	printf("Can't parse '%s' for os info\n", $osimage);
-	consoleMsg("Can't parse '%s' for os info\n", $osimage);
-	return $ostype;
+		printf("Can't parse '%s' for os info\n", $osimage);
+		consoleMsg("Can't parse '%s' for os info\n", $osimage);
+		return $ostype;
     }
 
     $osname = $1;
@@ -954,24 +1029,24 @@ my %os_init = (
     'windows-7'  	=> \&_handleWindows,
 );
 
-sub _insertIntoInit { my ($osimage, $script, $runshcmd, $vmhostname, $imagename) = @_ ;
+sub _insertIntoInit { my ($platform_image, $script, $runshcmd, $vmhostname) = @_ ;
     my $ostype    = 'unknown';
     my $ret       = 1;
     foreach my $key (keys %os_init) {
-        if (lc $osimage =~ /$key/sxm) {
-            $ostype = $os_init{$key}->( { 'osimage' => $osimage, 'script'  => $script, 'runcmd'  => $runshcmd, 'vmhostname'  => $vmhostname });
+        if (lc $platform_image =~ /$key/sxm) {
+            $ostype = $os_init{$key}->( { 'osimage' => $platform_image, 'script'  => $script, 'runcmd'  => $runshcmd, 'vmhostname'  => $vmhostname });
             $ret = 0;
             last;
         }
     }
     if ($ret == 1) {
-        $log->error("_insertIntoInit - Unrecognized image platform type using \"$imagename\"");
+        $log->error("_insertIntoInit - Unrecognized image platform type using \"$platform_image\"");
     }
     return ($ostype, $ret);
 }
 
-sub _edit_fstab { my ($imagename, $script) = @_ ;
-	my $yearstamp = ($imagename =~ m/\-(\d{4})\d{6}\.qcow2$/) ? $1 : 0;
+sub _edit_fstab { my ($platform_image, $script) = @_ ;
+	my $yearstamp = ($platform_image =~ m/\-(\d{4})\d{6}\.qcow2$/) ? $1 : 0;
 	# only edit new platform images with datestamp in year 2019 or greater
 	return if ($yearstamp < 2019);
     ## VMs now need to have the fstab entries added
@@ -982,7 +1057,7 @@ sub _edit_fstab { my ($imagename, $script) = @_ ;
     print $script "write-append /etc/fstab \"## SWAMP-END\\n\"\n";
 }
 
-sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
+sub patchDeltaQcow2ForInit { my ($platform_image, $vmhostname) = @_ ;
 	my $swampdir = getSwampDir();
 	my $runshcmd =
 		"\"#!/bin/bash\\n/bin/chmod 01777 /mnt/out;[ -r /etc/profile.d/vmrun.sh ] && . /etc/profile.d/vmrun.sh;[ -r $swampdir/etc/profile.d/vmrun.sh ] && . $swampdir/etc/profile.d/vmrun.sh;/bin/chown 0:0 /mnt/out;/bin/chmod +x /mnt/in/run.sh && cd /mnt/in && nohup /mnt/in/run.sh > /mnt/out/runsh.out 2>&1 &\\n\"";
@@ -993,16 +1068,16 @@ sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
 		return 0;
 	}
 	print $script "#!/usr/bin/guestfish -f\n";
-	my ($ostype, $status) = _insertIntoInit($imagename, $script, $runshcmd, $vmhostname, $imagename);
+	my ($ostype, $status) = _insertIntoInit($platform_image, $script, $runshcmd, $vmhostname);
 	if ($status) {
 		$log->error("patchDeltaQcow2ForInit - _insertIntoInit failed");
 		close($script);
 		return 0;
 	}
 	# for new platform images - edit fstab to add /mnt/in and /mnt/out
-	_edit_fstab($imagename, $script);
+	_edit_fstab($platform_image, $script);
 	close($script);
-	(my $output, $status) = systemcall("LIBGUESTFS_BACKEND=direct /usr/bin/guestfish -f $gfname -a delta.qcow2 -i </dev/null");
+	(my $output, $status) = systemcall(qq{LIBGUESTFS_BACKEND=direct /usr/bin/guestfish -f $gfname -a delta.qcow2 -i </dev/null});
 	if ($status) {
 		$log->error("patchDeltaQcow2ForInit - guestfish -f $gfname failed: $output $status");
 		return 0;
@@ -1010,21 +1085,19 @@ sub patchDeltaQcow2ForInit { my ($imagename, $vmhostname) = @_ ;
 	return 1;
 }
 
-sub createQcow2Disks { my ($bogref, $inputfolder, $outputfolder) = @_ ;
+sub createQcow2Disks { my ($platform_image, $inputfolder, $outputfolder) = @_ ;
 	# delta qcow2
-	$log->info('Creating base image for: ', $bogref->{'platform'});
-	my $imagename = displaynameToMastername($bogref->{'platform'});
-	if (! $imagename) {
+	if (! $platform_image) {
 		$log->error("createQcow2Disks - base image creation failed - no image");
 		return;
 	}
-	if (! -r $imagename) {
-		$log->error("createQcow2Disks - base image creation failed - $imagename not readable");
+	if (! -r $platform_image) {
+		$log->error("createQcow2Disks - base image creation failed - $platform_image not readable");
 		return;
 	}
-	my ($output, $status) = systemcall("qemu-img create -b $imagename -f qcow2 delta.qcow2");
+	my ($output, $status) = systemcall("qemu-img create -b $platform_image -f qcow2 delta.qcow2");
 	if ($status) {
-		$log->error("createQcow2Disks - base image creation failed: $imagename $output $status");
+		$log->error("createQcow2Disks - base image creation failed: $platform_image $output $status");
 		return;
 	}
 	# input qcow2
@@ -1040,7 +1113,6 @@ sub createQcow2Disks { my ($bogref, $inputfolder, $outputfolder) = @_ ;
 		return;
 	}
 	chmod 0644, "outputdisk.qcow2";
-	return $imagename;
 }
 
 #########################
@@ -1208,11 +1280,14 @@ sub identifyPreemptedJobs {
     my $command = 'condor_q -af SWAMP_arun_execrunuid -constraint "JobStatus == 1" -constraint "NumJobStarts > 0" -constraint "LastVacateTime > 0"';
     my ($output, $status) = systemcall($command);
     if ($status) {
-        $log->error("listJobIDs condor_q failed - $status output: $output");
+        $log->error("identifyPreemptedJobs <$command> failed - $status $output");
         return;
     }
-    my @jobs = split "\n", $output;
-	return \@jobs;
+	my $jobs = [];
+	if ($output !~ m/undefined/) {
+    	$jobs = [split "\n", $output];
+	}
+	return $jobs;
 }
 
 #####################
@@ -1243,7 +1318,7 @@ sub isJobInHistory { my ($execrunuid) = @_ ;
        $cmd .= qq( -limit 1);
     my ($output, $status) = systemcall($cmd);
     if ($status) {
-        $log->error("isJobInHistory condor_history failed - $status output: $output");
+        $log->error("isJobInHistory <$cmd> failed - $status $output");
         return 0;
     }
     if ($output =~ m/^$execrunuid$/) {
@@ -1260,7 +1335,7 @@ sub isJobInQueue { my ($execrunuid) = @_ ;
        $cmd .= qq( -format "%s\n" SWAMP_mrun_execrunuid);
     my ($output, $status) = systemcall($cmd);
     if ($status) {
-        $log->error("isJobInQueue condor_q failed - $status output: $output");
+        $log->error("isJobInQueue <$cmd> failed - $status $output");
         return 0;
     }
     if ($output =~ m/$execrunuid/) {

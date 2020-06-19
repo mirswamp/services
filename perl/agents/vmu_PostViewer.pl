@@ -31,6 +31,8 @@ use SWAMP::vmu_Support qw(
 	construct_vmhostname
 	getSwampConfig
 	$global_swamp_config
+	$HTCONDOR_JOB_OUTPUT_DIR
+	$HTCONDOR_JOB_EVENTS_PATH
 );
 $global_swamp_config = getSwampConfig();
 use SWAMP::vmu_ViewerSupport qw(
@@ -57,26 +59,14 @@ sub logfilename {
 	return $name;
 }
 
-# returns:
-# -1 - extraction failed
-# -2 - viewerdb bundle not found
-#  1 - viewerdb bundle skipped
-#  0 - success
-sub extract_outputdisk { my ($outputfolder) = @_ ;
-	my ($output, $status) = systemcall(qq{/usr/bin/guestfish --ro -a outputdisk.qcow2 run : mount /dev/sda / : glob copy-out '/*' $outputfolder});    
+sub extract_outputdisk { my ($bogref, $outputfolder) = @_ ;
+	return 1 if ($bogref->{'use_docker_universe'});
+	my ($output, $status) = systemcall(qq{LIBGUESTFS_BACKEND=direct /usr/bin/guestfish --ro -a outputdisk.qcow2 run : mount /dev/sda / : glob copy-out '/*' $outputfolder});    
     if ($status) {
         $log->error("extract_outputdisk - output extraction failed: $output $status");
-        return -1;
+        return 0;
     }
-	if (-r "$outputfolder/skippedbundle") {
-        $log->warn("extract_outputdisk - output extraction viewerdb bundle skipped");
-		return 1;
-	}
-	if (! -r "$outputfolder/codedx_viewerdb.tar.gz") {
-        $log->error("extract_outputdisk - output extraction viewerdb bundle not found");
-		return -2;
-	}
-    return 0;
+	return 1;
 }
 
 sub get_final_viewer_status { my ($file) = @_ ;
@@ -117,14 +107,14 @@ $tracelog->trace("$PROGRAM_NAME ($PID) called with args: @ARGV");
 setHTCondorEnvironment();
 identifyScript(\@ARGV);
 
-my $viewer_status = get_final_viewer_status('JobVMEvents.log');
+my $viewer_status = get_final_viewer_status($HTCONDOR_JOB_EVENTS_PATH);
 if (! $viewer_status || (($viewer_status =~ m/SHUTDOWN/) && ($viewer_status ne 'TIMERSHUTDOWN'))) {
-	$viewer_status = 'no JobVMEvents.log' if (! $viewer_status);
+	$viewer_status = "no $HTCONDOR_JOB_EVENTS_PATH" if (! $viewer_status);
 	updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_SHUTDOWN, "Viewer did not start - status: $viewer_status", {});
 	exit(1);
 }
 
-my $outputfolder = q{output};
+my $outputfolder = $HTCONDOR_JOB_OUTPUT_DIR;
 
 my %bog;
 my $bogfile = $execrunuid . '.bog';
@@ -134,31 +124,26 @@ $bog{'vmhostname'} = $vmhostname;
 $log->info("Viewer is starting shutdown");
 updateClassAdViewerStatus($execrunuid, $VIEWER_STATE_STOPPING, 'Viewer is starting shutdown', \%bog);
 
-# returns:
-# -1 - extraction failed
-# -2 - viewerdb bundle not found
-#  1 - viewerdb bundle skipped
-#  0 - success
-my $status = extract_outputdisk($outputfolder);
-if ($status == -1) {
-	$log->error("Failed to extract viewer results for: $vmhostname");
-}
-elsif ($status == -2) {
-	$log->error("Failed to find viewer bundle for: $vmhostname");
-}
-elsif ($status == 1) {
-	$log->warn("Viewer bundling skipped for: $vmhostname");
-}
-
 my $exitCode = 0;
-if ($status == 0) {
-	$status = saveViewerDatabase(\%bog, $vmhostname, $outputfolder);
-	if (! $status) {
-		$log->error("Failed to save viewer results for: $vmhostname");
-		$exitCode = 1;
+my $status = extract_outputdisk(\%bog, $outputfolder);
+if ($status) {
+	if (-r "$outputfolder/skippedbundle") {
+        $log->warn("output extraction viewerdb bundle skipped");
+	}
+	if (! -r "$outputfolder/codedx_viewerdb.tar.gz") {
+        $log->error("output extraction viewerdb bundle not found");
+	}
+	else {
+		$log->info("output extraction succeeded - preserving codedx_viewerdb.tar.gz");
+		$status = saveViewerDatabase(\%bog, $vmhostname, $outputfolder);
+		if (! $status) {
+			$log->error("Failed to save viewer results for: $vmhostname");
+			$exitCode = 1;
+		}
 	}
 }
 else {
+	$log->error("Failed to extract viewer results for: $vmhostname");
 	$exitCode = 1;
 }
 
